@@ -1,26 +1,18 @@
-#[build-system]
-#requires = ["setuptools"]
-#build-backend = "setuptools.build_meta"
-#
-#[project]
-#name = "worker_manager"
-#description = "Библиотека для работы с воркерами"
-#authors = [{ name = "OneTells", email = "OneTells@ya.ru" }]
-#requires-python = ">=3.12"
-#
-#dependencies = [
-#    "sqlalchemy",
-#    "rebase @ git+https://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@github.com/OneTells/rebase.git",
-#    "notify @ git+https://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@github.com/OneTells/notify.git"
-#]
-#
-#dynamic = ["version"]
-#
-#[project.urls]
-#Repository = "https://github.com/OneTells/worker-manager"
-#
-#[tool.setuptools.dynamic]
-#version = { attr = "worker_manager.__version__" }
-#
-#[tool.setuptools.packages]
-#find = {}
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "everwork"
+description = "Библиотека для работы с воркерами"
+requires-python = ">=3.12"
+dynamic = ["version"]
+dependencies = [
+    "pydantic"
+]
+
+[tool.setuptools.dynamic]
+version = { attr = "everwork.__version__" }
+
+[tool.setuptools.packages]
+find = {}

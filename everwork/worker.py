@@ -1,13 +1,13 @@
 from abc import ABC, abstractmethod
 
-from everwork.settings import WorkerSettings
+from everwork.shemes import Settings, Event
 
 
 class BaseWorker(ABC):
 
     @staticmethod
     @abstractmethod
-    def settings() -> WorkerSettings:
+    def settings() -> Settings:
         raise NotImplementedError
 
     @abstractmethod
@@ -19,5 +19,5 @@ class BaseWorker(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def __call__(self) -> list | None:
+    async def __call__(self, *args, **kwargs) -> list[Event] | None:
         raise NotImplementedError
