@@ -1,56 +1,94 @@
-import asyncio
+import time
+from abc import ABC, abstractmethod
+from typing import Any
 
+from orjson import dumps
 from redis.asyncio import Redis
 
-from everwork.exceptions import WorkerOff, WorkerExit
-from everwork.shemes import ExecutorMode
-from everwork.utils import get_is_worker_on, waiting_worker_timeout, trigger_timeout, set_last_work
-from everwork.worker import Settings
+from everwork.worker import BaseWorker, Event
 
 
-class WorkerWrapper:
+class BaseResource(ABC):
 
-    def __init__(self, settings: Settings, redis: Redis):
-        self.__settings = settings
+    @abstractmethod
+    async def cancel(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def success(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def error(self) -> None:
+        raise NotImplementedError
+
+
+class BaseWorkerWrapper(ABC):
+
+    def __init__(self, redis: Redis, worker: type[BaseWorker]):
         self.__redis = redis
+        self.__worker = worker()
 
-    async def __run_trigger_mode(self):
-        while True:
-            try:
-                is_worker_on = await get_is_worker_on(self.__redis, self.__settings.name)
+        self.__worker_sleep_end_time = 0
 
-                if not is_worker_on:
-                    raise WorkerOff()
+    @property
+    def worker(self) -> BaseWorker:
+        return self.__worker
 
-                await waiting_worker_timeout(self.__redis, self.__settings.name, self.__settings.timeout)
+    async def check_worker_is_on(self) -> bool:
+        if time.time() < self.__worker_sleep_end_time:
+            return False
 
-                is_worker_on = await get_is_worker_on(self.__redis, self.__settings.name)
+        worker_is_on = await self.__redis.get(f'worker:{self.__worker.settings().name}:is_worker_on')
 
-                if not is_worker_on:
-                    raise WorkerOff()
+        if not worker_is_on:
+            self.__worker_sleep_end_time = time.time() + 60
+            return False
 
-                is_triggering = trigger_timeout(self.__redis, self.__settings.name, self.__settings.mode.timeout)
+        return True
 
-                if not is_triggering:
-                    raise WorkerExit()
+    async def push_events(self, events: list[Event] | None) -> None:
+        if events is None:
+            return None
 
-                await set_last_work(self.__redis, self.__settings.name)
+        pipeline = self.__redis.pipeline()
 
-                pass
-            except WorkerOff:
-                await asyncio.sleep(60)
+        for event in events:
+            await pipeline.rpush(f'worker:{event.target}:events', dumps(event))
 
-    async def __run_trigger_with_events_mode(self):
-        pass
+        await pipeline.execute()
 
-    async def __run_executor_mode(self):
-        pass
+    @abstractmethod
+    async def get_kwargs(self) -> tuple[dict[str, Any] | None, list[BaseResource]]:
+        raise NotImplementedError
 
-    async def run(self) -> None:
-        if isinstance(self.__settings.mode, ExecutorMode):
-            return await self.__run_executor_mode()
 
-        if self.__settings.mode.with_queue_events:
-            return await self.__run_trigger_with_events_mode()
+class TriggerWorkerWrapper(BaseWorkerWrapper):
 
-        return await self.__run_trigger_mode()
+    async def get_kwargs(self) -> tuple[dict[str, Any] | None, list[BaseResource]]:
+        last_time = await self.__redis.get(f'worker:{self.__worker.settings().name}:last_time')
+
+        if last_time is not None and time.time() < last_time + self.__worker.settings().mode.timeout:
+            return None, []
+
+        await self.__redis.set(f'worker:{self.__worker.settings().name}:last_time', time.time())
+
+        return {}, []
+
+
+class TriggerWithQueueWorkerWrapper(BaseWorkerWrapper):
+
+    async def get_kwargs(self) -> tuple[dict[str, Any] | None, list[BaseResource]]:
+        return None, []
+
+
+class ExecutorWorkerWrapper(BaseWorkerWrapper):
+
+    async def get_kwargs(self) -> tuple[dict[str, Any] | None, list[BaseResource]]:
+        return None, []
+
+
+class ExecutorWithLimitArgsWorkerWrapper(BaseWorkerWrapper):
+
+    async def get_kwargs(self) -> tuple[dict[str, Any] | None, list[BaseResource]]:
+        return None, []
