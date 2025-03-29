@@ -41,78 +41,63 @@ async def register_move_by_value_script(redis: Redis) -> str:
 
 class LimitArgsResource(BaseResource):
 
-    def __init__(self, worker_name: str, raw_kwargs: str, script_sha: str):
+    def __init__(self, worker_name: str, raw_value: str, script_sha: str):
         self.__worker_name = worker_name
-        self.__raw_kwargs = raw_kwargs
+        self.__raw_value = raw_value
         self.__script_sha = script_sha
 
-    async def cancel(self, redis: Redis) -> None:
+    async def __return(self, redis: Redis) -> None:
         value = await redis.evalsha(
             self.__script_sha,
             2, f'worker:{self.__worker_name}:taken_limit_args', f'worker:{self.__worker_name}:limit_args',
-            self.__raw_kwargs
+            self.__raw_value
         )
 
         if value:
             return None
 
-        logger.warning(f'Невозможно отменить событие {self.__raw_kwargs} в {self.__worker_name}')
+        logger.warning(f'Невозможно вернуть {self.__raw_value} в {self.__worker_name}')
+
+    async def cancel(self, redis: Redis) -> None:
+        await self.__return(redis)
 
     async def success(self, redis: Redis) -> None:
-        value = await redis.evalsha(
-            self.__script_sha,
-            2, f'worker:{self.__worker_name}:taken_limit_args', f'worker:{self.__worker_name}:limit_args',
-            self.__raw_kwargs
-        )
-
-        if value:
-            return None
-
-        logger.warning(f'Невозможно отменить событие {self.__raw_kwargs} в {self.__worker_name}')
+        await self.__return(redis)
 
     async def error(self, redis: Redis) -> None:
-        value = await redis.evalsha(
-            self.__script_sha,
-            2, f'worker:{self.__worker_name}:taken_limit_args', f'worker:{self.__worker_name}:limit_args',
-            self.__raw_kwargs
-        )
-
-        if value:
-            return None
-
-        logger.warning(f'Невозможно отменить событие {self.__raw_kwargs} в {self.__worker_name}')
+        await self.__return(redis)
 
 
 class EventResource(BaseResource):
 
-    def __init__(self, worker_name: str, raw_kwargs: str, script_sha: str):
+    def __init__(self, worker_name: str, raw_value: str, script_sha: str):
         self.__worker_name = worker_name
-        self.__raw_kwargs = raw_kwargs
+        self.__raw_value = raw_value
         self.__script_sha = script_sha
 
     async def cancel(self, redis: Redis) -> None:
         value = await redis.evalsha(
             self.__script_sha,
             2, f'worker:{self.__worker_name}:taken_events', f'worker:{self.__worker_name}:events',
-            self.__raw_kwargs
+            self.__raw_value
         )
 
         if value:
             return None
 
-        logger.warning(f'Невозможно отменить событие {self.__raw_kwargs} в {self.__worker_name}')
+        logger.warning(f'Невозможно отменить событие {self.__raw_value} в {self.__worker_name}')
 
     async def success(self, redis: Redis) -> None:
-        await redis.lrem(f'worker:{self.__worker_name}:taken_events', 1, self.__raw_kwargs)
+        await redis.lrem(f'worker:{self.__worker_name}:taken_events', 1, self.__raw_value)
 
     async def error(self, redis: Redis) -> None:
         value = await redis.evalsha(
             self.__script_sha,
             2, f'worker:{self.__worker_name}:taken_events', f'worker:{self.__worker_name}:error_events',
-            self.__raw_kwargs
+            self.__raw_value
         )
 
         if value:
             return None
 
-        logger.warning(f'Невозможно поместить событие {self.__raw_kwargs} в ошибки в {self.__worker_name}')
+        logger.warning(f'Невозможно поместить событие {self.__raw_value} в ошибки в {self.__worker_name}')

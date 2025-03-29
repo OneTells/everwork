@@ -2,11 +2,11 @@ import time
 from abc import ABC, abstractmethod
 from typing import Any
 
-from orjson import dumps
+from orjson import loads
 from redis.asyncio import Redis
 
-from everwork.resource import BaseResource, EventResource
-from everwork.worker import BaseWorker, Event
+from everwork.resource import BaseResource, EventResource, LimitArgsResource
+from everwork.worker import BaseWorker
 
 
 class BaseWorkerWrapper(ABC):
@@ -34,17 +34,6 @@ class BaseWorkerWrapper(ABC):
 
         return True
 
-    async def push_events(self, events: list[Event] | None) -> None:
-        if events is None:
-            return None
-
-        pipeline = self.__redis.pipeline()
-
-        for event in events:
-            await pipeline.rpush(f'worker:{event.target}:events', dumps(event))
-
-        await pipeline.execute()
-
     @abstractmethod
     async def get_kwargs(self) -> tuple[dict[str, Any] | None, list[BaseResource]]:
         raise NotImplementedError
@@ -66,8 +55,6 @@ class TriggerWorkerWrapper(BaseWorkerWrapper):
 class TriggerWithQueueWorkerWrapper(BaseWorkerWrapper):
 
     async def get_kwargs(self) -> tuple[dict[str, Any] | None, list[BaseResource]]:
-        resources = []
-
         last_time = await self.__redis.get(f'worker:{self.__worker.settings().name}:last_time')
 
         if last_time is not None and time.time() < last_time + self.__worker.settings().mode.timeout:
@@ -77,23 +64,54 @@ class TriggerWithQueueWorkerWrapper(BaseWorkerWrapper):
             )
 
             if event is None:
-                return None, resources
+                return None, []
 
-            resources.append(EventResource(self.__worker.settings().name, event, self.__move_by_value_script_sha))
-            return {}, resources
+            return {}, [EventResource(self.__worker.settings().name, event, self.__move_by_value_script_sha)]
 
         await self.__redis.set(f'worker:{self.__worker.settings().name}:last_time', time.time())
 
-        return {}, resources
+        return {}, []
 
 
 class ExecutorWorkerWrapper(BaseWorkerWrapper):
 
     async def get_kwargs(self) -> tuple[dict[str, Any] | None, list[BaseResource]]:
-        return None, []
+        event = await self.__redis.lmove(
+            f'worker:{self.__worker.settings().name}:events',
+            f'worker:{self.__worker.settings().name}:taken_events'
+        )
+
+        if event is None:
+            return None, []
+
+        return loads(event), [EventResource(self.__worker.settings().name, event, self.__move_by_value_script_sha)]
 
 
 class ExecutorWithLimitArgsWorkerWrapper(BaseWorkerWrapper):
 
     async def get_kwargs(self) -> tuple[dict[str, Any] | None, list[BaseResource]]:
-        return None, []
+        event = await self.__redis.lmove(
+            f'worker:{self.__worker.settings().name}:events',
+            f'worker:{self.__worker.settings().name}:taken_events'
+        )
+
+        if event is None:
+            return None, []
+
+        limit_args = await self.__redis.blmove(
+            f'worker:{self.__worker.settings().name}:limit_args',
+            f'worker:{self.__worker.settings().name}:taken_limit_args',
+            timeout=0
+        )
+
+        resources = [
+            EventResource(self.__worker.settings().name, event, self.__move_by_value_script_sha),
+            LimitArgsResource(self.__worker.settings().name, limit_args, self.__move_by_value_script_sha)
+        ]
+
+        worker_is_on = await self.check_worker_is_on()
+
+        if not worker_is_on:
+            return None, resources
+
+        return loads(event), resources

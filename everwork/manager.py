@@ -49,7 +49,10 @@ class Manager:
                     continue
 
                 await pipeline.delete(f'worker:{worker.settings().name}:limit_args')
-                await pipeline.rpush(f'worker:{worker.settings().name}:limit_args', *(dumps(args) for args in mode.limited_args))
+                await pipeline.rpush(
+                    f'worker:{worker.settings().name}:limit_args',
+                    *(dumps(args) for args in mode.limited_args)
+                )
 
         await pipeline.execute()
 

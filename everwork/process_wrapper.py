@@ -3,11 +3,13 @@ import signal
 import time
 
 from loguru import logger
+from pydantic import validate_call, ValidationError
 from redis.asyncio import Redis
 from uvloop import new_event_loop
 
 from everwork.process import Process, RedisSettings, ProcessState
 from everwork.resource import register_move_by_value_script
+from everwork.utils import push_events
 from everwork.worker import TriggerMode, ExecutorMode
 from everwork.worker_wrapper import TriggerWithQueueWorkerWrapper, ExecutorWorkerWrapper, ExecutorWithLimitArgsWorkerWrapper, \
     TriggerWorkerWrapper
@@ -33,6 +35,7 @@ class ProcessWrapper:
         move_by_value_script_sha = await register_move_by_value_script(self.__redis)
 
         wrappers = []
+        functions = []
 
         for worker in self.__process_data.workers:
             if isinstance(worker.settings().mode, TriggerMode):
@@ -49,6 +52,7 @@ class ProcessWrapper:
                 raise ValueError(f'Неизвестный worker mode: {worker.settings().mode}')
 
             wrappers.append(wrapper(self.__redis, worker, move_by_value_script_sha))
+            functions.append(validate_call(validate_return=True)(worker.__call__))
 
         for wrapper in wrappers:
             await wrapper.worker.startup()
@@ -66,7 +70,7 @@ class ProcessWrapper:
             if self.__is_closed:
                 break
 
-            for wrapper in wrappers:
+            for function, wrapper in zip(functions, wrappers):
                 worker_is_on = await wrapper.check_worker_is_on()
 
                 if not worker_is_on:
@@ -75,6 +79,9 @@ class ProcessWrapper:
                 kwargs, resources = await wrapper.get_kwargs()
 
                 if kwargs is None:
+                    for resource in resources:
+                        await resource.cancel(self.__redis)
+
                     continue
 
                 await self.__redis.set(
@@ -85,17 +92,20 @@ class ProcessWrapper:
                     ).model_dump_json()
                 )
 
-                # Вот тут валидация
-
                 try:
-                    events = await wrapper.worker(**kwargs)
+                    events = await function(**kwargs)
+                except ValidationError as error:
+                    logger.exception(f'Ошибка при валидации {wrapper.worker.settings().name}: {error}')
+
+                    for resource in resources:
+                        await resource.error(self.__redis)
                 except Exception as error:
                     logger.exception(f'Ошибка при выполнении {wrapper.worker.settings().name}: {error}')
 
                     for resource in resources:
                         await resource.error(self.__redis)
                 else:
-                    await wrapper.push_events(events)
+                    await push_events(self.__redis, events)
 
                     for resource in resources:
                         await resource.success(self.__redis)
