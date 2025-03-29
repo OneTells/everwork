@@ -50,7 +50,7 @@ class RedisSettings(BaseModel):
 
 class ProcessState(BaseModel):
     status: Annotated[Literal['waiting', 'running'], Field()]
-    end_time: Annotated[int | None, Field()]
+    end_time: Annotated[float | None, Field()]
 
     @model_validator(mode='after')
     def check_replicas(self) -> Self:

@@ -1,20 +1,17 @@
 import time
 from abc import ABC, abstractmethod
-from typing import Any
 
 from orjson import loads
 from redis.asyncio import Redis
 
-from everwork.resource import BaseResource, EventResource, LimitArgsResource
-from everwork.worker import BaseWorker
+from everwork.worker import BaseWorker, Resources
 
 
 class BaseWorkerWrapper(ABC):
 
-    def __init__(self, redis: Redis, worker: type[BaseWorker], move_by_value_script_sha: str):
+    def __init__(self, redis: Redis, worker: type[BaseWorker]):
         self.__redis = redis
         self.__worker = worker()
-        self.__move_by_value_script_sha = move_by_value_script_sha
 
         self.__worker_sleep_end_time = 0
 
@@ -35,26 +32,26 @@ class BaseWorkerWrapper(ABC):
         return True
 
     @abstractmethod
-    async def get_kwargs(self) -> tuple[dict[str, Any] | None, list[BaseResource]]:
+    async def get_kwargs(self) -> Resources:
         raise NotImplementedError
 
 
 class TriggerWorkerWrapper(BaseWorkerWrapper):
 
-    async def get_kwargs(self) -> tuple[dict[str, Any] | None, list[BaseResource]]:
+    async def get_kwargs(self) -> Resources:
         last_time = await self.__redis.get(f'worker:{self.__worker.settings().name}:last_time')
 
         if last_time is not None and time.time() < last_time + self.__worker.settings().mode.timeout:
-            return None, []
+            return Resources()
 
         await self.__redis.set(f'worker:{self.__worker.settings().name}:last_time', time.time())
 
-        return {}, []
+        return Resources(kwargs={})
 
 
 class TriggerWithQueueWorkerWrapper(BaseWorkerWrapper):
 
-    async def get_kwargs(self) -> tuple[dict[str, Any] | None, list[BaseResource]]:
+    async def get_kwargs(self) -> Resources:
         last_time = await self.__redis.get(f'worker:{self.__worker.settings().name}:last_time')
 
         if last_time is not None and time.time() < last_time + self.__worker.settings().mode.timeout:
@@ -64,39 +61,39 @@ class TriggerWithQueueWorkerWrapper(BaseWorkerWrapper):
             )
 
             if event is None:
-                return None, []
+                return Resources()
 
-            return {}, [EventResource(self.__worker.settings().name, event, self.__move_by_value_script_sha)]
+            return Resources(kwargs={}, event=event)
 
         await self.__redis.set(f'worker:{self.__worker.settings().name}:last_time', time.time())
 
-        return {}, []
+        return Resources(kwargs={})
 
 
 class ExecutorWorkerWrapper(BaseWorkerWrapper):
 
-    async def get_kwargs(self) -> tuple[dict[str, Any] | None, list[BaseResource]]:
+    async def get_kwargs(self) -> Resources:
         event = await self.__redis.lmove(
             f'worker:{self.__worker.settings().name}:events',
             f'worker:{self.__worker.settings().name}:taken_events'
         )
 
         if event is None:
-            return None, []
+            return Resources()
 
-        return loads(event), [EventResource(self.__worker.settings().name, event, self.__move_by_value_script_sha)]
+        return Resources(kwargs=loads(event), event=event)
 
 
 class ExecutorWithLimitArgsWorkerWrapper(BaseWorkerWrapper):
 
-    async def get_kwargs(self) -> tuple[dict[str, Any] | None, list[BaseResource]]:
+    async def get_kwargs(self) -> Resources:
         event = await self.__redis.lmove(
             f'worker:{self.__worker.settings().name}:events',
             f'worker:{self.__worker.settings().name}:taken_events'
         )
 
         if event is None:
-            return None, []
+            return Resources()
 
         limit_args = await self.__redis.blmove(
             f'worker:{self.__worker.settings().name}:limit_args',
@@ -104,14 +101,9 @@ class ExecutorWithLimitArgsWorkerWrapper(BaseWorkerWrapper):
             timeout=0
         )
 
-        resources = [
-            EventResource(self.__worker.settings().name, event, self.__move_by_value_script_sha),
-            LimitArgsResource(self.__worker.settings().name, limit_args, self.__move_by_value_script_sha)
-        ]
-
         worker_is_on = await self.check_worker_is_on()
 
         if not worker_is_on:
-            return None, resources
+            return Resources(event=event, limit_args=limit_args)
 
-        return loads(event), resources
+        return Resources(kwargs=loads(event), event=event, limit_args=limit_args)
