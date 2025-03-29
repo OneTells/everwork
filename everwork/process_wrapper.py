@@ -1,12 +1,10 @@
 import asyncio
-import functools
 import signal
 import time
-from typing import Callable
 
 from loguru import logger
 from orjson import dumps
-from pydantic import validate_call, ValidationError
+from pydantic import validate_call
 from redis.asyncio import Redis
 from uvloop import new_event_loop
 
@@ -16,18 +14,6 @@ from everwork.utils import register_move_by_value_script, return_limit_args, can
 from everwork.worker import TriggerMode, ExecutorMode, Event
 from everwork.worker_wrapper import TriggerWithQueueWorkerWrapper, ExecutorWorkerWrapper, ExecutorWithLimitArgsWorkerWrapper, \
     TriggerWorkerWrapper
-
-
-def get_decorator(function: Callable):
-    @validate_call(validate_return=True)
-    @functools.wraps(function)
-    async def decorator_function(**kwargs):
-        async def wrapper_function():
-            return await function(**kwargs)
-
-        return wrapper_function
-
-    return decorator_function
 
 
 class ProcessWrapper:
@@ -69,7 +55,7 @@ class ProcessWrapper:
             worker_object = worker()
 
             wrappers.append(worker_wrapper(self.__redis, worker_object))
-            function_wrappers.append(get_decorator(worker_object.__call__))
+            function_wrappers.append(validate_call(validate_return=True)(worker_object.__call__))
 
         for wrapper in wrappers:
             await wrapper.worker.startup()
@@ -107,21 +93,15 @@ class ProcessWrapper:
                 pipeline = self.__redis.pipeline()
 
                 try:
-                    function = await function_wrapper(**resources.kwargs)
-                except ValidationError as error:
-                    logger.exception(f'Ошибка при валидации {worker_name}: {error}')
+                    events: list[Event] | None = await function_wrapper(**resources.kwargs)
+                except Exception as error:
+                    logger.exception(f'Ошибка при выполнении {worker_name}: {error}')
                     await return_event(pipeline, move_by_value_script_sha, worker_name, resources.event)
                 else:
-                    try:
-                        events: list[Event] | None = await function()
-                    except Exception as error:
-                        logger.exception(f'Ошибка при выполнении {worker_name}: {error}')
-                        await return_event(pipeline, move_by_value_script_sha, worker_name, resources.event)
-                    else:
-                        for event in (events or []):
-                            await pipeline.rpush(f'worker:{event.target}:events', dumps(event))
+                    for event in (events or []):
+                        await pipeline.rpush(f'worker:{event.target}:events', dumps(event))
 
-                        await remove_event(pipeline, worker_name, resources.event)
+                    await remove_event(pipeline, worker_name, resources.event)
 
                 await return_limit_args(pipeline, move_by_value_script_sha, worker_name, resources.limit_args)
                 await set_process_state(pipeline, self.__index, None)
