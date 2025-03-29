@@ -41,9 +41,3 @@ class BaseWorker(ABC):
     @abstractmethod
     async def __call__(self, **kwargs) -> list[Event] | None:
         raise NotImplementedError
-
-
-class Resources(BaseModel):
-    kwargs: Annotated[dict[str, Any] | None, Field(default=None)]
-    event: Annotated[str | None, Field(default=None)]
-    limit_args: Annotated[str | None, Field(default=None)]

@@ -4,14 +4,15 @@ from abc import ABC, abstractmethod
 from orjson import loads
 from redis.asyncio import Redis
 
-from everwork.worker import BaseWorker, Resources
+from everwork.process import Resources
+from everwork.worker import BaseWorker
 
 
 class BaseWorkerWrapper(ABC):
 
-    def __init__(self, redis: Redis, worker: type[BaseWorker]):
+    def __init__(self, redis: Redis, worker: BaseWorker):
         self.__redis = redis
-        self.__worker = worker()
+        self.__worker = worker
 
         self.__worker_sleep_end_time = 0
 

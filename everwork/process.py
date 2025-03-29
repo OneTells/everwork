@@ -1,4 +1,4 @@
-from typing import Annotated, Self, Literal
+from typing import Annotated, Self, Literal, Any
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -61,3 +61,9 @@ class ProcessState(BaseModel):
             raise ValueError('В статусе running поле end_time не должно быть None')
 
         return self
+
+
+class Resources(BaseModel):
+    kwargs: Annotated[dict[str, Any] | None, Field(default=None)]
+    event: Annotated[str | None, Field(default=None)]
+    limit_args: Annotated[str | None, Field(default=None)]

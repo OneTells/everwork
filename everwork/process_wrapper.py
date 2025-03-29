@@ -8,10 +8,10 @@ from pydantic import validate_call, ValidationError
 from redis.asyncio import Redis
 from uvloop import new_event_loop
 
-from everwork.process import Process, RedisSettings
+from everwork.process import Process, RedisSettings, Resources
 from everwork.utils import register_move_by_value_script, return_limit_args, cancel_event, remove_event, return_event, \
     set_process_state
-from everwork.worker import TriggerMode, ExecutorMode, Resources, Event
+from everwork.worker import TriggerMode, ExecutorMode, Event
 from everwork.worker_wrapper import TriggerWithQueueWorkerWrapper, ExecutorWorkerWrapper, ExecutorWithLimitArgsWorkerWrapper, \
     TriggerWorkerWrapper
 
@@ -52,8 +52,10 @@ class ProcessWrapper:
             else:
                 raise ValueError(f'Неизвестный worker mode: {worker.settings().mode}')
 
-            wrappers.append(worker_wrapper(self.__redis, worker))
-            functions.append(validate_call(validate_return=True)(worker.__call__))
+            worker_object = worker()
+
+            wrappers.append(worker_wrapper(self.__redis, worker_object))
+            functions.append(validate_call(validate_return=True)(worker_object.__call__))
 
         for wrapper in wrappers:
             await wrapper.worker.startup()
