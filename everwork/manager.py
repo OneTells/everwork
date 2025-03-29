@@ -3,10 +3,10 @@ import multiprocessing
 import signal
 import time
 
-from orjson import dumps, loads
+from orjson import dumps
 from redis.asyncio import Redis
 
-from everwork.process import Process, RedisSettings
+from everwork.process import Process, RedisSettings, ProcessState
 from everwork.process_wrapper import ProcessWrapper
 from everwork.worker import ExecutorMode
 
@@ -22,14 +22,8 @@ class Manager:
         self.__is_closed = False
 
     async def __init_process(self):
-        pipeline = self.__redis.pipeline()
-
-        await pipeline.mset({f'process:{index}:is_shutdown': 0 for index in range(len(self.__processes_data))})
-
-        default_state = dumps({'status': 'waiting', 'end_time': None})
-        await pipeline.mset({f'process:{index}:state': default_state for index in range(len(self.__processes_data))})
-
-        await pipeline.execute()
+        default_state = ProcessState(status='waiting', end_time=None).model_dump_json()
+        await self.__redis.mset({f'process:{index}:state': default_state for index in range(len(self.__processes_data))})
 
     async def __init_workers(self):
         keys = []
@@ -39,7 +33,6 @@ class Manager:
                 keys.append(f'worker:{worker.settings().name}:is_worker_on')
 
         response = await self.__redis.mget(keys)
-
         await self.__redis.mset({key: 0 for key, is_worker_on in zip(keys, response) if is_worker_on is None})
 
     async def __register_limit_args(self):
@@ -60,7 +53,7 @@ class Manager:
 
         await pipeline.execute()
 
-    def __set_closed_flag(self, _, __):
+    def __set_closed_flag(self, *_):
         self.__is_closed = True
 
     def __create_process(self, index: int, process_data: Process) -> multiprocessing.Process:
@@ -95,14 +88,14 @@ class Manager:
                 break
 
             for index, (process_data, process) in enumerate(zip(self.__processes_data, processes)):
-                state = loads(
+                state = ProcessState.model_validate_json(
                     await self.__redis.get(f'process:{index}:state')
                 )
 
-                if state['status'] != 'running':
+                if state.status != 'running':
                     continue
 
-                if state['end_time'] is not None and time.time() < state['end_time']:
+                if state.end_time is not None and time.time() < state.end_time:
                     continue
 
                 process.terminate()

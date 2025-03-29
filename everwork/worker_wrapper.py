@@ -5,29 +5,16 @@ from typing import Any
 from orjson import dumps
 from redis.asyncio import Redis
 
+from everwork.resource import BaseResource, EventResource
 from everwork.worker import BaseWorker, Event
-
-
-class BaseResource(ABC):
-
-    @abstractmethod
-    async def cancel(self) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    async def success(self) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    async def error(self) -> None:
-        raise NotImplementedError
 
 
 class BaseWorkerWrapper(ABC):
 
-    def __init__(self, redis: Redis, worker: type[BaseWorker]):
+    def __init__(self, redis: Redis, worker: type[BaseWorker], move_by_value_script_sha: str):
         self.__redis = redis
         self.__worker = worker()
+        self.__move_by_value_script_sha = move_by_value_script_sha
 
         self.__worker_sleep_end_time = 0
 
@@ -79,7 +66,25 @@ class TriggerWorkerWrapper(BaseWorkerWrapper):
 class TriggerWithQueueWorkerWrapper(BaseWorkerWrapper):
 
     async def get_kwargs(self) -> tuple[dict[str, Any] | None, list[BaseResource]]:
-        return None, []
+        resources = []
+
+        last_time = await self.__redis.get(f'worker:{self.__worker.settings().name}:last_time')
+
+        if last_time is not None and time.time() < last_time + self.__worker.settings().mode.timeout:
+            event = await self.__redis.lmove(
+                f'worker:{self.__worker.settings().name}:events',
+                f'worker:{self.__worker.settings().name}:taken_events'
+            )
+
+            if event is None:
+                return None, resources
+
+            resources.append(EventResource(self.__worker.settings().name, event, self.__move_by_value_script_sha))
+            return {}, resources
+
+        await self.__redis.set(f'worker:{self.__worker.settings().name}:last_time', time.time())
+
+        return {}, resources
 
 
 class ExecutorWorkerWrapper(BaseWorkerWrapper):

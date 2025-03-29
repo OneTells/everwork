@@ -3,11 +3,11 @@ import signal
 import time
 
 from loguru import logger
-from orjson import dumps
 from redis.asyncio import Redis
 from uvloop import new_event_loop
 
-from everwork.process import Process, RedisSettings
+from everwork.process import Process, RedisSettings, ProcessState
+from everwork.resource import register_move_by_value_script
 from everwork.worker import TriggerMode, ExecutorMode
 from everwork.worker_wrapper import TriggerWithQueueWorkerWrapper, ExecutorWorkerWrapper, ExecutorWithLimitArgsWorkerWrapper, \
     TriggerWorkerWrapper
@@ -17,24 +17,24 @@ class ProcessWrapper:
 
     def __init__(self, index: int, process_data: Process, redis_settings: RedisSettings):
         self.__index = index
-
-        self.__workers = process_data.workers
-        self.__settings = process_data.settings
+        self.__process_data = process_data
 
         self.__redis = Redis(**redis_settings.model_dump())
 
         self.__is_closed = False
 
-    def __set_closed_flag(self, _, __):
+    def __set_closed_flag(self, *_):
         self.__is_closed = True
 
     async def __async_run(self) -> None:
         signal.signal(signal.SIGINT, signal.SIG_IGN)
         signal.signal(signal.SIGTERM, self.__set_closed_flag)
 
-        workers = []
+        move_by_value_script_sha = await register_move_by_value_script(self.__redis)
 
-        for worker in self.__workers:
+        wrappers = []
+
+        for worker in self.__process_data.workers:
             if isinstance(worker.settings().mode, TriggerMode):
                 if worker.settings().mode.with_queue_events:
                     wrapper = TriggerWithQueueWorkerWrapper
@@ -48,62 +48,67 @@ class ProcessWrapper:
             else:
                 raise ValueError(f'Неизвестный worker mode: {worker.settings().mode}')
 
-            workers.append(wrapper(self.__redis, worker))
+            wrappers.append(wrapper(self.__redis, worker, move_by_value_script_sha))
 
-        for worker in workers:
-            await worker.worker.startup()
+        for wrapper in wrappers:
+            await wrapper.worker.startup()
 
         last_work_time = 0
 
         while True:
-            if last_work_time + self.__settings.timeout.active_lifetime < time.time():
-                delay = self.__settings.timeout.inactive_timeout
+            if time.time() > last_work_time + self.__process_data.settings.timeout.active_lifetime:
+                delay = self.__process_data.settings.timeout.inactive_timeout
             else:
-                delay = self.__settings.timeout.active_timeout
+                delay = self.__process_data.settings.timeout.active_timeout
 
             await asyncio.sleep(delay)
 
             if self.__is_closed:
                 break
 
-            for worker in workers:
-                worker_is_on = await worker.check_worker_is_on()
+            for wrapper in wrappers:
+                worker_is_on = await wrapper.check_worker_is_on()
 
                 if not worker_is_on:
                     continue
 
-                kwargs, resources = await worker.get_kwargs()
+                kwargs, resources = await wrapper.get_kwargs()
 
                 if kwargs is None:
                     continue
 
                 await self.__redis.set(
                     f'process:{self.__index}:state',
-                    dumps({'status': 'running', 'end_time': time.time() + worker.worker.settings().timeout_reset})
+                    ProcessState(
+                        status='running',
+                        end_time=time.time() + wrapper.worker.settings().timeout_reset
+                    ).model_dump_json()
                 )
 
+                # Вот тут валидация
+
                 try:
-                    events = await worker.worker(**kwargs)
+                    events = await wrapper.worker(**kwargs)
                 except Exception as error:
-                    logger.exception(f'Ошибка при выполнении {worker.worker.settings().name}: {error}')
+                    logger.exception(f'Ошибка при выполнении {wrapper.worker.settings().name}: {error}')
 
                     for resource in resources:
-                        await resource.error()
+                        await resource.error(self.__redis)
                 else:
-                    await worker.push_events(events)
+                    await wrapper.push_events(events)
 
                     for resource in resources:
-                        await resource.success()
+                        await resource.success(self.__redis)
 
                 last_work_time = time.time()
 
                 await self.__redis.set(
                     f'process:{self.__index}:state',
-                    dumps({'status': 'waiting', 'end_time': None})
+                    ProcessState(status='waiting', end_time=None).model_dump_json()
                 )
 
-        for worker in workers:
-            await worker.worker.shutdown()
+        for wrapper in wrappers:
+            await wrapper.worker.shutdown()
 
         await self.__redis.close()
 

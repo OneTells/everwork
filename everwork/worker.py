@@ -22,7 +22,7 @@ class Settings(BaseModel):
 
 class Event(BaseModel):
     target: Annotated[str, Field()]
-    kwargs: Annotated[dict[str, Any] | None, Field(default=None)]
+    kwargs: Annotated[dict[str, Any], Field(default_factory=dict)]
 
 
 class BaseWorker(ABC):
