@@ -1,10 +1,12 @@
 import asyncio
+import inspect
 import signal
 import time
+from typing import Any, Annotated
 
 from loguru import logger
 from orjson import dumps
-from pydantic import validate_call, ValidationError
+from pydantic import validate_call, ValidationError, create_model
 from redis.asyncio import Redis
 from uvloop import new_event_loop
 
@@ -36,7 +38,7 @@ class ProcessWrapper:
         move_by_value_script_sha = await register_move_by_value_script(self.__redis)
 
         wrappers = []
-        functions = []
+        worker_models = []
 
         for worker in self.__process_data.workers:
             if isinstance(worker.settings().mode, TriggerMode):
@@ -55,7 +57,16 @@ class ProcessWrapper:
             worker_object = worker()
 
             wrappers.append(worker_wrapper(self.__redis, worker_object))
-            functions.append(validate_call(validate_return=True)(worker_object.__call__))
+
+            fields = {}
+
+            for name, param in inspect.signature(worker_object.__call__).parameters.items():
+                fields[name] = (
+                    Any if param.annotation is param.empty else param.annotation,
+                    param.default if param.default is not param.empty else ...
+                )
+
+            worker_models.append(create_model(f'worker_{worker.settings().name}', **fields))
 
         for wrapper in wrappers:
             await wrapper.worker.startup()
@@ -73,7 +84,7 @@ class ProcessWrapper:
             if self.__is_closed:
                 break
 
-            for function, wrapper in zip(functions, wrappers):
+            for worker_model, wrapper in zip(worker_models, wrappers):
                 worker_name: str = wrapper.worker.settings().name
 
                 worker_is_on: bool = await wrapper.check_worker_is_on()
@@ -93,18 +104,21 @@ class ProcessWrapper:
                 pipeline = self.__redis.pipeline()
 
                 try:
-                    events: list[Event] | None = await function(**resources.kwargs)
+                    kwargs = worker_model.model_validate(**resources.kwargs).model_dump()
                 except ValidationError as error:
                     logger.exception(f'Ошибка при валидации {worker_name}: {error}')
                     await return_event(pipeline, move_by_value_script_sha, worker_name, resources.event)
-                except Exception as error:
-                    logger.exception(f'Ошибка при выполнении {worker_name}: {error}')
-                    await return_event(pipeline, move_by_value_script_sha, worker_name, resources.event)
                 else:
-                    for event in (events or []):
-                        await pipeline.rpush(f'worker:{event.target}:events', dumps(event))
+                    try:
+                        events: list[Event] | None = await wrapper.worker(**kwargs)
+                    except Exception as error:
+                        logger.exception(f'Ошибка при выполнении {worker_name}: {error}')
+                        await return_event(pipeline, move_by_value_script_sha, worker_name, resources.event)
+                    else:
+                        for event in (events or []):
+                            await pipeline.rpush(f'worker:{event.target}:events', dumps(event))
 
-                    await remove_event(pipeline, worker_name, resources.event)
+                        await remove_event(pipeline, worker_name, resources.event)
 
                 await return_limit_args(pipeline, move_by_value_script_sha, worker_name, resources.limit_args)
                 await set_process_state(pipeline, self.__index, None)
