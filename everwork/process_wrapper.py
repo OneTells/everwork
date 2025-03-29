@@ -1,12 +1,12 @@
 import asyncio
-import inspect
+import functools
 import signal
 import time
-from typing import Any, Annotated
+from typing import Callable
 
 from loguru import logger
 from orjson import dumps
-from pydantic import validate_call, ValidationError, create_model
+from pydantic import validate_call, ValidationError
 from redis.asyncio import Redis
 from uvloop import new_event_loop
 
@@ -16,6 +16,18 @@ from everwork.utils import register_move_by_value_script, return_limit_args, can
 from everwork.worker import TriggerMode, ExecutorMode, Event
 from everwork.worker_wrapper import TriggerWithQueueWorkerWrapper, ExecutorWorkerWrapper, ExecutorWithLimitArgsWorkerWrapper, \
     TriggerWorkerWrapper
+
+
+def get_decorator(function: Callable):
+    @validate_call(validate_return=True)
+    @functools.wraps(function)
+    async def decorator_function(**kwargs):
+        async def wrapper_function():
+            return await function(**kwargs)
+
+        return wrapper_function
+
+    return decorator_function
 
 
 class ProcessWrapper:
@@ -38,7 +50,7 @@ class ProcessWrapper:
         move_by_value_script_sha = await register_move_by_value_script(self.__redis)
 
         wrappers = []
-        worker_models = []
+        function_wrappers = []
 
         for worker in self.__process_data.workers:
             if isinstance(worker.settings().mode, TriggerMode):
@@ -57,16 +69,7 @@ class ProcessWrapper:
             worker_object = worker()
 
             wrappers.append(worker_wrapper(self.__redis, worker_object))
-
-            fields = {}
-
-            for name, param in inspect.signature(worker_object.__call__).parameters.items():
-                fields[name] = (
-                    Any if param.annotation is param.empty else param.annotation,
-                    param.default if param.default is not param.empty else ...
-                )
-
-            worker_models.append(create_model(f'worker_{worker.settings().name}', **fields))
+            function_wrappers.append(get_decorator(worker_object.__call__))
 
         for wrapper in wrappers:
             await wrapper.worker.startup()
@@ -84,7 +87,7 @@ class ProcessWrapper:
             if self.__is_closed:
                 break
 
-            for worker_model, wrapper in zip(worker_models, wrappers):
+            for function_wrapper, wrapper in zip(function_wrappers, wrappers):
                 worker_name: str = wrapper.worker.settings().name
 
                 worker_is_on: bool = await wrapper.check_worker_is_on()
@@ -104,13 +107,13 @@ class ProcessWrapper:
                 pipeline = self.__redis.pipeline()
 
                 try:
-                    kwargs = worker_model.model_validate(**resources.kwargs).model_dump()
+                    function = await function_wrapper(**resources.kwargs)
                 except ValidationError as error:
                     logger.exception(f'Ошибка при валидации {worker_name}: {error}')
                     await return_event(pipeline, move_by_value_script_sha, worker_name, resources.event)
                 else:
                     try:
-                        events: list[Event] | None = await wrapper.worker(**kwargs)
+                        events: list[Event] | None = await function()
                     except Exception as error:
                         logger.exception(f'Ошибка при выполнении {worker_name}: {error}')
                         await return_event(pipeline, move_by_value_script_sha, worker_name, resources.event)
