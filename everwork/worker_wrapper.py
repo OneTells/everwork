@@ -42,7 +42,7 @@ class TriggerWorkerWrapper(BaseWorkerWrapper):
     async def get_kwargs(self) -> Resources:
         last_time = await self._redis.get(f'worker:{self._worker.settings().name}:last_time')
 
-        if last_time is not None and time.time() < last_time + self._worker.settings().mode.timeout:
+        if last_time is not None and time.time() < float(last_time) + self._worker.settings().mode.timeout:
             return Resources()
 
         await self._redis.set(f'worker:{self._worker.settings().name}:last_time', time.time())
@@ -55,7 +55,7 @@ class TriggerWithQueueWorkerWrapper(BaseWorkerWrapper):
     async def get_kwargs(self) -> Resources:
         last_time = await self._redis.get(f'worker:{self._worker.settings().name}:last_time')
 
-        if last_time is not None and time.time() < last_time + self._worker.settings().mode.timeout:
+        if last_time is not None and time.time() < float(last_time) + self._worker.settings().mode.timeout:
             event = await self._redis.lmove(
                 f'worker:{self._worker.settings().name}:events',
                 f'worker:{self._worker.settings().name}:taken_events'

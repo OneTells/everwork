@@ -2,7 +2,7 @@ from .manager import Manager
 from .process import Timeout, Process, RedisSettings
 from .worker import BaseWorker, Settings, Event, TriggerMode, ExecutorMode
 
-__version__ = "2.0.6"
+__version__ = "2.0.7"
 
 __all__ = (
     '__version__',
