@@ -8,7 +8,11 @@ description = "Библиотека для работы с воркерами"
 requires-python = ">=3.12"
 dynamic = ["version"]
 dependencies = [
-    "pydantic"
+    "pydantic",
+    "redis",
+    "loguru",
+    "orjson",
+    "uvloop"
 ]
 
 [tool.setuptools.dynamic]
