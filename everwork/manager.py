@@ -11,6 +11,8 @@ from everwork.process import Process, RedisSettings, ProcessState
 from everwork.process_wrapper import ProcessWrapper
 from everwork.worker import ExecutorMode
 
+def f():
+    print(112)
 
 class Manager:
 
@@ -67,13 +69,23 @@ class Manager:
         self.__is_closed = True
 
     def __create_process(self, index: int, process_data: Process) -> SpawnProcess:
+        # process = SpawnProcess(
+        #     target=ProcessWrapper.run,
+        #     kwargs={
+        #         'index': index,
+        #         'process_data': process_data.model_dump(),
+        #         'redis_settings': self.__redis_settings.model_dump()
+        #     },
+        #     daemon=True,
+        #     name=f'process:{index}'
+        # )
         process = SpawnProcess(
-            target=ProcessWrapper.run,
-            kwargs={
-                'index': index,
-                'process_data': process_data.model_dump(),
-                'redis_settings': self.__redis_settings.model_dump()
-            },
+            target=f,
+            # kwargs={
+            #     'index': index,
+            #     'process_data': process_data.model_dump(),
+            #     'redis_settings': self.__redis_settings.model_dump()
+            # },
             daemon=True,
             name=f'process:{index}'
         )
