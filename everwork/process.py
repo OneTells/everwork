@@ -11,18 +11,15 @@ class Timeout(BaseModel):
     active_lifetime: Annotated[float, Field(ge=0, default=60)]
 
 
-class Settings(BaseModel):
-    replicas: Annotated[int, Field(ge=1)]
-    timeout: Annotated[Timeout, Field(default_factory=Timeout)]
-
-
 class Process(BaseModel):
     workers: Annotated[list[type[BaseWorker]], Field()]
-    settings: Annotated[Settings, Field()]
+
+    replicas: Annotated[int, Field(ge=1, default=1)]
+    timeout: Annotated[Timeout, Field(default_factory=Timeout)]
 
     @model_validator(mode='after')
     def check_replicas(self) -> Self:
-        if self.settings.replicas == 1:
+        if self.replicas == 1:
             if any(
                 isinstance(worker.settings().mode, ExecutorMode)
                 and worker.settings().mode.limited_args is not None for worker in self.workers

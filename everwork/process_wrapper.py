@@ -63,10 +63,10 @@ class ProcessWrapper:
         last_work_time = 0
 
         while True:
-            if time.time() > last_work_time + self.__process_data.settings.timeout.active_lifetime:
-                delay = self.__process_data.settings.timeout.inactive_timeout
+            if time.time() > last_work_time + self.__process_data.timeout.active_lifetime:
+                delay = self.__process_data.timeout.inactive_timeout
             else:
-                delay = self.__process_data.settings.timeout.active_timeout
+                delay = self.__process_data.timeout.active_timeout
 
             await asyncio.sleep(delay)
 
