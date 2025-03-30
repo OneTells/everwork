@@ -79,19 +79,20 @@ class Manager:
         return process
 
     async def run(self):
+        print(1)
         signal.signal(signal.SIGINT, self.__set_closed_flag)
         signal.signal(signal.SIGTERM, self.__set_closed_flag)
-
+        print(2)
         await self.__init_process()
         await self.__init_workers()
-
+        print(3)
         await self.__register_limit_args()
-
+        print(4)
         processes: list[multiprocessing.Process] = []
 
         for index, process_data in enumerate(self.__processes_data):
             processes.append(self.__create_process(index, process_data))
-
+        print(6)
         while True:
             if self.__is_closed:
                 break
