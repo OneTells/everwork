@@ -2,6 +2,7 @@ import asyncio
 import multiprocessing
 import signal
 import time
+from multiprocessing.context import SpawnProcess
 
 from orjson import dumps
 from redis.asyncio import Redis
@@ -65,15 +66,15 @@ class Manager:
     def __set_closed_flag(self, *_):
         self.__is_closed = True
 
-    def __create_process(self, index: int, process_data: Process) -> multiprocessing.Process:
-        process = multiprocessing.Process(
+    def __create_process(self, index: int, process_data: Process) -> SpawnProcess:
+        process = SpawnProcess(
             target=ProcessWrapper.run,
             kwargs={
                 'index': index,
                 'process_data': process_data,
                 'redis_settings': self.__redis_settings
             },
-            # daemon=True
+            daemon=True
         )
         print(process)
         process.start()
@@ -90,7 +91,7 @@ class Manager:
         print(3)
         await self.__register_limit_args()
         print(4)
-        processes: list[multiprocessing.Process] = []
+        processes: list[SpawnProcess] = []
 
         for index, process_data in enumerate(self.__processes_data):
             print(7777)
