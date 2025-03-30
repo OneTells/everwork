@@ -74,7 +74,7 @@ class Manager:
                 'process_data': process_data,
                 'redis_settings': self.__redis_settings
             },
-            daemon=True
+            # daemon=True
         )
         print(process)
         process.start()
@@ -82,13 +82,12 @@ class Manager:
         return process
 
     async def run(self):
-        print(1)
         signal.signal(signal.SIGINT, self.__set_closed_flag)
         signal.signal(signal.SIGTERM, self.__set_closed_flag)
-        print(2)
+
         await self.__init_process()
         await self.__init_workers()
-        print(3)
+
         await self.__register_limit_args()
         print(4)
         processes: list[SpawnProcess] = []
