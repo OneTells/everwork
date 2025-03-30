@@ -69,13 +69,13 @@ class Manager:
     def __create_process(self, index: int, process_data: Process) -> SpawnProcess:
         process = SpawnProcess(
             target=ProcessWrapper.run,
-            args=(index, process_data.model_dump(), self.__redis_settings.model_dump()),
-            # kwargs={
-            #     'index': index,
-            #     'process_data': process_data.model_dump(),
-            #     'redis_settings': self.__redis_settings.model_dump()
-            # },
-            # daemon=True
+            kwargs={
+                'index': index,
+                'process_data': process_data.model_dump(),
+                'redis_settings': self.__redis_settings.model_dump()
+            },
+            daemon=True,
+            name=f'process:{index}'
         )
         print(process)
         process.start()
