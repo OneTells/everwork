@@ -2,6 +2,7 @@ import asyncio
 import multiprocessing
 import signal
 import time
+from pprint import pprint
 
 from orjson import dumps
 from redis.asyncio import Redis
@@ -33,6 +34,15 @@ class Manager:
                 keys.append(f'worker:{worker.settings().name}:is_worker_on')
 
         response = await self.__redis.mget(keys)
+
+        print(
+            keys, response
+        )
+
+        pprint(
+            {key: 0 for key, is_worker_on in zip(keys, response) if is_worker_on is None}
+        )
+
         await self.__redis.mset({key: 0 for key, is_worker_on in zip(keys, response) if is_worker_on is None})
 
     async def __register_limit_args(self):
