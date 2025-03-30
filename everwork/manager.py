@@ -73,9 +73,11 @@ class Manager:
                 'process_data': process_data,
                 'redis_settings': self.__redis_settings
             },
-            daemon=True
+            # daemon=True
         )
+        print(process)
         process.start()
+        print(9999)
         return process
 
     async def run(self):
