@@ -43,6 +43,7 @@ class RedisSettings(BaseModel):
     password: Annotated[str, Field()]
     db: Annotated[str | int, Field()]
     protocol: Annotated[int, Field(ge=1, le=3, default=3)]
+    decode_responses: Annotated[bool, Field(default=True)]
 
 
 class ProcessState(BaseModel):
