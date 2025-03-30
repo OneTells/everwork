@@ -91,6 +91,7 @@ class Manager:
         processes: list[multiprocessing.Process] = []
 
         for index, process_data in enumerate(self.__processes_data):
+            print(7777)
             processes.append(self.__create_process(index, process_data))
         print(6)
         while True:
