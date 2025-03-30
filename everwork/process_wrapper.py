@@ -121,6 +121,7 @@ class ProcessWrapper:
 
     @classmethod
     def run(cls, index: int, process_data: dict[str, Any], redis_settings: dict[str, Any]) -> None:
+        print(11111)
         with asyncio.Runner(loop_factory=new_event_loop) as runner:
             runner.run(
                 cls(
