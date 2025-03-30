@@ -35,15 +35,12 @@ class Manager:
 
         response = await self.__redis.mget(keys)
 
-        print(
-            keys, response
-        )
+        value = {key: 0 for key, is_worker_on in zip(keys, response) if is_worker_on is None}
 
-        pprint(
-            {key: 0 for key, is_worker_on in zip(keys, response) if is_worker_on is None}
-        )
+        if not value:
+            return
 
-        await self.__redis.mset({key: 0 for key, is_worker_on in zip(keys, response) if is_worker_on is None})
+        await self.__redis.mset(value)
 
     async def __register_limit_args(self):
         pipeline = self.__redis.pipeline()
