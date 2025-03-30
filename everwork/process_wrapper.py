@@ -77,7 +77,7 @@ class ProcessWrapper:
                 worker_name: str = wrapper.worker.settings().name
 
                 worker_is_on: bool = await wrapper.check_worker_is_on()
-
+                print(2, worker_is_on)
                 if not worker_is_on:
                     continue
 
