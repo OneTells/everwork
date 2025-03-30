@@ -2,7 +2,6 @@ import asyncio
 import multiprocessing
 import signal
 import time
-from pprint import pprint
 
 from orjson import dumps
 from redis.asyncio import Redis

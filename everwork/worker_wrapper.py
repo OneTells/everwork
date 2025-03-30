@@ -25,6 +25,7 @@ class BaseWorkerWrapper(ABC):
             return False
 
         worker_is_on = await self._redis.get(f'worker:{self._worker.settings().name}:is_worker_on')
+        worker_is_on = bool(int(worker_is_on))
 
         if not worker_is_on:
             self._worker_sleep_end_time = time.time() + 60
