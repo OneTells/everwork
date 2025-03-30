@@ -1,6 +1,7 @@
 import asyncio
 import signal
 import time
+from typing import Any
 
 from loguru import logger
 from orjson import dumps
@@ -119,6 +120,12 @@ class ProcessWrapper:
         await self.__redis.close()
 
     @classmethod
-    def run(cls, index: int, process_data: Process, redis_settings: RedisSettings) -> None:
+    def run(cls, index: int, process_data: dict[str, Any], redis_settings: dict[str, Any]) -> None:
         with asyncio.Runner(loop_factory=new_event_loop) as runner:
-            runner.run(cls(index, process_data, redis_settings).__async_run())
+            runner.run(
+                cls(
+                    index,
+                    Process.model_validate(process_data),
+                    RedisSettings.model_validate(redis_settings)
+                ).__async_run()
+            )

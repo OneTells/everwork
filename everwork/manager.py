@@ -71,8 +71,8 @@ class Manager:
             target=ProcessWrapper.run,
             kwargs={
                 'index': index,
-                'process_data': process_data,
-                'redis_settings': self.__redis_settings
+                'process_data': process_data.model_dump(),
+                'redis_settings': self.__redis_settings.model_dump()
             },
             # daemon=True
         )
