@@ -1,20 +1,20 @@
 import asyncio
 import signal
 import time
-from typing import Any
+from contextlib import suppress
+from typing import Any, Callable, Awaitable
 
 from loguru import logger
-from orjson import dumps
 from pydantic import validate_call
 from redis.asyncio import Redis
 from uvloop import new_event_loop
 
-from everwork.process import Process, RedisSettings, Resources
-from everwork.utils import register_move_by_value_script, return_limit_args, cancel_event, remove_event, return_event, \
-    set_process_state
+from everwork.process import Process, RedisSettings
+from everwork.utils import register_move_by_value_script, return_limit_args, cancel_event, remove_event, set_error_event, \
+    set_process_state, push_event, get_is_worker_on, AwaitLock, CloseEvent
 from everwork.worker import TriggerMode, ExecutorMode, Event
 from everwork.worker_wrapper import TriggerWithQueueWorkerWrapper, ExecutorWorkerWrapper, ExecutorWithLimitArgsWorkerWrapper, \
-    TriggerWorkerWrapper
+    TriggerWorkerWrapper, BaseWorkerWrapper
 
 
 class ProcessWrapper:
@@ -25,108 +25,143 @@ class ProcessWrapper:
 
         self.__redis = Redis(**redis_settings.model_dump())
 
-        self.__is_closed = False
+        self.__lock = asyncio.Lock()
+        self.__script_sha = ''
+
+        self.__close_event = CloseEvent()
+        self.__tasks: list[tuple[asyncio.Task, AwaitLock]] = []
 
     def __set_closed_flag(self, *_):
-        self.__is_closed = True
+        self.__close_event.set()
+
+        for task, await_lock in self.__tasks:
+            if await_lock():
+                task.cancel()
+
+    async def __worker_task(self, function: Callable[..., Awaitable[list[Event] | None]], wrapper: BaseWorkerWrapper):
+        last_work_time = time.time()
+
+        with suppress(asyncio.CancelledError):
+            while not self.__close_event.get():
+                if time.time() - last_work_time > wrapper.settings.timeout.active_lifetime:
+                    delay = wrapper.settings.timeout.inactive
+                else:
+                    delay = wrapper.settings.timeout.active
+
+                with wrapper.await_lock:
+                    await asyncio.sleep(delay)
+
+                is_worker_on = await get_is_worker_on(self.__redis, wrapper.settings.name)
+
+                if not is_worker_on:
+                    with wrapper.await_lock:
+                        await asyncio.sleep(60)
+
+                    continue
+
+                resources = await wrapper.get_kwargs()
+
+                if resources.status == 'error':
+                    await set_error_event(self.__redis, self.__script_sha, wrapper.settings.name, resources.event)
+                    await return_limit_args(self.__redis, self.__script_sha, wrapper.settings.name, resources.limit_args)
+                    continue
+
+                if (
+                    resources.status == 'cancel'
+                    or self.__close_event.get()
+                    or not (await get_is_worker_on(self.__redis, wrapper.settings.name))
+                ):
+                    await cancel_event(self.__redis, self.__script_sha, wrapper.settings.name, resources.event)
+                    await return_limit_args(self.__redis, self.__script_sha, wrapper.settings.name, resources.limit_args)
+                    continue
+
+                async with self.__lock:
+                    logger.debug(f'{wrapper.settings.name} принял ивент на обработку')
+
+                    await set_process_state(self.__redis, self.__index, time.time() + wrapper.settings.timeout_reset)
+
+                    pipeline = self.__redis.pipeline()
+
+                    try:
+                        events = await function(**resources.kwargs)
+                    except Exception as error:
+                        logger.exception(f'Ошибка при выполнении {wrapper.settings.name}: {error}')
+                        await set_error_event(self.__redis, self.__script_sha, wrapper.settings.name, resources.event)
+                    else:
+                        logger.debug(f'{wrapper.settings.name} успешно обработал ивент')
+
+                        for event in (events or []):
+                            await push_event(pipeline, event)
+
+                        await remove_event(pipeline, wrapper.settings.name, resources.event)
+
+                    await set_process_state(pipeline, self.__index, None)
+                    await pipeline.execute()
+
+                    await return_limit_args(self.__redis, self.__script_sha, wrapper.settings.name, resources.limit_args)
+                    logger.debug(f'{wrapper.settings.name} успешно обработал ресурсы')
+
+                last_work_time = time.time()
 
     async def __async_run(self) -> None:
+        names = ', '.join(e.settings().name for e in self.__process_data.workers)
+        logger.info(f'Процесс запущен. Состав: {names}')
+
         signal.signal(signal.SIGINT, signal.SIG_IGN)
         signal.signal(signal.SIGTERM, self.__set_closed_flag)
 
-        move_by_value_script_sha = await register_move_by_value_script(self.__redis)
+        self.__script_sha = await register_move_by_value_script(self.__redis)
+        logger.debug('Скрипт перемещения успешно зарегистрирован')
 
-        wrappers = []
-        function_wrappers = []
+        wrappers: list[BaseWorkerWrapper] = []
+        function_wrappers: list[Callable[..., Awaitable[list[Event] | None]]] = []
 
         for worker in self.__process_data.workers:
-            if isinstance(worker.settings().mode, TriggerMode):
-                if worker.settings().mode.with_queue_events:
+            settings = worker.settings()
+
+            if isinstance(settings.mode, TriggerMode):
+                if settings.mode.with_queue_events:
                     worker_wrapper = TriggerWithQueueWorkerWrapper
                 else:
                     worker_wrapper = TriggerWorkerWrapper
-            elif isinstance(worker.settings().mode, ExecutorMode):
-                if worker.settings().mode.limited_args is None:
+            elif isinstance(settings.mode, ExecutorMode):
+                if settings.mode.limited_args is None:
                     worker_wrapper = ExecutorWorkerWrapper
                 else:
                     worker_wrapper = ExecutorWithLimitArgsWorkerWrapper
             else:
-                raise ValueError(f'Неизвестный worker mode: {worker.settings().mode}')
+                raise ValueError(f'Неизвестный worker mode: {settings.mode}')
 
             worker_object = worker()
 
-            wrappers.append(worker_wrapper(self.__redis, worker_object))
+            wrappers.append(worker_wrapper(self.__redis, worker_object, AwaitLock(self.__close_event)))
             function_wrappers.append(validate_call(validate_return=True)(worker_object.__call__))
+
+        logger.debug('Worker wrappers, worker functions успешно созданы')
 
         for wrapper in wrappers:
             await wrapper.worker.startup()
 
-        last_work_time = 0
+        logger.debug('Worker startup успешно запущены')
 
-        while True:
-            print(2323)
+        for function, wrapper in zip(function_wrappers, wrappers):
+            self.__tasks.append((asyncio.create_task(self.__worker_task(function, wrapper)), wrapper.await_lock))
 
-            if time.time() > last_work_time + self.__process_data.timeout.active_lifetime:
-                delay = self.__process_data.timeout.inactive
-            else:
-                delay = self.__process_data.timeout.active
-
-            print(555)
-            await asyncio.sleep(delay)
-
-            if self.__is_closed:
-                break
-
-            for function_wrapper, wrapper in zip(function_wrappers, wrappers):
-                worker_name: str = wrapper.worker.settings().name
-
-                worker_is_on: bool = await wrapper.check_worker_is_on()
-                print(2, worker_is_on)
-                if not worker_is_on:
-                    continue
-
-                resources: Resources = await wrapper.get_kwargs()
-
-                if resources.kwargs is None:
-                    await cancel_event(self.__redis, move_by_value_script_sha, worker_name, resources.event)
-                    await return_limit_args(self.__redis, move_by_value_script_sha, worker_name, resources.limit_args)
-                    continue
-
-                await set_process_state(self.__redis, self.__index, time.time() + wrapper.worker.settings().timeout_reset)
-
-                pipeline = self.__redis.pipeline()
-
-                try:
-                    events: list[Event] | None = await function_wrapper(**resources.kwargs)
-                except Exception as error:
-                    logger.exception(f'Ошибка при выполнении {worker_name}: {error}')
-                    await return_event(pipeline, move_by_value_script_sha, worker_name, resources.event)
-                else:
-                    for event in (events or []):
-                        await pipeline.rpush(f'worker:{event.target}:events', dumps(event))
-
-                    await remove_event(pipeline, worker_name, resources.event)
-
-                await return_limit_args(pipeline, move_by_value_script_sha, worker_name, resources.limit_args)
-                await set_process_state(pipeline, self.__index, None)
-
-                await pipeline.execute()
-
-                last_work_time = time.time()
+        await asyncio.gather(*map(lambda x: x[0], self.__tasks))
 
         for wrapper in wrappers:
             await wrapper.worker.shutdown()
 
+        logger.debug('Worker shutdown успешно запущены')
+
         await self.__redis.close()
 
+        logger.info(f'Процесс завершен. Состав: {names}')
+
     @classmethod
-    def run(cls, index: int, process_data: dict[str, Any], redis_settings: dict[str, Any]) -> None:
-        print(11111)
-        with asyncio.Runner(loop_factory=new_event_loop) as runner:
-            runner.run(
-                cls(
-                    index,
-                    Process.model_validate(process_data),
-                    RedisSettings.model_validate(redis_settings)
-                ).__async_run()
-            )
+    def run(cls, index: int, data: dict[str, Any], redis_settings: dict[str, Any]) -> None:
+        try:
+            with asyncio.Runner(loop_factory=new_event_loop) as runner:
+                runner.run(cls(index, Process.model_validate(data), RedisSettings.model_validate(redis_settings)).__async_run())
+        except Exception as error:
+            logger.exception(f'Процесс неожиданно завершился: {error}')

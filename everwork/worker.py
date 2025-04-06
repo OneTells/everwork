@@ -4,6 +4,12 @@ from typing import Any, Annotated
 from pydantic import BaseModel, Field
 
 
+class Timeout(BaseModel):
+    inactive: Annotated[float, Field(ge=0, default=5)]
+    active: Annotated[float, Field(ge=0, default=0.01)]
+    active_lifetime: Annotated[float, Field(ge=0, default=10)]
+
+
 class ExecutorMode(BaseModel):
     limited_args: Annotated[list[dict[str, Any]] | None, Field(default=None)]
 
@@ -15,9 +21,10 @@ class TriggerMode(BaseModel):
 
 class Settings(BaseModel):
     name: Annotated[str, Field()]
+    timeout: Annotated[Timeout, Field(default_factory=Timeout)]
+    timeout_reset: Annotated[float, Field(gt=0, default=180)]
 
     mode: Annotated[ExecutorMode | TriggerMode, Field()]
-    timeout_reset: Annotated[float, Field(gt=0, default=180)]
 
 
 class Event(BaseModel):

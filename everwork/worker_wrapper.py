@@ -1,37 +1,24 @@
+import asyncio
 import time
 from abc import ABC, abstractmethod
 
-from orjson import loads
+from loguru import logger
+from orjson import loads, JSONDecodeError
 from redis.asyncio import Redis
 
 from everwork.process import Resources
+from everwork.utils import AwaitLock
 from everwork.worker import BaseWorker
 
 
 class BaseWorkerWrapper(ABC):
 
-    def __init__(self, redis: Redis, worker: BaseWorker):
+    def __init__(self, redis: Redis, worker: BaseWorker, await_lock: AwaitLock):
         self._redis = redis
-        self._worker = worker
+        self.await_lock = await_lock
 
-        self._worker_sleep_end_time = 0
-
-    @property
-    def worker(self) -> BaseWorker:
-        return self._worker
-
-    async def check_worker_is_on(self) -> bool:
-        if time.time() < self._worker_sleep_end_time:
-            return False
-
-        worker_is_on = await self._redis.get(f'worker:{self._worker.settings().name}:is_worker_on')
-        worker_is_on = bool(int(worker_is_on))
-
-        if not worker_is_on:
-            self._worker_sleep_end_time = time.time() + 60
-            return False
-
-        return True
+        self.worker = worker
+        self.settings = self.worker.settings()
 
     @abstractmethod
     async def get_kwargs(self) -> Resources:
@@ -41,12 +28,12 @@ class BaseWorkerWrapper(ABC):
 class TriggerWorkerWrapper(BaseWorkerWrapper):
 
     async def get_kwargs(self) -> Resources:
-        last_time = await self._redis.get(f'worker:{self._worker.settings().name}:last_time')
+        last_time = await self._redis.get(f'worker:{self.settings.name}:last_time')
 
-        if last_time is not None and time.time() < float(last_time) + self._worker.settings().mode.timeout:
-            return Resources()
+        with self.await_lock:
+            await asyncio.sleep(max(self.settings.mode.timeout - (time.time() - float(last_time or 0)), 0))
 
-        await self._redis.set(f'worker:{self._worker.settings().name}:last_time', time.time())
+        await self._redis.set(f'worker:{self.settings.name}:last_time', time.time())
 
         return Resources(kwargs={})
 
@@ -54,20 +41,32 @@ class TriggerWorkerWrapper(BaseWorkerWrapper):
 class TriggerWithQueueWorkerWrapper(BaseWorkerWrapper):
 
     async def get_kwargs(self) -> Resources:
-        last_time = await self._redis.get(f'worker:{self._worker.settings().name}:last_time')
+        last_time = await self._redis.get(f'worker:{self.settings.name}:last_time')
 
-        if last_time is not None and time.time() < float(last_time) + self._worker.settings().mode.timeout:
-            event = await self._redis.lmove(
-                f'worker:{self._worker.settings().name}:events',
-                f'worker:{self._worker.settings().name}:taken_events'
-            )
+        now = time.time()
+        timeout = max(self.settings.mode.timeout - (now - float(last_time or 0)), 0)
 
-            if event is None:
-                return Resources()
+        if int(timeout) > 0:
+            with self.await_lock:
+                event = await self._redis.blmove(
+                    f'worker:{self.settings.name}:events',
+                    f'worker:{self.settings.name}:taken_events',
+                    timeout=int(timeout)
+                )
 
-            return Resources(kwargs={}, event=event)
+            if event is not None:
+                try:
+                    event_obj = loads(event)
+                except JSONDecodeError as error:
+                    logger.exception(f'Ошибка при преобразовании события: {error}')
+                    return Resources(event=event, status='error')
 
-        await self._redis.set(f'worker:{self._worker.settings().name}:last_time', time.time())
+                return Resources(kwargs=event_obj, event=event)
+
+        with self.await_lock:
+            await asyncio.sleep(timeout - (time.time() - now))
+
+        await self._redis.set(f'worker:{self.settings.name}:last_time', time.time())
 
         return Resources(kwargs={})
 
@@ -75,37 +74,49 @@ class TriggerWithQueueWorkerWrapper(BaseWorkerWrapper):
 class ExecutorWorkerWrapper(BaseWorkerWrapper):
 
     async def get_kwargs(self) -> Resources:
-        event = await self._redis.lmove(
-            f'worker:{self._worker.settings().name}:events',
-            f'worker:{self._worker.settings().name}:taken_events'
-        )
+        with self.await_lock:
+            event = await self._redis.blmove(
+                f'worker:{self.settings.name}:events',
+                f'worker:{self.settings.name}:taken_events',
+                timeout=0
+            )
 
-        if event is None:
-            return Resources()
+        try:
+            event_obj = loads(event)
+        except JSONDecodeError as error:
+            logger.exception(f'Ошибка при преобразовании события: {error}')
+            return Resources(event=event, status='error')
 
-        return Resources(kwargs=loads(event), event=event)
+        return Resources(kwargs=event_obj, event=event)
 
 
 class ExecutorWithLimitArgsWorkerWrapper(BaseWorkerWrapper):
 
     async def get_kwargs(self) -> Resources:
-        event = await self._redis.lmove(
-            f'worker:{self._worker.settings().name}:events',
-            f'worker:{self._worker.settings().name}:taken_events'
-        )
+        with self.await_lock:
+            event = await self._redis.blmove(
+                f'worker:{self.settings.name}:events',
+                f'worker:{self.settings.name}:taken_events',
+                timeout=0
+            )
 
-        if event is None:
-            return Resources()
+        try:
+            event_obj = loads(event)
+        except JSONDecodeError as error:
+            logger.exception(f'Ошибка при преобразовании события: {error}')
+            return Resources(event=event, status='error')
 
-        limit_args = await self._redis.blmove(
-            f'worker:{self._worker.settings().name}:limit_args',
-            f'worker:{self._worker.settings().name}:taken_limit_args',
-            timeout=0
-        )
+        with self.await_lock:
+            limit_args = await self._redis.blmove(
+                f'worker:{self.settings.name}:limit_args',
+                f'worker:{self.settings.name}:taken_limit_args',
+                timeout=0
+            )
 
-        worker_is_on = await self.check_worker_is_on()
+        try:
+            limit_args_obj = loads(limit_args)
+        except JSONDecodeError as error:
+            logger.exception(f'Ошибка при преобразовании limit_args: {error}')
+            return Resources(event=event, limit_args=limit_args, status='error')
 
-        if not worker_is_on:
-            return Resources(event=event, limit_args=limit_args)
-
-        return Resources(kwargs=loads(event), event=event, limit_args=limit_args)
+        return Resources(kwargs=event_obj | limit_args_obj, event=event, limit_args=limit_args)

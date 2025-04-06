@@ -5,20 +5,12 @@ from pydantic import BaseModel, Field, model_validator
 from everwork.worker import BaseWorker, TriggerMode, ExecutorMode
 
 
-class Timeout(BaseModel):
-    inactive: Annotated[float, Field(ge=0, default=5)]
-    active: Annotated[float, Field(ge=0, default=0.5)]
-    active_lifetime: Annotated[float, Field(ge=0, default=60)]
-
-
 class Process(BaseModel):
     workers: Annotated[list[type[BaseWorker]], Field()]
-
     replicas: Annotated[int, Field(ge=1, default=1)]
-    timeout: Annotated[Timeout, Field(default_factory=Timeout)]
 
     @model_validator(mode='after')
-    def check_replicas(self) -> Self:
+    def validator(self) -> Self:
         if self.replicas == 1:
             if any(
                 isinstance(worker.settings().mode, ExecutorMode)
@@ -42,7 +34,7 @@ class RedisSettings(BaseModel):
     port: Annotated[int, Field()]
     password: Annotated[str, Field()]
     db: Annotated[str | int, Field()]
-    protocol: Annotated[int, Field(ge=1, le=3, default=3)]
+    protocol: Annotated[int, Field(ge=2, le=3, default=3)]
     decode_responses: Annotated[bool, Field(default=True)]
 
 
@@ -51,7 +43,7 @@ class ProcessState(BaseModel):
     end_time: Annotated[float | None, Field()]
 
     @model_validator(mode='after')
-    def check_replicas(self) -> Self:
+    def validator(self) -> Self:
         if self.status == 'waiting' and self.end_time is not None:
             raise ValueError('В статусе waiting поле end_time должно быть None')
 
@@ -65,3 +57,17 @@ class Resources(BaseModel):
     kwargs: Annotated[dict[str, Any] | None, Field(default=None)]
     event: Annotated[str | None, Field(default=None)]
     limit_args: Annotated[str | None, Field(default=None)]
+
+    status: Annotated[Literal['success', 'cancel', 'error'], Field(default='success')]
+
+
+def check_worker_names(processes: list[Process]) -> list[Process]:
+    worker_names = []
+
+    for process in processes:
+        worker_names += [worker.settings().name for worker in process.workers]
+
+    if len(worker_names) != len(set(worker_names)):
+        raise ValueError('Все имена workers должны быть уникальны')
+
+    return processes

@@ -1,28 +1,37 @@
 import asyncio
-import multiprocessing
 import signal
 import time
+from contextlib import suppress
 from multiprocessing.context import SpawnProcess
+from typing import Annotated
 
+from loguru import logger
 from orjson import dumps
+from pydantic import validate_call, AfterValidator
 from redis.asyncio import Redis
 
-from everwork.process import Process, RedisSettings, ProcessState
+from everwork.process import Process, RedisSettings, ProcessState, check_worker_names
 from everwork.process_wrapper import ProcessWrapper
+from everwork.utils import get_worker_parameters, CloseEvent, AwaitLock
 from everwork.worker import ExecutorMode
 
-def f():
-    print(112)
 
 class Manager:
 
-    def __init__(self, redis_settings: RedisSettings, processes: list[Process]):
+    @validate_call
+    def __init__(self, redis_settings: RedisSettings, processes: Annotated[list[Process], AfterValidator(check_worker_names)]):
         self.__redis_settings = redis_settings
-        self.__processes_data = processes
-
         self.__redis = Redis(**redis_settings.model_dump())
 
-        self.__is_closed = False
+        self.__processes_data = []
+
+        for process in processes:
+            self.__processes_data += [process] * process.replicas
+
+        self.__processes: list[SpawnProcess] = []
+
+        self.__close_event = CloseEvent()
+        self.__tasks: list[tuple[asyncio.Task, AwaitLock]] = []
 
     async def __init_process(self):
         default_state = ProcessState(status='waiting', end_time=None).model_dump_json()
@@ -57,6 +66,7 @@ class Manager:
                 if mode.limited_args is None:
                     continue
 
+                await pipeline.delete(f'worker:{worker.settings().name}:taken_limit_args')
                 await pipeline.delete(f'worker:{worker.settings().name}:limit_args')
                 await pipeline.rpush(
                     f'worker:{worker.settings().name}:limit_args',
@@ -66,87 +76,116 @@ class Manager:
         await pipeline.execute()
 
     def __set_closed_flag(self, *_):
-        self.__is_closed = True
+        self.__close_event.set()
+
+        for task, await_lock in self.__tasks:
+            if await_lock():
+                task.cancel()
 
     def __create_process(self, index: int, process_data: Process) -> SpawnProcess:
-        # process = SpawnProcess(
-        #     target=ProcessWrapper.run,
-        #     kwargs={
-        #         'index': index,
-        #         'process_data': process_data.model_dump(),
-        #         'redis_settings': self.__redis_settings.model_dump()
-        #     },
-        #     daemon=True,
-        #     name=f'process:{index}'
-        # )
         process = SpawnProcess(
-            target=f,
-            # kwargs={
-            #     'index': index,
-            #     'process_data': process_data.model_dump(),
-            #     'redis_settings': self.__redis_settings.model_dump()
-            # },
-            # daemon=True,
-            name=f'process:{index}'
+            target=ProcessWrapper.run,
+            kwargs={
+                'index': index,
+                'data': process_data.model_dump(),
+                'redis_settings': self.__redis_settings.model_dump()
+            },
+            daemon=True
         )
-        print(process)
         process.start()
-        print(9999)
         return process
 
+    async def __process_task(self, index: int, await_lock: AwaitLock):
+        process = self.__processes[index]
+        process_data = self.__processes_data[index]
+
+        names = ', '.join(e.settings().name for e in process_data.workers)
+        max_timeout_reset = max(worker.settings().timeout_reset for worker in process_data.workers)
+
+        key = f'process:{index}:state'
+
+        with suppress(asyncio.CancelledError):
+            while not self.__close_event.get():
+                state = ProcessState.model_validate_json(
+                    await self.__redis.get(key)
+                )
+
+                if state.end_time is None:
+                    with await_lock:
+                        await asyncio.sleep(5)
+
+                    continue
+
+                if (timeout := state.end_time - time.time()) >= 0:
+                    with await_lock:
+                        await asyncio.sleep(timeout)
+
+                    continue
+
+                logger.warning(f'Начат перезапуск процесса. Состав: {names}')
+
+                process.terminate()
+                logger.debug(f'Отправлен сигнал SIGTERM процессу. Состав: {names}')
+
+                end_time = time.time() + max_timeout_reset
+
+                with await_lock:
+                    while True:
+                        if time.time() > end_time:
+                            break
+
+                        if not process.is_alive():
+                            break
+
+                        await asyncio.sleep(0.1)
+
+                if process.is_alive():
+                    process.kill()
+                    logger.warning(f'Отправлен сигнал SIGKILL процессу. Состав: {names}')
+
+                process.join()
+                process.close()
+
+                self.__processes[index] = self.__create_process(index, process_data)
+                await asyncio.sleep(0.1)
+
+                logger.warning(f'Завершен перезапуск процесса. Состав: {names}')
+
     async def run(self):
+        logger.info(await get_worker_parameters(self.__redis))
+
+        logger.info('Manager запушен')
+
         signal.signal(signal.SIGINT, self.__set_closed_flag)
         signal.signal(signal.SIGTERM, self.__set_closed_flag)
 
         await self.__init_process()
         await self.__init_workers()
-
         await self.__register_limit_args()
-        print(4)
-        processes: list[SpawnProcess] = []
+
+        logger.info('Процессы, workers, limit args инициализированы')
+
+        logger.info('Начато создание процессов')
 
         for index, process_data in enumerate(self.__processes_data):
-            print(7777)
-            processes.append(self.__create_process(index, process_data))
-        print(6)
-        while True:
-            if self.__is_closed:
-                break
+            self.__processes.append(self.__create_process(index, process_data))
 
-            for index, (process_data, process) in enumerate(zip(self.__processes_data, processes)):
-                state = ProcessState.model_validate_json(
-                    await self.__redis.get(f'process:{index}:state')
-                )
+        await asyncio.sleep(0.1)
 
-                if state.status != 'running':
-                    continue
+        logger.info('Закончено создание процессов')
 
-                if state.end_time is not None and time.time() < state.end_time:
-                    continue
+        for index in range(len(self.__processes)):
+            await_lock = AwaitLock(self.__close_event)
+            self.__tasks.append((asyncio.create_task(self.__process_task(index, await_lock)), await_lock))
 
-                process.terminate()
+        await asyncio.gather(*map(lambda x: x[0], self.__tasks))
 
-                end_time = time.time() + max(
-                    worker.settings().timeout_reset for worker in process_data.workers
-                )
+        logger.info('Manager начал процесс завершения')
 
-                while True:
-                    if time.time() > end_time:
-                        break
-
-                    if not process.is_alive():
-                        break
-
-                    await asyncio.sleep(0.1)
-
-                process.kill()
-                process.join()
-                process.close()
-
-                processes[index] = self.__create_process(index, process_data)
-
-        for process in processes:
+        for process in self.__processes:
             process.terminate()
+
+        logger.debug('Процессам послан сигнал SIGTERM')
 
         end_time = time.time() + max(
             max(worker.settings().timeout_reset for worker in process.workers) for process in self.__processes_data
@@ -154,20 +193,28 @@ class Manager:
 
         while True:
             if time.time() > end_time:
+                logger.warning('Процессы не успели завершиться')
                 break
 
-            if all(not process.is_alive() for process in processes):
+            if all(not process.is_alive() for process in self.__processes):
+                logger.debug('Процессы успешно завершились')
                 break
 
             await asyncio.sleep(0.1)
 
-        for process in processes:
+        for process in self.__processes:
             process.kill()
 
-        for process in processes:
+        logger.debug('Процессам послан сигнал SIGKILL')
+
+        for process in self.__processes:
             process.join()
 
-        for process in processes:
+        for process in self.__processes:
             process.close()
 
+        logger.debug('Процессы закрыты')
+
         await self.__redis.close()
+
+        logger.info('Manager завершен')
