@@ -9,9 +9,9 @@ from orjson import dumps
 from pydantic import validate_call, AfterValidator
 from redis.asyncio import Redis
 
-from everwork.process import Process, RedisSettings, check_worker_names
+from everwork.process import Process, RedisSettings, check_worker_names, ProcessState
 from everwork.process_wrapper import ProcessWrapper
-from everwork.utils import get_worker_parameters, CloseEvent, AwaitLock
+from everwork.utils import get_worker_parameters, CloseEvent, AwaitLock, register_move_by_value_script, register_set_state_script
 from everwork.worker import ExecutorMode
 
 
@@ -32,14 +32,10 @@ class Manager:
         self.__close_event = CloseEvent()
         self.__tasks: list[tuple[asyncio.Task, AwaitLock]] = []
 
+        self.__scripts: dict[str, str] = {}
+
     async def __init_process(self):
-        values = []
-
-        for index in range(len(self.__processes_data)):
-            values.append(f'process:{index}:state:running')
-            values.append(f'process:{index}:state:wait')
-
-        await self.__redis.delete(*values)
+        await self.__redis.delete(*(f'process:{index}:state' for index in range(len(self.__processes_data))))
 
     async def __init_workers(self):
         keys = []
@@ -92,7 +88,8 @@ class Manager:
             kwargs={
                 'index': index,
                 'data': process_data.model_dump(),
-                'redis_settings': self.__redis_settings.model_dump()
+                'redis_settings': self.__redis_settings.model_dump(),
+                'scripts': self.__scripts
             },
             daemon=True
         )
@@ -100,22 +97,24 @@ class Manager:
         return process
 
     async def __process_task(self, index: int, await_lock: AwaitLock):
-        process = self.__processes[index]
         process_data = self.__processes_data[index]
-
         names = ', '.join(e.settings().name for e in process_data.workers)
-        max_timeout_reset = max(worker.settings().timeout_reset for worker in process_data.workers)
 
         tasks: dict[str, asyncio.Task] = {}
 
         try:
             while not self.__close_event.get():
                 with await_lock:
-                    data = await self.__redis.brpop([f'process:{index}:state:running'])
+                    data = await self.__redis.brpop([f'process:{index}:state'])
+
+                state = ProcessState.model_validate_json(data[1])
+
+                if state.status == 'waiting':
+                    continue
 
                 tasks |= {
-                    'timeout': asyncio.create_task(asyncio.sleep(time.time() - data[0]['end_time'])),
-                    'wait_complete': asyncio.create_task(self.__redis.brpop([f'process:{index}:state:wait'])),
+                    'timeout': asyncio.create_task(asyncio.sleep(state.end_time - time.time())),
+                    'wait_complete': asyncio.create_task(self.__redis.brpop([f'process:{index}:state'])),
                 }
 
                 with await_lock:
@@ -132,27 +131,27 @@ class Manager:
 
                 logger.warning(f'Начат перезапуск процесса. Состав: {names}')
 
-                process.terminate()
+                self.__processes[index].terminate()
                 logger.debug(f'Отправлен сигнал SIGTERM процессу. Состав: {names}')
 
-                end_time = time.time() + max_timeout_reset
+                end_time = time.time() + 3
 
                 with await_lock:
                     while True:
                         if time.time() > end_time:
                             break
 
-                        if not process.is_alive():
+                        if not self.__processes[index].is_alive():
                             break
 
                         await asyncio.sleep(0.1)
 
-                if process.is_alive():
-                    process.kill()
+                if self.__processes[index].is_alive():
+                    self.__processes[index].kill()
                     logger.warning(f'Отправлен сигнал SIGKILL процессу. Состав: {names}')
 
-                process.join()
-                process.close()
+                self.__processes[index].join()
+                self.__processes[index].close()
 
                 self.__processes[index] = self.__create_process(index, process_data)
                 await asyncio.sleep(0.1)
@@ -174,6 +173,10 @@ class Manager:
 
         signal.signal(signal.SIGINT, self.__set_closed_flag)
         signal.signal(signal.SIGTERM, self.__set_closed_flag)
+
+        self.__scripts['move_by_value'] = await register_move_by_value_script(self.__redis)
+        self.__scripts['set_state'] = await register_set_state_script(self.__redis)
+        logger.debug('Скрипты успешно зарегистрированы')
 
         await self.__init_process()
         await self.__init_workers()

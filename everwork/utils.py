@@ -27,6 +27,18 @@ async def register_move_by_value_script(redis: Redis) -> str:
     )
 
 
+async def register_set_state_script(redis: Redis) -> str:
+    return await redis.script_load(
+        """
+        local key = KEYS[1]
+        local value = ARGV[1]
+
+        redis.call("DEL", key)
+        redis.call("LPUSH", key, value)
+        """
+    )
+
+
 async def return_limit_args(redis: Redis, script_sha: str, worker_name: str, raw_value: str | None) -> None:
     if raw_value is None:
         return None
