@@ -9,7 +9,7 @@ from orjson import dumps
 from pydantic import validate_call, AfterValidator
 from redis.asyncio import Redis
 
-from everwork.process import Process, RedisSettings, ProcessState, check_worker_names
+from everwork.process import Process, RedisSettings, check_worker_names
 from everwork.process_wrapper import ProcessWrapper
 from everwork.utils import get_worker_parameters, CloseEvent, AwaitLock
 from everwork.worker import ExecutorMode
@@ -33,8 +33,13 @@ class Manager:
         self.__tasks: list[tuple[asyncio.Task, AwaitLock]] = []
 
     async def __init_process(self):
-        default_state = ProcessState(status='waiting', end_time=None).model_dump_json()
-        await self.__redis.mset({f'process:{index}:state': default_state for index in range(len(self.__processes_data))})
+        values = []
+
+        for index in range(len(self.__processes_data)):
+            values.append(f'process:{index}:state:running')
+            values.append(f'process:{index}:state:wait')
+
+        await self.__redis.delete(*values)
 
     async def __init_workers(self):
         keys = []
@@ -101,25 +106,29 @@ class Manager:
         names = ', '.join(e.settings().name for e in process_data.workers)
         max_timeout_reset = max(worker.settings().timeout_reset for worker in process_data.workers)
 
-        key = f'process:{index}:state'
+        tasks: dict[str, asyncio.Task] = {}
 
         try:
             while not self.__close_event.get():
-                state = ProcessState.model_validate_json(
-                    await self.__redis.get(key)
-                )
+                with await_lock:
+                    data = await self.__redis.brpop([f'process:{index}:state:running'])
 
-                if state.end_time is None:
-                    with await_lock:
-                        await asyncio.sleep(5)
+                tasks |= {
+                    'timeout': asyncio.create_task(asyncio.sleep(time.time() - data[0]['end_time'])),
+                    'wait_complete': asyncio.create_task(self.__redis.brpop([f'process:{index}:state:wait'])),
+                }
+
+                with await_lock:
+                    await asyncio.wait(tasks.values(), return_when=asyncio.FIRST_COMPLETED)
+
+                if tasks['wait_complete'].done():
+                    if not tasks['timeout'].done():
+                        tasks['timeout'].cancel()
 
                     continue
 
-                if (timeout := state.end_time - time.time()) >= 0:
-                    with await_lock:
-                        await asyncio.sleep(min(timeout, 5))
-
-                    continue
+                if not tasks['wait_complete'].done():
+                    tasks['wait_complete'].cancel()
 
                 logger.warning(f'Начат перезапуск процесса. Состав: {names}')
 
@@ -153,6 +162,10 @@ class Manager:
             pass
         except Exception as error:
             logger.exception(f'Проверка процесса неожиданно завершилась. Состав: {names}. {error}')
+
+        for task in tasks.values():
+            if not task.done():
+                task.cancel()
 
     async def run(self):
         logger.info(await get_worker_parameters(self.__redis))

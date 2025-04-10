@@ -5,13 +5,14 @@ from contextlib import suppress
 from typing import Any, Callable, Awaitable
 
 from loguru import logger
+from orjson import dumps
 from pydantic import validate_call
 from redis.asyncio import Redis
 from uvloop import new_event_loop
 
 from everwork.process import Process, RedisSettings
 from everwork.utils import register_move_by_value_script, return_limit_args, cancel_event, remove_event, set_error_event, \
-    set_process_state, push_event, get_is_worker_on, AwaitLock, CloseEvent
+    push_event, get_is_worker_on, AwaitLock, CloseEvent
 from everwork.worker import TriggerMode, ExecutorMode, Event
 from everwork.worker_wrapper import TriggerWithQueueWorkerWrapper, ExecutorWorkerWrapper, ExecutorWithLimitArgsWorkerWrapper, \
     TriggerWorkerWrapper, BaseWorkerWrapper
@@ -78,9 +79,12 @@ class ProcessWrapper:
                 async with self.__lock:
                     logger.debug(f'{wrapper.settings.name} принял ивент на обработку')
 
-                    await set_process_state(self.__redis, self.__index, time.time() + wrapper.settings.timeout_reset)
+                    state = dumps({'end_time': time.time() + wrapper.settings.timeout_reset}).decode()
 
                     pipeline = self.__redis.pipeline()
+                    await pipeline.lset(f'process:{self.__index}:state:running', 0, state)
+                    await pipeline.delete(f'process:{self.__index}:state:wait')
+                    await pipeline.execute()
 
                     try:
                         events = await function(**resources.kwargs)
@@ -90,12 +94,16 @@ class ProcessWrapper:
                     else:
                         logger.debug(f'{wrapper.settings.name} успешно обработал ивент')
 
-                        for event in (events or []):
+                        pipeline = self.__redis.pipeline()
+                        for event in events:
                             await push_event(pipeline, event)
+                        await pipeline.execute()
 
-                        await remove_event(pipeline, wrapper.settings.name, resources.event)
+                        await remove_event(self.__redis, wrapper.settings.name, resources.event)
 
-                    await set_process_state(pipeline, self.__index, None)
+                    pipeline = self.__redis.pipeline()
+                    await pipeline.lset(f'process:{self.__index}:state:wait', 0, '')
+                    await pipeline.delete(f'process:{self.__index}:state:running')
                     await pipeline.execute()
 
                     await return_limit_args(self.__redis, self.__script_sha, wrapper.settings.name, resources.limit_args)

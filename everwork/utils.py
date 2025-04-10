@@ -4,7 +4,6 @@ from loguru import logger
 from orjson import dumps
 from redis.asyncio import Redis
 
-from everwork.process import ProcessState
 from everwork.worker import Event
 
 
@@ -62,7 +61,12 @@ async def remove_event(redis: Redis, worker_name: str, raw_value: str | None) ->
     if raw_value is None:
         return None
 
-    await redis.lrem(f'worker:{worker_name}:taken_events', 1, raw_value)
+    value = await redis.lrem(f'worker:{worker_name}:taken_events', 1, raw_value)
+
+    if int(value) == 1:
+        return None
+
+    logger.warning(f'Невозможно удалить событие {raw_value} в {worker_name}')
 
 
 async def set_error_event(redis: Redis, script_sha: str, worker_name: str, raw_value: str | None) -> None:
@@ -79,13 +83,6 @@ async def set_error_event(redis: Redis, script_sha: str, worker_name: str, raw_v
         return None
 
     logger.warning(f'Невозможно поместить событие {raw_value} в ошибки в {worker_name}')
-
-
-async def set_process_state(redis: Redis, index: int, end_time: float | None) -> None:
-    await redis.set(
-        f'process:{index}:state',
-        ProcessState(status='waiting' if end_time is None else 'running', end_time=end_time).model_dump_json()
-    )
 
 
 async def push_event(redis: Redis, event: Event) -> None:
