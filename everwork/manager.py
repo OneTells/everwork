@@ -1,7 +1,6 @@
 import asyncio
 import signal
 import time
-from contextlib import suppress
 from multiprocessing.context import SpawnProcess
 from typing import Annotated
 
@@ -104,7 +103,7 @@ class Manager:
 
         key = f'process:{index}:state'
 
-        with suppress(asyncio.CancelledError):
+        try:
             while not self.__close_event.get():
                 state = ProcessState.model_validate_json(
                     await self.__redis.get(key)
@@ -118,7 +117,7 @@ class Manager:
 
                 if (timeout := state.end_time - time.time()) >= 0:
                     with await_lock:
-                        await asyncio.sleep(timeout)
+                        await asyncio.sleep(min(timeout, 5))
 
                     continue
 
@@ -150,6 +149,10 @@ class Manager:
                 await asyncio.sleep(0.1)
 
                 logger.warning(f'Завершен перезапуск процесса. Состав: {names}')
+        except asyncio.CancelledError:
+            pass
+        except Exception as error:
+            logger.exception(f'Проверка процесса неожиданно завершилась. Состав: {names}. {error}')
 
     async def run(self):
         logger.info(await get_worker_parameters(self.__redis))

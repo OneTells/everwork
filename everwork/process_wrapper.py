@@ -160,8 +160,11 @@ class ProcessWrapper:
 
     @classmethod
     def run(cls, index: int, data: dict[str, Any], redis_settings: dict[str, Any]) -> None:
+        process_data = Process.model_validate(data)
+
         try:
             with asyncio.Runner(loop_factory=new_event_loop) as runner:
-                runner.run(cls(index, Process.model_validate(data), RedisSettings.model_validate(redis_settings)).__async_run())
+                runner.run(cls(index, process_data, RedisSettings.model_validate(redis_settings)).__async_run())
         except Exception as error:
-            logger.exception(f'Процесс неожиданно завершился: {error}')
+            names = ', '.join(e.settings().name for e in process_data.workers)
+            logger.exception(f'Процесс неожиданно завершился. Состав: {names}. {error}')
