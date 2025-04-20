@@ -3,7 +3,7 @@ from .process import Process, RedisSettings
 from .utils import push_event, get_worker_parameters, timer
 from .worker import BaseWorker, Settings, Event, TriggerMode, ExecutorMode, Timeout
 
-__version__ = "2.1.0"
+__version__ = "2.1.1"
 
 __all__ = (
     '__version__',
