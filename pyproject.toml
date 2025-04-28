@@ -1,18 +1,18 @@
-[tool.poetry]
+[project]
 name = "everwork"
-description = "For working with workers"
-version = "2.1.2"
-packages = [{ include = "everwork" }]
+version = "2.1.4"
 
-[tool.poetry.dependencies]
-python = ">=3.12,<4.0"
-hiredis = "~3.1.0"
-loguru = "~0.7.3"
-orjson = "~3.10.16"
-pydantic = "~2.11.1"
-redis = "~5.2.1"
-uvloop = "~0.21.0"
+requires-python = ">=3.12,<4.0"
+
+dependencies = [
+    "hiredis~=3.1.0",
+    "loguru~=0.7.3",
+    "orjson~=3.10.16",
+    "pydantic~=2.11.1",
+    "redis~=5.2.1",
+    "uvloop~=0.21.0"
+]
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
