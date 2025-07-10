@@ -7,7 +7,6 @@ from typing import Any, Callable, Awaitable
 from loguru import logger
 from pydantic import validate_call
 from redis.asyncio import Redis
-from uvloop import new_event_loop
 
 from everwork.process import Process, RedisSettings, ProcessState
 from everwork.utils import return_limit_args, cancel_event, remove_event, set_error_event, \
@@ -15,6 +14,11 @@ from everwork.utils import return_limit_args, cancel_event, remove_event, set_er
 from everwork.worker import TriggerMode, ExecutorMode, Event
 from everwork.worker_wrapper import TriggerWithQueueWorkerWrapper, ExecutorWorkerWrapper, ExecutorWithLimitArgsWorkerWrapper, \
     TriggerWorkerWrapper, BaseWorkerWrapper
+
+try:
+    from uvloop import new_event_loop
+except ImportError:
+    from asyncio import new_event_loop
 
 
 class ProcessWrapper:

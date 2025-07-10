@@ -5,31 +5,31 @@ from pydantic import BaseModel, Field
 
 
 class Timeout(BaseModel):
-    inactive: Annotated[float, Field(ge=0, default=5)]
-    active: Annotated[float, Field(ge=0, default=0.01)]
-    active_lifetime: Annotated[float, Field(ge=0, default=10)]
+    inactive: Annotated[float, Field(ge=0)] = 5
+    active: Annotated[float, Field(ge=0)] = 0.01
+    active_lifetime: Annotated[float, Field(ge=0)] = 10
 
 
 class ExecutorMode(BaseModel):
-    limited_args: Annotated[list[dict[str, Any]] | None, Field(default=None)]
+    limited_args: list[dict[str, Any]] | None = None
 
 
 class TriggerMode(BaseModel):
     timeout: Annotated[float, Field(gt=0)]
-    with_queue_events: Annotated[bool, Field(default=False)]
+    with_queue_events: bool = False
 
 
 class Settings(BaseModel):
-    name: Annotated[str, Field()]
-    timeout: Annotated[Timeout, Field(default_factory=Timeout)]
-    timeout_reset: Annotated[float, Field(gt=0, default=180)]
+    name: str
+    timeout: Timeout = Field(default_factory=Timeout)
+    timeout_reset: Annotated[float, Field(gt=0)] = 180
 
-    mode: Annotated[ExecutorMode | TriggerMode, Field()]
+    mode: ExecutorMode | TriggerMode
 
 
 class Event(BaseModel):
-    target: Annotated[str, Field()]
-    kwargs: Annotated[dict[str, Any], Field(default_factory=dict)]
+    target: str
+    kwargs: dict[str, Any] = Field(default_factory=dict)
 
 
 class BaseWorker(ABC):

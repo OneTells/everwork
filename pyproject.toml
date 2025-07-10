@@ -1,14 +1,18 @@
 [project]
 name = "everwork"
-version = "2.1.6"
+version = "2.2.0"
 
 requires-python = ">=3.12,<4.0"
 
 dependencies = [
-    "hiredis~=3.1.0",
+    "hiredis~=3.2.1",
     "loguru~=0.7.3",
-    "orjson~=3.10.16",
-    "pydantic~=2.11.1",
-    "redis~=5.2.1",
-    "uvloop~=0.21.0"
+    "orjson~=3.10.18",
+    "pydantic~=2.11.7",
+    "redis~=6.2.0"
+]
+
+[dependency-groups]
+fast = [
+    "uvloop~=0.21.0 ; sys_platform == 'linux'"
 ]

@@ -6,8 +6,8 @@ from everwork.worker import BaseWorker, TriggerMode, ExecutorMode
 
 
 class Process(BaseModel):
-    workers: Annotated[list[type[BaseWorker]], Field()]
-    replicas: Annotated[int, Field(ge=1, default=1)]
+    workers: list[type[BaseWorker]]
+    replicas: Annotated[int, Field(ge=1)] = 1
 
     @model_validator(mode='after')
     def validator(self) -> Self:
@@ -30,17 +30,17 @@ class Process(BaseModel):
 
 
 class RedisSettings(BaseModel):
-    host: Annotated[str, Field()]
-    port: Annotated[int, Field()]
-    password: Annotated[str, Field()]
-    db: Annotated[str | int, Field()]
-    protocol: Annotated[int, Field(ge=2, le=3, default=3)]
-    decode_responses: Annotated[bool, Field(default=True)]
+    host: str
+    port: int
+    password: str
+    db: str | int
+    protocol: Annotated[int, Field(ge=2, le=3)] = 3
+    decode_responses: bool = True
 
 
 class ProcessState(BaseModel):
-    status: Annotated[Literal['waiting', 'running'], Field()]
-    end_time: Annotated[float | None, Field()]
+    status: Literal['waiting', 'running']
+    end_time: float | None
 
     @model_validator(mode='after')
     def validator(self) -> Self:
@@ -54,11 +54,11 @@ class ProcessState(BaseModel):
 
 
 class Resources(BaseModel):
-    kwargs: Annotated[dict[str, Any] | None, Field(default=None)]
-    event: Annotated[str | None, Field(default=None)]
-    limit_args: Annotated[str | None, Field(default=None)]
+    kwargs: dict[str, Any] | None = None
+    event: str | None = None
+    limit_args: str | None = None
 
-    status: Annotated[Literal['success', 'cancel', 'error'], Field(default='success')]
+    status: Literal['success', 'cancel', 'error'] = 'success'
 
 
 def check_worker_names(processes: list[Process]) -> list[Process]:

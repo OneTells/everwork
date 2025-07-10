@@ -112,6 +112,7 @@ class Manager:
                 if state.status == 'waiting':
                     continue
 
+                # noinspection PyTypeChecker
                 tasks |= {
                     'timeout': asyncio.create_task(asyncio.sleep(state.end_time - time.time())),
                     'wait_complete': asyncio.create_task(self.__redis.brpop([f'process:{index}:state'])),

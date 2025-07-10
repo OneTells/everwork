@@ -51,6 +51,7 @@ async def return_limit_args(redis: Redis, script_sha: str, worker_name: str, raw
         return None
 
     logger.warning(f'Невозможно вернуть {raw_value} в {worker_name}')
+    return None
 
 
 async def cancel_event(redis: Redis, script_sha: str, worker_name: str, raw_value: str | None) -> None:
@@ -67,6 +68,7 @@ async def cancel_event(redis: Redis, script_sha: str, worker_name: str, raw_valu
         return None
 
     logger.warning(f'Невозможно отменить событие {raw_value} в {worker_name}')
+    return None
 
 
 async def remove_event(redis: Redis, worker_name: str, raw_value: str | None) -> None:
@@ -79,6 +81,7 @@ async def remove_event(redis: Redis, worker_name: str, raw_value: str | None) ->
         return None
 
     logger.warning(f'Невозможно удалить событие {raw_value} в {worker_name}')
+    return None
 
 
 async def set_error_event(redis: Redis, script_sha: str, worker_name: str, raw_value: str | None) -> None:
@@ -95,6 +98,7 @@ async def set_error_event(redis: Redis, script_sha: str, worker_name: str, raw_v
         return None
 
     logger.warning(f'Невозможно поместить событие {raw_value} в ошибки в {worker_name}')
+    return None
 
 
 async def push_event(redis: Redis, event: Event) -> None:
