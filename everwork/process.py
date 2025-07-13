@@ -21,10 +21,10 @@ class Process(BaseModel):
             return self
 
         if any(isinstance(worker.settings().mode, TriggerMode) for worker in self.workers):
-            raise ValueError('Репликация работает только в режиме ExecutorMode')
+            raise ValueError('Репликация работает только с workers в режиме ExecutorMode')
 
         if len(self.workers) > 1:
-            raise ValueError('Репликация в режиме ExecutorMode не работает с несколькими worker')
+            raise ValueError('Репликация не работает с несколькими worker в режиме ExecutorMode')
 
         return self
 

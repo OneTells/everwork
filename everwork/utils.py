@@ -1,6 +1,5 @@
 import asyncio
 
-from loguru import logger
 from orjson import dumps
 from redis.asyncio import Redis
 
@@ -10,19 +9,12 @@ from everwork.worker import Event
 async def register_move_by_value_script(redis: Redis) -> str:
     return await redis.script_load(
         """
-        local value = ARGV[1]
         local source_list = KEYS[1]
         local destination_list = KEYS[2]
+        local value = ARGV[1]
     
-        local index = redis.call('LPOS', source_list, value)
-    
-        if index then
-            redis.call('LREM', source_list, 0, value)
-            redis.call('RPUSH', destination_list, value)
-            return 1
-        else
-            return 0
-        end
+        redis.call('LREM', source_list, 1, value)
+        redis.call('RPUSH', destination_list, value)
         """
     )
 
@@ -40,64 +32,33 @@ async def register_set_state_script(redis: Redis) -> str:
 
 
 async def return_limit_args(redis: Redis, script_sha: str, worker_name: str, raw_value: str | None) -> None:
-    if raw_value is None:
-        return None
+    if raw_value is not None:
+        await redis.evalsha(
+            script_sha, 2, f'worker:{worker_name}:taken_limit_args', f'worker:{worker_name}:limit_args', raw_value
+        )
 
-    value = await redis.evalsha(
-        script_sha, 2, f'worker:{worker_name}:taken_limit_args', f'worker:{worker_name}:limit_args', raw_value
-    )
-
-    if bool(int(value)):
-        return None
-
-    logger.warning(f'Невозможно вернуть {raw_value} в {worker_name}')
     return None
 
 
 async def cancel_event(redis: Redis, script_sha: str, worker_name: str, raw_value: str | None) -> None:
-    if raw_value is None:
-        return None
+    if raw_value is not None:
+        await redis.evalsha(
+            script_sha,
+            2, f'worker:{worker_name}:taken_events', f'worker:{worker_name}:events',
+            raw_value
+        )
 
-    value = await redis.evalsha(
-        script_sha,
-        2, f'worker:{worker_name}:taken_events', f'worker:{worker_name}:events',
-        raw_value
-    )
-
-    if bool(int(value)):
-        return None
-
-    logger.warning(f'Невозможно отменить событие {raw_value} в {worker_name}')
-    return None
-
-
-async def remove_event(redis: Redis, worker_name: str, raw_value: str | None) -> None:
-    if raw_value is None:
-        return None
-
-    value = await redis.lrem(f'worker:{worker_name}:taken_events', 1, raw_value)
-
-    if int(value) == 1:
-        return None
-
-    logger.warning(f'Невозможно удалить событие {raw_value} в {worker_name}')
     return None
 
 
 async def set_error_event(redis: Redis, script_sha: str, worker_name: str, raw_value: str | None) -> None:
-    if raw_value is None:
-        return None
+    if raw_value is not None:
+        await redis.evalsha(
+            script_sha,
+            2, f'worker:{worker_name}:taken_events', f'worker:{worker_name}:error_events',
+            raw_value
+        )
 
-    value = await redis.evalsha(
-        script_sha,
-        2, f'worker:{worker_name}:taken_events', f'worker:{worker_name}:error_events',
-        raw_value
-    )
-
-    if bool(int(value)):
-        return None
-
-    logger.warning(f'Невозможно поместить событие {raw_value} в ошибки в {worker_name}')
     return None
 
 
@@ -143,23 +104,23 @@ class CloseEvent:
         self.__is_close = True
 
 
-class AwaitLock:
+class SafeCancellationZone:
 
     def __init__(self, close_event: CloseEvent):
-        self.__is_await = False
+        self.__is_use = False
         self.__close_event = close_event
 
-    def __call__(self):
-        return self.__is_await
+    def is_use(self):
+        return self.__is_use
 
     def __enter__(self):
-        self.__is_await = True
+        self.__is_use = True
 
         if self.__close_event.get():
-            self.__is_await = False
+            self.__is_use = False
             raise asyncio.CancelledError()
 
         return self
 
     def __exit__(self, *_):
-        self.__is_await = False
+        self.__is_use = False

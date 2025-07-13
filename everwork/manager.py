@@ -9,9 +9,9 @@ from orjson import dumps
 from pydantic import validate_call, AfterValidator
 from redis.asyncio import Redis
 
-from everwork.process import Process, RedisSettings, check_worker_names, ProcessState
+from everwork.process import Process, RedisSettings, ProcessState, check_worker_names
 from everwork.process_wrapper import ProcessWrapper
-from everwork.utils import get_worker_parameters, CloseEvent, AwaitLock, register_move_by_value_script, register_set_state_script
+from everwork.utils import CloseEvent, SafeCancellationZone, register_move_by_value_script, register_set_state_script
 from everwork.worker import ExecutorMode
 
 
@@ -22,7 +22,7 @@ class Manager:
         self.__redis_settings = redis_settings
         self.__redis = Redis(**redis_settings.model_dump())
 
-        self.__processes_data = []
+        self.__processes_data: list[Process] = []
 
         for process in processes:
             self.__processes_data += [process] * process.replicas
@@ -30,7 +30,7 @@ class Manager:
         self.__processes: list[SpawnProcess] = []
 
         self.__close_event = CloseEvent()
-        self.__tasks: list[tuple[asyncio.Task, AwaitLock]] = []
+        self.__tasks: list[tuple[asyncio.Task, SafeCancellationZone]] = []
 
         self.__scripts: dict[str, str] = {}
 
@@ -78,8 +78,8 @@ class Manager:
     def __set_closed_flag(self, *_):
         self.__close_event.set()
 
-        for task, await_lock in self.__tasks:
-            if await_lock():
+        for task, safe_cancellation_zone in self.__tasks:
+            if safe_cancellation_zone.is_use():
                 task.cancel()
 
     def __create_process(self, index: int, process_data: Process) -> SpawnProcess:
@@ -96,7 +96,7 @@ class Manager:
         process.start()
         return process
 
-    async def __process_task(self, index: int, await_lock: AwaitLock):
+    async def __process_task(self, index: int, safe_cancellation_zone: SafeCancellationZone):
         process_data = self.__processes_data[index]
         names = ', '.join(e.settings().name for e in process_data.workers)
 
@@ -104,7 +104,7 @@ class Manager:
 
         try:
             while not self.__close_event.get():
-                with await_lock:
+                with safe_cancellation_zone:
                     data = await self.__redis.brpop([f'process:{index}:state'])
 
                 state = ProcessState.model_validate_json(data[1])
@@ -118,7 +118,7 @@ class Manager:
                     'wait_complete': asyncio.create_task(self.__redis.brpop([f'process:{index}:state'])),
                 }
 
-                with await_lock:
+                with safe_cancellation_zone:
                     await asyncio.wait(tasks.values(), return_when=asyncio.FIRST_COMPLETED)
 
                 if tasks['wait_complete'].done():
@@ -137,7 +137,7 @@ class Manager:
 
                 end_time = time.time() + 3
 
-                with await_lock:
+                with safe_cancellation_zone:
                     while True:
                         if time.time() > end_time:
                             break
@@ -168,7 +168,11 @@ class Manager:
                 task.cancel()
 
     async def run(self):
-        logger.info(await get_worker_parameters(self.__redis))
+        # TODO: Все ивенты из taken_events перенести в error_events
+
+        # TODO: Сообщить о error_events (наличие и кол-во)
+
+        # TODO: Сообщить о events (кол-во) у workers
 
         logger.info('Manager запушен')
 
@@ -195,10 +199,13 @@ class Manager:
         logger.info('Закончено создание процессов')
 
         for index in range(len(self.__processes)):
-            await_lock = AwaitLock(self.__close_event)
-            self.__tasks.append((asyncio.create_task(self.__process_task(index, await_lock)), await_lock))
+            safe_cancellation_zone = SafeCancellationZone(self.__close_event)
+            self.__tasks.append((
+                asyncio.create_task(self.__process_task(index, safe_cancellation_zone)),
+                safe_cancellation_zone
+            ))
 
-        await asyncio.gather(*map(lambda x: x[0], self.__tasks))
+        await asyncio.gather(*map(lambda x: x[0], self.__tasks), return_exceptions=True)
 
         logger.info('Manager начал процесс завершения')
 
