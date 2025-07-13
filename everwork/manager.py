@@ -11,7 +11,7 @@ from redis.asyncio import Redis
 
 from everwork.process import Process, RedisSettings, ProcessState, check_worker_names
 from everwork.process_wrapper import ProcessWrapper
-from everwork.utils import CloseEvent, SafeCancellationZone, register_move_by_value_script, register_set_state_script
+from everwork.utils import CloseEvent, SafeCancellationZone
 from everwork.worker import ExecutorMode
 
 
@@ -167,6 +167,29 @@ class Manager:
             if not task.done():
                 task.cancel()
 
+    async def __register_move_by_value_script(self) -> str:
+        return await self.__redis.script_load(
+            """
+            local source_list = KEYS[1]
+            local destination_list = KEYS[2]
+            local value = ARGV[1]
+
+            redis.call('LREM', source_list, 1, value)
+            redis.call('RPUSH', destination_list, value)
+            """
+        )
+
+    async def __register_set_state_script(self) -> str:
+        return await self.__redis.script_load(
+            """
+            local key = KEYS[1]
+            local value = ARGV[1]
+
+            redis.call("DEL", key)
+            redis.call("LPUSH", key, value)
+            """
+        )
+
     async def run(self):
         # TODO: Все ивенты из taken_events перенести в error_events
 
@@ -179,8 +202,8 @@ class Manager:
         signal.signal(signal.SIGINT, self.__set_closed_flag)
         signal.signal(signal.SIGTERM, self.__set_closed_flag)
 
-        self.__scripts['move_by_value'] = await register_move_by_value_script(self.__redis)
-        self.__scripts['set_state'] = await register_set_state_script(self.__redis)
+        self.__scripts['move_by_value'] = await self.__register_move_by_value_script()
+        self.__scripts['set_state'] = await self.__register_set_state_script()
         logger.debug('Скрипты успешно зарегистрированы')
 
         await self.__init_process()

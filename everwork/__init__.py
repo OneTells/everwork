@@ -1,7 +1,7 @@
 from .manager import Manager
 from .process import Process, RedisSettings
 from .utils import timer
-from .worker import BaseWorker, Settings, Event, TriggerMode, ExecutorMode, Timeout
+from .worker import BaseWorker, Settings, Event, TriggerMode, ExecutorMode
 
 __all__ = (
     'Manager',
@@ -12,6 +12,5 @@ __all__ = (
     'Event',
     'TriggerMode',
     'ExecutorMode',
-    'Timeout',
     'timer'
 )
