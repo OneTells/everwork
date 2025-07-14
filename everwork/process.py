@@ -55,6 +55,7 @@ class ProcessState(BaseModel):
 
 class Resources(BaseModel):
     kwargs: dict[str, Any] | None = None
+
     event: str | None = None
     limit_args: str | None = None
 
