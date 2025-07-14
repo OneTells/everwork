@@ -185,17 +185,14 @@ class Manager:
             local key = KEYS[1]
             local value = ARGV[1]
 
-            redis.call("DEL", key)
+            redis.call("LTRIM", key, 1, 0)
             redis.call("LPUSH", key, value)
             """
         )
 
     async def run(self):
-        # TODO: Все ивенты из taken_events перенести в error_events
-
+        # TODO: Сообщить о taken_events (наличие и кол-во)
         # TODO: Сообщить о error_events (наличие и кол-во)
-
-        # TODO: Сообщить о events (кол-во) у workers
 
         logger.info('Manager запушен')
 
