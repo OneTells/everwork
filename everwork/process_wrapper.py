@@ -1,6 +1,7 @@
 import asyncio
 import signal
 import time
+import uuid
 from typing import Any, Callable, Awaitable
 
 from loguru import logger
@@ -63,16 +64,22 @@ class ProcessWrapper:
     async def __handle_error(self, resources: Resources, worker_name: str):
         pipeline = self.__redis.pipeline()
 
-        await self.__move_resource(pipeline, worker_name, 'taken_events', 'error_events', resources.event)
-        await self.__move_resource(pipeline, worker_name, 'taken_limit_args', 'limit_args', resources.limit_args)
+        await self.__move_resource(pipeline, worker_name, 'taken_events', 'error_events', resources.event_raw)
+        await self.__move_resource(pipeline, worker_name, 'taken_limit_args', 'limit_args', resources.limit_args_raw)
+
+        if resources.event_id is not None:
+            await pipeline.rpush(f'worker:{worker_name}:events:{resources.event_id}:status', 'error')
 
         await pipeline.execute()
 
     async def __handle_cancel(self, resources, worker_name: str):
         pipeline = self.__redis.pipeline()
 
-        await self.__move_resource(pipeline, worker_name, 'taken_events', 'events', resources.event)
-        await self.__move_resource(pipeline, worker_name, 'taken_limit_args', 'limit_args', resources.limit_args)
+        await self.__move_resource(pipeline, worker_name, 'taken_events', 'events', resources.event_raw)
+        await self.__move_resource(pipeline, worker_name, 'taken_limit_args', 'limit_args', resources.limit_args_raw)
+
+        if resources.event_id is not None:
+            await pipeline.rpush(f'worker:{worker_name}:events:{resources.event_id}:status', 'cancel')
 
         await pipeline.execute()
 
@@ -105,12 +112,15 @@ class ProcessWrapper:
         pipeline = self.__redis.pipeline()
 
         for event in (events or []):
-            await pipeline.rpush(f'worker:{event.target}:events', dumps(event.kwargs))
+            await pipeline.rpush(f'worker:{event.target}:events', dumps({'kwargs': event.kwargs, 'id': str(uuid.uuid4())}))
 
-        if isinstance(resources.event, str):
-            await pipeline.lrem(f'worker:{worker_name}:taken_events', 1, resources.event)
+        if resources.event_raw is not None:
+            await pipeline.lrem(f'worker:{worker_name}:taken_events', 1, resources.event_raw)
 
-        await self.__move_resource(pipeline, worker_name, 'taken_limit_args', 'limit_args', resources.limit_args)
+        if resources.event_id is not None:
+            await pipeline.rpush(f'worker:{worker_name}:events:{resources.event_id}:status', 'success')
+
+        await self.__move_resource(pipeline, worker_name, 'taken_limit_args', 'limit_args', resources.limit_args_raw)
 
         await pipeline.execute()
 

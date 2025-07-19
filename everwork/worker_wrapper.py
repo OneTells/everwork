@@ -21,23 +21,43 @@ class BaseWorkerWrapper(ABC):
         self.worker = worker
         self.settings = self.worker.settings()
 
-        self._event: str | None = None
-        self._limit_args: str | None = None
+        self._event_id: str | None = None
+        self._event_raw: str | None = None
+
+        self._limit_args_raw: str | None = None
 
     def clear(self):
-        self._event = None
-        self._limit_args = None
+        self._event_id = None
+        self._event_raw = None
+
+        self._limit_args_raw = None
 
     async def get_resources(self) -> Resources:
         try:
             kwargs = await self._get_kwargs()
         except asyncio.CancelledError:
-            return Resources(event=self._event, limit_args=self._limit_args, status='cancel')
+            return Resources(
+                event_id=self._event_id,
+                event_raw=self._event_raw,
+                limit_args_raw=self._limit_args_raw,
+                status='cancel'
+            )
         except Exception as error:
             _ = error
-            return Resources(event=self._event, limit_args=self._limit_args, status='error')
+            return Resources(
+                event_id=self._event_id,
+                event_raw=self._event_raw,
+                limit_args_raw=self._limit_args_raw,
+                status='error'
+            )
 
-        return Resources(kwargs=kwargs, event=self._event, limit_args=self._limit_args, status='success')
+        return Resources(
+            kwargs=kwargs,
+            event_id=self._event_id,
+            event_raw=self._event_raw,
+            limit_args_raw=self._limit_args_raw,
+            status='success'
+        )
 
     @abstractmethod
     async def _get_kwargs(self) -> dict[str, Any]:
@@ -67,20 +87,22 @@ class TriggerWithQueueWorkerWrapper(BaseWorkerWrapper):
 
         if int(timeout) > 0:
             with self.safe_cancellation_zone:
-                self._event = await self._redis.blmove(
+                self._event_raw = await self._redis.blmove(
                     f'worker:{self.settings.name}:events',
                     f'worker:{self.settings.name}:taken_events',
                     timeout=int(timeout)
                 )
 
-            if self._event is not None:
+            if self._event_raw is not None:
                 try:
-                    event_obj = loads(self._event)
+                    event = loads(self._event_raw)
                 except JSONDecodeError as error:
                     logger.exception(f'Ошибка при преобразовании события: {error}')
                     raise error
 
-                return event_obj
+                self._event_id = event['id']
+
+                return event['kwargs']
 
         with self.safe_cancellation_zone:
             await asyncio.sleep(timeout - (time.time() - now))
@@ -94,48 +116,52 @@ class ExecutorWorkerWrapper(BaseWorkerWrapper):
 
     async def _get_kwargs(self) -> dict[str, Any]:
         with self.safe_cancellation_zone:
-            self._event = await self._redis.blmove(
+            self._event_raw = await self._redis.blmove(
                 f'worker:{self.settings.name}:events',
                 f'worker:{self.settings.name}:taken_events',
                 timeout=0
             )
 
         try:
-            event_obj = loads(self._event)
+            event = loads(self._event_raw)
         except JSONDecodeError as error:
             logger.exception(f'Ошибка при преобразовании события: {error}')
             raise error
 
-        return event_obj
+        self._event_id = event['id']
+
+        return event['kwargs']
 
 
 class ExecutorWithLimitArgsWorkerWrapper(BaseWorkerWrapper):
 
     async def _get_kwargs(self) -> dict[str, Any]:
         with self.safe_cancellation_zone:
-            self._event = await self._redis.blmove(
+            self._event_raw = await self._redis.blmove(
                 f'worker:{self.settings.name}:events',
                 f'worker:{self.settings.name}:taken_events',
                 timeout=0
             )
 
         try:
-            event_obj = loads(self._event)
+            event = loads(self._event_raw)
         except JSONDecodeError as error:
             logger.exception(f'Ошибка при преобразовании события: {error}')
             raise error
 
+        self._event_id = event['id']
+
         with self.safe_cancellation_zone:
-            self._limit_args = await self._redis.blmove(
+            self._limit_args_raw = await self._redis.blmove(
                 f'worker:{self.settings.name}:limit_args',
                 f'worker:{self.settings.name}:taken_limit_args',
                 timeout=0
             )
 
         try:
-            limit_args_obj = loads(self._limit_args)
+            limit_args_kwargs = loads(self._limit_args_raw)
         except JSONDecodeError as error:
             logger.exception(f'Ошибка при преобразовании limit_args: {error}')
             raise error
 
-        return event_obj | limit_args_obj
+        return event['kwargs'] | limit_args_kwargs

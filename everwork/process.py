@@ -56,8 +56,10 @@ class ProcessState(BaseModel):
 class Resources(BaseModel):
     kwargs: dict[str, Any] | None = None
 
-    event: str | None = None
-    limit_args: str | None = None
+    event_id: str | None = None
+    event_raw: str | None = None
+
+    limit_args_raw: str | None = None
 
     status: Literal['success', 'cancel', 'error'] = 'success'
 
