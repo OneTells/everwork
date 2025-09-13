@@ -1,4 +1,7 @@
-import asyncio
+from asyncio import CancelledError
+from typing import Literal, Any, Dict, Self
+
+from pydantic import BaseModel
 
 
 def timer(*, hours: int = 0, minutes: int = 0, seconds: int = 0, milliseconds: int = 0) -> float:
@@ -7,33 +10,42 @@ def timer(*, hours: int = 0, minutes: int = 0, seconds: int = 0, milliseconds: i
 
 class CloseEvent:
 
-    def __init__(self):
-        self.__is_close = False
+    def __init__(self) -> None:
+        self.__value = False
 
-    def get(self):
-        return self.__is_close
+    def is_set(self) -> bool:
+        return self.__value
 
-    def set(self):
-        self.__is_close = True
+    def set(self) -> None:
+        self.__value = True
 
 
 class SafeCancellationZone:
 
-    def __init__(self, close_event: CloseEvent):
+    def __init__(self, event: CloseEvent) -> None:
+        self.__event = event
         self.__is_use = False
-        self.__close_event = close_event
 
-    def is_use(self):
+    def is_use(self) -> bool:
         return self.__is_use
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
+        if self.__event.is_set():
+            raise CancelledError()
+
         self.__is_use = True
-
-        if self.__close_event.get():
-            self.__is_use = False
-            raise asyncio.CancelledError()
-
         return self
 
-    def __exit__(self, *_):
+    def __exit__(self, *_) -> None:
         self.__is_use = False
+
+
+class Resources(BaseModel):
+    kwargs: Dict[str, Any] | None = None
+
+    event_id: str | None
+    event_raw: str | None
+
+    limit_args_raw: str | None
+
+    status: Literal['success', 'cancel', 'error']

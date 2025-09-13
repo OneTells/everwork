@@ -7,9 +7,9 @@ requires-python = ">=3.12,<4.0"
 dependencies = [
     "hiredis~=3.2.1",
     "loguru~=0.7.3",
-    "orjson~=3.10.18",
+    "orjson~=3.11.3",
     "pydantic~=2.11.7",
-    "redis~=6.2.0"
+    "redis~=6.4.0",
 ]
 
 [dependency-groups]

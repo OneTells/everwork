@@ -7,26 +7,24 @@ from loguru import logger
 from orjson import loads, JSONDecodeError
 from redis.asyncio import Redis
 
-from everwork.process import Resources
-from everwork.utils import SafeCancellationZone
+from everwork.utils import SafeCancellationZone, Resources
 from everwork.worker import BaseWorker
 
 
 class BaseWorkerWrapper(ABC):
 
-    def __init__(self, redis: Redis, worker: BaseWorker, safe_cancellation_zone: SafeCancellationZone):
+    def __init__(self, redis: Redis, worker: BaseWorker, safe_cancellation_zone: SafeCancellationZone) -> None:
         self._redis = redis
         self.safe_cancellation_zone = safe_cancellation_zone
 
-        self.worker = worker
-        self.settings = self.worker.settings()
+        self.settings = worker.settings
 
         self._event_id: str | None = None
         self._event_raw: str | None = None
 
         self._limit_args_raw: str | None = None
 
-    def clear(self):
+    def clear(self) -> None:
         self._event_id = None
         self._event_raw = None
 
@@ -35,6 +33,13 @@ class BaseWorkerWrapper(ABC):
     async def get_resources(self) -> Resources:
         try:
             kwargs = await self._get_kwargs()
+            return Resources(
+                kwargs=kwargs,
+                event_id=self._event_id,
+                event_raw=self._event_raw,
+                limit_args_raw=self._limit_args_raw,
+                status='success'
+            )
         except asyncio.CancelledError:
             return Resources(
                 event_id=self._event_id,
@@ -51,14 +56,6 @@ class BaseWorkerWrapper(ABC):
                 status='error'
             )
 
-        return Resources(
-            kwargs=kwargs,
-            event_id=self._event_id,
-            event_raw=self._event_raw,
-            limit_args_raw=self._limit_args_raw,
-            status='success'
-        )
-
     @abstractmethod
     async def _get_kwargs(self) -> dict[str, Any]:
         raise NotImplementedError
@@ -70,14 +67,14 @@ class TriggerWorkerWrapper(BaseWorkerWrapper):
         last_time = await self._redis.get(f'worker:{self.settings.name}:last_time')
 
         with self.safe_cancellation_zone:
-            await asyncio.sleep(max(self.settings.mode.timeout - (time.time() - float(last_time or 0)), 0))
+            await asyncio.sleep(self.settings.mode.timeout - (time.time() - float(last_time or 0)))
 
         await self._redis.set(f'worker:{self.settings.name}:last_time', time.time())
 
         return {}
 
 
-class TriggerWithQueueWorkerWrapper(BaseWorkerWrapper):
+class TriggerWithStreamsWorkerWrapper(BaseWorkerWrapper):
 
     async def _get_kwargs(self) -> dict[str, Any]:
         last_time = await self._redis.get(f'worker:{self.settings.name}:last_time')

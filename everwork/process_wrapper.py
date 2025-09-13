@@ -1,19 +1,18 @@
 import asyncio
 import signal
 import time
-import uuid
 from typing import Any, Callable, Awaitable
+from uuid import uuid4, UUID
 
 from loguru import logger
 from orjson import dumps
-from pydantic import validate_call
+from pydantic import validate_call, RedisDsn
 from redis.asyncio import Redis
 
-from everwork.process import Process, RedisSettings, ProcessState, Resources
-from everwork.utils import SafeCancellationZone, CloseEvent
-from everwork.worker import TriggerMode, ExecutorMode, Event
+from everwork.utils import SafeCancellationZone, CloseEvent, Resources
+from everwork.worker import TriggerMode, ExecutorMode, Event, BaseWorker
 from everwork.worker_wrapper import (
-    TriggerWithQueueWorkerWrapper,
+    TriggerWithStreamsWorkerWrapper,
     ExecutorWorkerWrapper,
     ExecutorWithLimitArgsWorkerWrapper,
     TriggerWorkerWrapper,
@@ -28,21 +27,24 @@ except ImportError:
 
 class ProcessWrapper:
 
-    def __init__(self, index: int, process_data: Process, redis_settings: RedisSettings, scripts: dict[str, str]):
-        self.__index = index
-        self.__process_data = process_data
+    def __init__(self, uuid: UUID, workers: list[type[BaseWorker]], redis_dsn: RedisDsn, scripts: dict[str, str]) -> None:
+        self.__uuid = uuid
+        self.__workers = workers
 
-        self.__redis = Redis(**redis_settings.model_dump())
+        self.__redis = Redis.from_url(
+            url=redis_dsn.encoded_string(),
+            protocol=3,
+            decode_responses=True
+        )
 
         self.__lock = asyncio.Lock()
 
-        self.__move_script = scripts['move_by_value']
         self.__set_script = scripts['set_state']
 
         self.__close_event = CloseEvent()
         self.__tasks: list[tuple[asyncio.Task, SafeCancellationZone]] = []
 
-    def __set_closed_flag(self, *_):
+    def __set_closed_flag(self, *_) -> None:
         self.__close_event.set()
 
         for task, safe_cancellation_zone in self.__tasks:
@@ -50,18 +52,9 @@ class ProcessWrapper:
                 task.cancel()
 
     async def __move_resource(self, pipeline: Redis, worker_name: str, source: str, target: str, resource: Any) -> None:
-        if resource is None:
-            return
+        pass
 
-        await pipeline.evalsha(
-            self.__move_script,
-            2,
-            f'worker:{worker_name}:{source}',
-            f'worker:{worker_name}:{target}',
-            resource
-        )
-
-    async def __handle_error(self, resources: Resources, worker_name: str):
+    async def __handle_error(self, resources: Resources, worker_name: str) -> None:
         pipeline = self.__redis.pipeline()
 
         await self.__move_resource(pipeline, worker_name, 'taken_events', 'error_events', resources.event_raw)
@@ -72,7 +65,7 @@ class ProcessWrapper:
 
         await pipeline.execute()
 
-    async def __handle_cancel(self, resources, worker_name: str):
+    async def __handle_cancel(self, resources, worker_name: str) -> None:
         pipeline = self.__redis.pipeline()
 
         await self.__move_resource(pipeline, worker_name, 'taken_events', 'events', resources.event_raw)
@@ -83,36 +76,27 @@ class ProcessWrapper:
 
         await pipeline.execute()
 
-    async def __set_running_state(self, timeout_reset: float):
+    async def __set_running_state(self, timeout_reset: float) -> None:
         await self.__redis.evalsha(
             self.__set_script,
             1,
-            f'process:{self.__index}:state',
-            dumps(
-                ProcessState(
-                    status='running',
-                    end_time=time.time() + timeout_reset
-                ).model_dump(mode='json')
-            ).decode()
+            f'process:{self.__uuid}:state',
+            dumps({'status': 'running', 'end_time': time.time() + timeout_reset}).decode()
         )
 
-    async def __set_waiting_state(self):
+    async def __set_waiting_state(self) -> None:
         await self.__redis.evalsha(
             self.__set_script,
             1,
-            f'process:{self.__index}:state',
-            dumps(
-                ProcessState(
-                    status='waiting', end_time=None
-                ).model_dump(mode='json')
-            ).decode()
+            f'process:{self.__uuid}:state',
+            dumps({'status': 'waiting', 'end_time': None}).decode()
         )
 
     async def __processing_successful_execution(self, events: list[Event] | None, resources: Resources, worker_name: str):
         pipeline = self.__redis.pipeline()
 
         for event in (events or []):
-            await pipeline.rpush(f'worker:{event.target}:events', dumps({'kwargs': event.kwargs, 'id': str(uuid.uuid4())}))
+            await pipeline.rpush(f'worker:{event.name}:events', dumps({'kwargs': event.kwargs, 'id': str(uuid4())}))
 
         if resources.event_raw is not None:
             await pipeline.lrem(f'worker:{worker_name}:taken_events', 1, resources.event_raw)
@@ -130,7 +114,7 @@ class ProcessWrapper:
 
     async def __worker_task(self, function: Callable[..., Awaitable[list[Event] | None]], wrapper: BaseWorkerWrapper):
         try:
-            while not self.__close_event.get():
+            while not self.__close_event.is_set():
                 is_worker_on = await self.__get_is_worker_on(wrapper.settings.name)
 
                 if not is_worker_on:
@@ -151,7 +135,7 @@ class ProcessWrapper:
 
                     if (
                         resources.status == 'cancel'
-                        or self.__close_event.get()
+                        or self.__close_event.is_set()
                         or not (await self.__get_is_worker_on(wrapper.settings.name))
                     ):
                         logger.debug(f'{wrapper.settings.name} принял ивент на отмену')
@@ -159,7 +143,7 @@ class ProcessWrapper:
                         continue
 
                     logger.debug(f'{wrapper.settings.name} принял ивент на обработку')
-                    await self.__set_running_state(wrapper.settings.timeout_reset)
+                    await self.__set_running_state(wrapper.settings.max_working_timeout)
 
                     try:
                         events = await function(**resources.kwargs)
@@ -181,21 +165,19 @@ class ProcessWrapper:
         wrappers: list[BaseWorkerWrapper] = []
         function_wrappers: list[Callable[..., Awaitable[list[Event] | None]]] = []
 
-        for worker in self.__process_data.workers:
-            settings = worker.settings()
-
-            if isinstance(settings.mode, TriggerMode):
-                if settings.mode.with_queue_events:
-                    worker_wrapper = TriggerWithQueueWorkerWrapper
+        for worker in self.__workers:
+            if isinstance(worker.settings.mode, TriggerMode):
+                if worker.settings.mode.processing_streams:
+                    worker_wrapper = TriggerWithStreamsWorkerWrapper
                 else:
                     worker_wrapper = TriggerWorkerWrapper
-            elif isinstance(settings.mode, ExecutorMode):
-                if settings.mode.limited_args is None:
+            elif isinstance(worker.settings.mode, ExecutorMode):
+                if worker.settings.mode.limited_args is None:
                     worker_wrapper = ExecutorWorkerWrapper
                 else:
                     worker_wrapper = ExecutorWithLimitArgsWorkerWrapper
             else:
-                raise ValueError(f'Неизвестный worker mode: {settings.mode}')
+                raise ValueError(f'Неизвестный worker mode: {worker.settings.mode}')
 
             worker_object = worker()
 
@@ -205,7 +187,7 @@ class ProcessWrapper:
         return function_wrappers, wrappers
 
     @staticmethod
-    async def __shutdown_workers(wrappers):
+    async def __shutdown_workers(wrappers) -> None:
         for wrapper in wrappers:
             try:
                 await wrapper.worker.shutdown()
@@ -213,7 +195,7 @@ class ProcessWrapper:
                 logger.exception(f'Ошибка при выполнении shutdown {wrapper.settings.name}: {error}')
 
     @staticmethod
-    async def __startup_workers(wrappers):
+    async def __startup_workers(wrappers) -> None:
         for wrapper in wrappers:
             try:
                 await wrapper.worker.startup()
@@ -222,8 +204,8 @@ class ProcessWrapper:
                 raise
 
     async def __async_run(self) -> None:
-        names = ', '.join(e.settings().name for e in self.__process_data.workers)
-        logger.info(f'Процесс запущен. Состав: {names}')
+        worker_names = ', '.join(worker.settings.name for worker in self.__workers)
+        logger.info(f'Процесс запущен. Состав: {worker_names}')
 
         signal.signal(signal.SIGINT, signal.SIG_IGN)
         signal.signal(signal.SIGTERM, self.__set_closed_flag)
@@ -244,15 +226,14 @@ class ProcessWrapper:
         logger.debug('Worker shutdown успешно запущены')
 
         await self.__redis.close()
-        logger.info(f'Процесс завершен. Состав: {names}')
+        logger.info(f'Процесс завершен. Состав: {worker_names}')
 
     @classmethod
-    def run(cls, index: int, data: dict[str, Any], redis_settings: dict[str, Any], scripts: dict[str, str]) -> None:
-        process_data = Process.model_validate(data)
-
+    @validate_call
+    def run(cls, uuid: UUID, workers: list[type[BaseWorker]], redis_dsn: RedisDsn, scripts: dict[str, str]) -> None:
         try:
             with asyncio.Runner(loop_factory=new_event_loop) as runner:
-                runner.run(cls(index, process_data, RedisSettings.model_validate(redis_settings), scripts).__async_run())
+                runner.run(cls(uuid, workers, redis_dsn, scripts).__async_run())
         except Exception as error:
-            names = ', '.join(e.settings().name for e in process_data.workers)
-            logger.exception(f'Процесс неожиданно завершился. Состав: {names}. {error}')
+            worker_names = ', '.join(worker.settings.name for worker in workers)
+            logger.exception(f'Процесс неожиданно завершился. Состав: {worker_names}. {error}')
