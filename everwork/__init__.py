@@ -1,14 +1,13 @@
 from .manager import Manager
-from .process import Process
 from .utils import timer
-from .worker import BaseWorker, Settings, Event, TriggerMode, ExecutorMode
+from .worker_base import ProcessGroup, BaseWorker, WorkerSettings, WorkerEvent, TriggerMode, ExecutorMode
 
 __all__ = (
     'Manager',
-    'Process',
+    'ProcessGroup',
     'BaseWorker',
-    'Settings',
-    'Event',
+    'WorkerSettings',
+    'WorkerEvent',
     'TriggerMode',
     'ExecutorMode',
     'timer'

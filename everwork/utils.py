@@ -1,14 +1,12 @@
 from asyncio import CancelledError
-from typing import Literal, Any, Dict, Self
-
-from pydantic import BaseModel
+from typing import Self
 
 
 def timer(*, hours: int = 0, minutes: int = 0, seconds: int = 0, milliseconds: int = 0) -> float:
     return hours * 3600 + minutes * 60 + seconds + milliseconds / 1000
 
 
-class CloseEvent:
+class ShutdownEvent:
 
     def __init__(self) -> None:
         self.__value = False
@@ -20,17 +18,17 @@ class CloseEvent:
         self.__value = True
 
 
-class SafeCancellationZone:
+class ShutdownSafeZone:
 
-    def __init__(self, event: CloseEvent) -> None:
-        self.__event = event
+    def __init__(self, shutdown_event: ShutdownEvent) -> None:
+        self.__shutdown_event = shutdown_event
         self.__is_use = False
 
     def is_use(self) -> bool:
         return self.__is_use
 
     def __enter__(self) -> Self:
-        if self.__event.is_set():
+        if self.__shutdown_event.is_set():
             raise CancelledError()
 
         self.__is_use = True
@@ -38,14 +36,3 @@ class SafeCancellationZone:
 
     def __exit__(self, *_) -> None:
         self.__is_use = False
-
-
-class Resources(BaseModel):
-    kwargs: Dict[str, Any] | None = None
-
-    event_id: str | None
-    event_raw: str | None
-
-    limit_args_raw: str | None
-
-    status: Literal['success', 'cancel', 'error']

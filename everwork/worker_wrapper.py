@@ -1,60 +1,72 @@
 import asyncio
+import hashlib
 import time
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Literal, Dict
 
-from loguru import logger
-from orjson import loads, JSONDecodeError
+from orjson import dumps
+from pydantic import BaseModel
 from redis.asyncio import Redis
 
-from everwork.utils import SafeCancellationZone, Resources
-from everwork.worker import BaseWorker
+from everwork.utils import ShutdownSafeZone
+from everwork.worker_base import BaseWorker
+
+
+class Resources(BaseModel):
+    kwargs: Dict[str, Any] | None = None
+
+    stream_name: str
+    message_id: str
+
+    args_hash: str | None
+
+    status: Literal['success', 'cancel', 'error']
 
 
 class BaseWorkerWrapper(ABC):
 
-    def __init__(self, redis: Redis, worker: BaseWorker, safe_cancellation_zone: SafeCancellationZone) -> None:
+    def __init__(self, redis: Redis, uuid: str, worker: BaseWorker, shutdown_safe_zone: ShutdownSafeZone) -> None:
         self._redis = redis
-        self.safe_cancellation_zone = safe_cancellation_zone
+        self._uuid = uuid
 
-        self.settings = worker.settings
+        self.worker = worker
+        self.shutdown_safe_zone = shutdown_safe_zone
 
-        self._event_id: str | None = None
-        self._event_raw: str | None = None
-
-        self._limit_args_raw: str | None = None
-
-    def clear(self) -> None:
-        self._event_id = None
-        self._event_raw = None
-
-        self._limit_args_raw = None
+        self._current_stream_name: str | None = None
+        self._current_message_id: str | None = None
+        self._current_args_hash: str | None = None
 
     async def get_resources(self) -> Resources:
+        # noinspection PyBroadException
         try:
             kwargs = await self._get_kwargs()
-            return Resources(
+            resources = Resources(
                 kwargs=kwargs,
-                event_id=self._event_id,
-                event_raw=self._event_raw,
-                limit_args_raw=self._limit_args_raw,
+                stream_name=self._current_stream_name,
+                message_id=self._current_message_id,
+                args_hash=self._current_args_hash,
                 status='success'
             )
         except asyncio.CancelledError:
-            return Resources(
-                event_id=self._event_id,
-                event_raw=self._event_raw,
-                limit_args_raw=self._limit_args_raw,
+            resources = Resources(
+                stream_name=self._current_stream_name,
+                message_id=self._current_message_id,
+                args_hash=self._current_args_hash,
                 status='cancel'
             )
-        except Exception as error:
-            _ = error
-            return Resources(
-                event_id=self._event_id,
-                event_raw=self._event_raw,
-                limit_args_raw=self._limit_args_raw,
+        except Exception:
+            resources = Resources(
+                stream_name=self._current_stream_name,
+                message_id=self._current_message_id,
+                args_hash=self._current_args_hash,
                 status='error'
             )
+
+        self._current_stream_name = None
+        self._current_message_id = None
+        self._current_args_hash = None
+
+        return resources
 
     @abstractmethod
     async def _get_kwargs(self) -> dict[str, Any]:
@@ -64,101 +76,123 @@ class BaseWorkerWrapper(ABC):
 class TriggerWorkerWrapper(BaseWorkerWrapper):
 
     async def _get_kwargs(self) -> dict[str, Any]:
-        last_time = await self._redis.get(f'worker:{self.settings.name}:last_time')
+        last_time = await self._redis.get(f'worker:{self.worker.settings.name}:last_time')
 
-        with self.safe_cancellation_zone:
-            await asyncio.sleep(self.settings.mode.timeout - (time.time() - float(last_time or 0)))
+        with self.shutdown_safe_zone:
+            await asyncio.sleep(self.worker.settings.mode.execution_interval - (time.time() - float(last_time or 0)))
 
-        await self._redis.set(f'worker:{self.settings.name}:last_time', time.time())
+        await self._redis.set(f'worker:{self.worker.settings.name}:last_time', time.time())
 
         return {}
 
 
 class TriggerWithStreamsWorkerWrapper(BaseWorkerWrapper):
 
+    def __init__(self, redis: Redis, uuid: str, worker: BaseWorker, shutdown_safe_zone: ShutdownSafeZone) -> None:
+        super().__init__(redis, uuid, worker, shutdown_safe_zone)
+
+        self.__streams = (
+            {processing_stream: '>' for processing_stream in self.worker.settings.mode.source_streams}
+            | {f'{self.worker.settings.name}:worker': '>'}
+        )
+
     async def _get_kwargs(self) -> dict[str, Any]:
-        last_time = await self._redis.get(f'worker:{self.settings.name}:last_time')
+        last_time = await self._redis.get(f'worker:{self.worker.settings.name}:last_time')
 
-        now = time.time()
-        timeout = max(self.settings.mode.timeout - (now - float(last_time or 0)), 0)
+        start_time = time.time()
+        timeout = self.worker.settings.mode.execution_interval - (start_time - float(last_time or 0))
 
-        if int(timeout) > 0:
-            with self.safe_cancellation_zone:
-                self._event_raw = await self._redis.blmove(
-                    f'worker:{self.settings.name}:events',
-                    f'worker:{self.settings.name}:taken_events',
-                    timeout=int(timeout)
+        if timeout > 0:
+            with self.shutdown_safe_zone:
+                data: dict[str, list[tuple[str, dict[str, Any]]]] | None = await self._redis.xreadgroup(
+                    groupname=self.worker.settings.name,
+                    consumername=self._uuid,
+                    streams=self.__streams,
+                    count=1,
+                    block=int(timeout)
                 )
 
-            if self._event_raw is not None:
-                try:
-                    event = loads(self._event_raw)
-                except JSONDecodeError as error:
-                    logger.exception(f'Ошибка при преобразовании события: {error}')
-                    raise error
+            if data is not None:
+                stream_name, stream_value = list(data.items())[0]
+                message_id, kwargs = stream_value[0]
 
-                self._event_id = event['id']
+                self._stream_name = stream_name
+                self._message_id = message_id
 
-                return event['kwargs']
+                return kwargs
 
-        with self.safe_cancellation_zone:
-            await asyncio.sleep(timeout - (time.time() - now))
+        with self.shutdown_safe_zone:
+            await asyncio.sleep(timeout - (time.time() - start_time))
 
-        await self._redis.set(f'worker:{self.settings.name}:last_time', time.time())
+        await self._redis.set(f'worker:{self.worker.settings.name}:last_time', time.time())
 
         return {}
 
 
 class ExecutorWorkerWrapper(BaseWorkerWrapper):
 
+    def __init__(self, redis: Redis, uuid: str, worker: BaseWorker, shutdown_safe_zone: ShutdownSafeZone) -> None:
+        super().__init__(redis, uuid, worker, shutdown_safe_zone)
+
+        self.__streams = (
+            {processing_stream: '>' for processing_stream in self.worker.settings.mode.source_streams}
+            | {f'{self.worker.settings.name}:worker': '>'}
+        )
+
     async def _get_kwargs(self) -> dict[str, Any]:
-        with self.safe_cancellation_zone:
-            self._event_raw = await self._redis.blmove(
-                f'worker:{self.settings.name}:events',
-                f'worker:{self.settings.name}:taken_events',
-                timeout=0
+        with self.shutdown_safe_zone:
+            data: dict[str, list[tuple[str, dict[str, Any]]]] = await self._redis.xreadgroup(
+                groupname=self.worker.settings.name,
+                consumername=self._uuid,
+                streams=self.__streams,
+                count=1,
+                block=0
             )
 
-        try:
-            event = loads(self._event_raw)
-        except JSONDecodeError as error:
-            logger.exception(f'Ошибка при преобразовании события: {error}')
-            raise error
+        stream_name, stream_value = list(data.items())[0]
+        message_id, kwargs = stream_value[0]
 
-        self._event_id = event['id']
+        self._stream_name = stream_name
+        self._message_id = message_id
 
-        return event['kwargs']
+        return kwargs
 
 
 class ExecutorWithLimitArgsWorkerWrapper(BaseWorkerWrapper):
 
+    def __init__(self, redis: Redis, uuid: str, worker: BaseWorker, shutdown_safe_zone: ShutdownSafeZone) -> None:
+        super().__init__(redis, uuid, worker, shutdown_safe_zone)
+
+        self.__streams: dict[str, str] = (
+            {processing_stream: '>' for processing_stream in self.worker.settings.mode.source_streams}
+            | {f'{self.worker.settings.name}:worker': '>'}
+        )
+
+        self.__hashed_limited_args: dict[str, dict[str, Any]] = {
+            hashlib.sha256(dumps(args)).hexdigest(): args for args in self.worker.settings.mode.limited_args
+        }
+
     async def _get_kwargs(self) -> dict[str, Any]:
-        with self.safe_cancellation_zone:
-            self._event_raw = await self._redis.blmove(
-                f'worker:{self.settings.name}:events',
-                f'worker:{self.settings.name}:taken_events',
+        with self.shutdown_safe_zone:
+            data: dict[str, list[tuple[str, dict[str, Any]]]] = await self._redis.xreadgroup(
+                groupname=self.worker.settings.name,
+                consumername=self._uuid,
+                streams=self.__streams,
+                count=1,
+                block=0
+            )
+
+        stream_name, stream_value = list(data.items())[0]
+        message_id, kwargs = stream_value[0]
+
+        self._stream_name = stream_name
+        self._message_id = message_id
+
+        with self.shutdown_safe_zone:
+            self._current_args_hash = await self._redis.blmove(
+                f'worker:{self.worker.settings.name}:limit_args',
+                f'worker:{self.worker.settings.name}:taken_limit_args',
                 timeout=0
             )
 
-        try:
-            event = loads(self._event_raw)
-        except JSONDecodeError as error:
-            logger.exception(f'Ошибка при преобразовании события: {error}')
-            raise error
-
-        self._event_id = event['id']
-
-        with self.safe_cancellation_zone:
-            self._limit_args_raw = await self._redis.blmove(
-                f'worker:{self.settings.name}:limit_args',
-                f'worker:{self.settings.name}:taken_limit_args',
-                timeout=0
-            )
-
-        try:
-            limit_args_kwargs = loads(self._limit_args_raw)
-        except JSONDecodeError as error:
-            logger.exception(f'Ошибка при преобразовании limit_args: {error}')
-            raise error
-
-        return event['kwargs'] | limit_args_kwargs
+        return self.__hashed_limited_args[self._current_args_hash] | kwargs

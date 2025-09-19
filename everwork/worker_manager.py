@@ -9,9 +9,10 @@ from orjson import dumps
 from pydantic import validate_call, RedisDsn
 from redis.asyncio import Redis
 
-from everwork.utils import SafeCancellationZone, CloseEvent, Resources
-from everwork.worker import TriggerMode, ExecutorMode, Event, BaseWorker
+from everwork.worker_base import BaseWorker, WorkerEvent, ExecutorMode, TriggerMode
+from everwork.utils import ShutdownSafeZone, ShutdownEvent
 from everwork.worker_wrapper import (
+    Resources,
     TriggerWithStreamsWorkerWrapper,
     ExecutorWorkerWrapper,
     ExecutorWithLimitArgsWorkerWrapper,
@@ -25,9 +26,9 @@ except ImportError:
     from asyncio import new_event_loop
 
 
-class ProcessWrapper:
+class WorkerManager:
 
-    def __init__(self, uuid: UUID, workers: list[type[BaseWorker]], redis_dsn: RedisDsn, scripts: dict[str, str]) -> None:
+    def __init__(self, uuid: str, workers: list[type[BaseWorker]], redis_dsn: RedisDsn, scripts: dict[str, str]) -> None:
         self.__uuid = uuid
         self.__workers = workers
 
@@ -41,14 +42,14 @@ class ProcessWrapper:
 
         self.__set_script = scripts['set_state']
 
-        self.__close_event = CloseEvent()
-        self.__tasks: list[tuple[asyncio.Task, SafeCancellationZone]] = []
+        self.__shutdown_event = ShutdownEvent()
+        self.__tasks: list[tuple[asyncio.Task, ShutdownSafeZone]] = []
 
     def __set_closed_flag(self, *_) -> None:
-        self.__close_event.set()
+        self.__shutdown_event.set()
 
-        for task, safe_cancellation_zone in self.__tasks:
-            if safe_cancellation_zone.is_use():
+        for task, shutdown_safe_zone in self.__tasks:
+            if shutdown_safe_zone.is_use():
                 task.cancel()
 
     async def __move_resource(self, pipeline: Redis, worker_name: str, source: str, target: str, resource: Any) -> None:
@@ -76,12 +77,12 @@ class ProcessWrapper:
 
         await pipeline.execute()
 
-    async def __set_running_state(self, timeout_reset: float) -> None:
+    async def __set_running_state(self, execution_timeout: float) -> None:
         await self.__redis.evalsha(
             self.__set_script,
             1,
             f'process:{self.__uuid}:state',
-            dumps({'status': 'running', 'end_time': time.time() + timeout_reset}).decode()
+            dumps({'status': 'running', 'end_time': time.time() + execution_timeout}).decode()
         )
 
     async def __set_waiting_state(self) -> None:
@@ -92,11 +93,11 @@ class ProcessWrapper:
             dumps({'status': 'waiting', 'end_time': None}).decode()
         )
 
-    async def __processing_successful_execution(self, events: list[Event] | None, resources: Resources, worker_name: str):
+    async def __processing_successful_execution(self, events: list[WorkerEvent] | None, resources: Resources, worker_name: str):
         pipeline = self.__redis.pipeline()
 
         for event in (events or []):
-            await pipeline.rpush(f'worker:{event.name}:events', dumps({'kwargs': event.kwargs, 'id': str(uuid4())}))
+            await pipeline.rpush(f'worker:{event.target_stream}:events', dumps({'kwargs': event.data, 'id': str(uuid4())}))
 
         if resources.event_raw is not None:
             await pipeline.lrem(f'worker:{worker_name}:taken_events', 1, resources.event_raw)
@@ -112,13 +113,13 @@ class ProcessWrapper:
         value = await self.__redis.get(f'worker:{worker_name}:is_worker_on')
         return value == '1'
 
-    async def __worker_task(self, function: Callable[..., Awaitable[list[Event] | None]], wrapper: BaseWorkerWrapper):
+    async def __worker_task(self, function: Callable[..., Awaitable[list[WorkerEvent] | None]], wrapper: BaseWorkerWrapper):
         try:
-            while not self.__close_event.is_set():
+            while not self.__shutdown_event.is_set():
                 is_worker_on = await self.__get_is_worker_on(wrapper.settings.name)
 
                 if not is_worker_on:
-                    with wrapper.safe_cancellation_zone:
+                    with wrapper.shutdown_safe_zone:
                         await asyncio.sleep(60)
 
                     continue
@@ -126,8 +127,6 @@ class ProcessWrapper:
                 resources = await wrapper.get_resources()
 
                 async with self.__lock:
-                    wrapper.clear()
-
                     if resources.status == 'error':
                         logger.error(f'{wrapper.settings.name} принял ивент с ошибкой')
                         await self.__handle_error(resources, wrapper.settings.name)
@@ -135,7 +134,7 @@ class ProcessWrapper:
 
                     if (
                         resources.status == 'cancel'
-                        or self.__close_event.is_set()
+                        or self.__shutdown_event.is_set()
                         or not (await self.__get_is_worker_on(wrapper.settings.name))
                     ):
                         logger.debug(f'{wrapper.settings.name} принял ивент на отмену')
@@ -143,7 +142,7 @@ class ProcessWrapper:
                         continue
 
                     logger.debug(f'{wrapper.settings.name} принял ивент на обработку')
-                    await self.__set_running_state(wrapper.settings.max_working_timeout)
+                    await self.__set_running_state(wrapper.settings.execution_timeout)
 
                     try:
                         events = await function(**resources.kwargs)
@@ -161,13 +160,13 @@ class ProcessWrapper:
         except Exception as error:
             logger.exception(f'Неизвестная ошибка в {wrapper.settings.name}: {error}')
 
-    def __initialize_workers(self) -> tuple[list[Callable[..., Awaitable[list[Event] | None]]], list[BaseWorkerWrapper]]:
+    def __initialize_workers(self) -> tuple[list[Callable[..., Awaitable[list[WorkerEvent] | None]]], list[BaseWorkerWrapper]]:
         wrappers: list[BaseWorkerWrapper] = []
-        function_wrappers: list[Callable[..., Awaitable[list[Event] | None]]] = []
+        function_wrappers: list[Callable[..., Awaitable[list[WorkerEvent] | None]]] = []
 
         for worker in self.__workers:
             if isinstance(worker.settings.mode, TriggerMode):
-                if worker.settings.mode.processing_streams:
+                if worker.settings.mode.source_streams:
                     worker_wrapper = TriggerWithStreamsWorkerWrapper
                 else:
                     worker_wrapper = TriggerWorkerWrapper
@@ -181,7 +180,7 @@ class ProcessWrapper:
 
             worker_object = worker()
 
-            wrappers.append(worker_wrapper(self.__redis, worker_object, SafeCancellationZone(self.__close_event)))
+            wrappers.append(worker_wrapper(self.__redis, self.__uuid, worker_object, ShutdownSafeZone(self.__shutdown_event)))
             function_wrappers.append(validate_call(validate_return=True)(worker_object.__call__))
 
         return function_wrappers, wrappers
@@ -218,7 +217,7 @@ class ProcessWrapper:
 
         for function, wrapper in zip(function_wrappers, wrappers):
             task = asyncio.create_task(self.__worker_task(function, wrapper))
-            self.__tasks.append((task, wrapper.safe_cancellation_zone))
+            self.__tasks.append((task, wrapper.shutdown_safe_zone))
 
         await asyncio.gather(*map(lambda x: x[0], self.__tasks), return_exceptions=True)
 
@@ -233,7 +232,7 @@ class ProcessWrapper:
     def run(cls, uuid: UUID, workers: list[type[BaseWorker]], redis_dsn: RedisDsn, scripts: dict[str, str]) -> None:
         try:
             with asyncio.Runner(loop_factory=new_event_loop) as runner:
-                runner.run(cls(uuid, workers, redis_dsn, scripts).__async_run())
+                runner.run(cls(str(uuid), workers, redis_dsn, scripts).__async_run())
         except Exception as error:
             worker_names = ', '.join(worker.settings.name for worker in workers)
             logger.exception(f'Процесс неожиданно завершился. Состав: {worker_names}. {error}')

@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import signal
 import time
 from multiprocessing import context
@@ -11,13 +12,12 @@ from pydantic import validate_call, AfterValidator, RedisDsn, BaseModel
 from pydantic_core import to_jsonable_python
 from redis.asyncio import Redis
 
-from everwork.process import Process
-from everwork.process_wrapper import ProcessWrapper
-from everwork.utils import SafeCancellationZone, CloseEvent
-from everwork.worker import ExecutorMode, BaseWorker
+from everwork.worker_base import BaseWorker, ExecutorMode, ProcessGroup
+from everwork.worker_manager import WorkerManager
+from everwork.utils import ShutdownSafeZone, ShutdownEvent
 
 
-def check_worker_names(processes: list[Process]) -> list[Process]:
+def check_worker_names(processes: list[ProcessGroup]) -> list[ProcessGroup]:
     names = set()
 
     for process in processes:
@@ -38,7 +38,7 @@ class ProcessState(BaseModel):
 class Manager:
 
     @validate_call
-    def __init__(self, redis_dsn: RedisDsn, processes: Annotated[list[Process], AfterValidator(check_worker_names)]) -> None:
+    def __init__(self, redis_dsn: RedisDsn, processes: Annotated[list[ProcessGroup], AfterValidator(check_worker_names)]) -> None:
         self.__redis_dsn = redis_dsn
         self.__redis = Redis.from_url(
             url=redis_dsn.encoded_string(),
@@ -46,7 +46,7 @@ class Manager:
             decode_responses=True
         )
 
-        self.__processes: list[Process] = processes
+        self.__processes: list[ProcessGroup] = processes
 
         self.__process_instances: dict[str, context.SpawnProcess] = {}
         self.__worker_definitions: dict[str, list[type[BaseWorker]]] = {}
@@ -55,16 +55,16 @@ class Manager:
             for _ in range(process_data.replicas):
                 self.__worker_definitions[str(uuid4())] = process_data.workers
 
-        self.__close_event = CloseEvent()
-        self.__tasks: list[tuple[asyncio.Task, SafeCancellationZone]] = []
+        self.__shutdown_event = ShutdownEvent()
+        self.__tasks: list[tuple[asyncio.Task, ShutdownSafeZone]] = []
 
         self.__scripts: dict[str, str] = {}
 
     def __set_closed_flag(self, *_) -> None:
-        self.__close_event.set()
+        self.__shutdown_event.set()
 
-        for task, safe_cancellation_zone in self.__tasks:
-            if safe_cancellation_zone.is_use():
+        for task, shutdown_safe_zone in self.__tasks:
+            if shutdown_safe_zone.is_use():
                 task.cancel()
 
     async def __init_process(self) -> None:
@@ -101,14 +101,14 @@ class Manager:
                 await pipeline.delete(f'worker:{worker.settings.name}:limit_args')
                 await pipeline.rpush(
                     f'worker:{worker.settings.name}:limit_args',
-                    *(dumps(args) for args in worker.settings.mode.limited_args)
+                    *(hashlib.sha256(dumps(args)).hexdigest() for args in worker.settings.mode.limited_args)
                 )
 
         await pipeline.execute()
 
     def __create_process(self, uuid: str) -> context.SpawnProcess:
         process = context.SpawnProcess(
-            target=ProcessWrapper.run,
+            target=WorkerManager.run,
             kwargs=to_jsonable_python({
                 'uuid': uuid,
                 'workers': self.__worker_definitions[uuid],
@@ -120,14 +120,14 @@ class Manager:
         process.start()
         return process
 
-    async def __monitor_process(self, uuid: str, safe_cancellation_zone: SafeCancellationZone) -> None:
+    async def __monitor_process(self, uuid: str, shutdown_safe_zone: ShutdownSafeZone) -> None:
         worker_names = ', '.join(worker.settings.name for worker in self.__worker_definitions[uuid])
 
         tasks: dict[str, asyncio.Task] = {}
 
         try:
-            while not self.__close_event.is_set():
-                with safe_cancellation_zone:
+            while not self.__shutdown_event.is_set():
+                with shutdown_safe_zone:
                     data = await self.__redis.brpop([f'process:{uuid}:state'])
 
                 state = ProcessState.model_validate(loads(data[1]))
@@ -141,7 +141,7 @@ class Manager:
                     'wait_complete': asyncio.create_task(self.__redis.brpop([f'process:{uuid}:state'])),
                 }
 
-                with safe_cancellation_zone:
+                with shutdown_safe_zone:
                     await asyncio.wait(tasks.values(), return_when=asyncio.FIRST_COMPLETED)
 
                 if tasks['wait_complete'].done():
@@ -160,7 +160,7 @@ class Manager:
 
                 end_time = time.time() + 3
 
-                with safe_cancellation_zone:
+                with shutdown_safe_zone:
                     while True:
                         if time.time() > end_time:
                             break
@@ -177,7 +177,7 @@ class Manager:
                 self.__process_instances[uuid].join()
                 self.__process_instances[uuid].close()
 
-                with safe_cancellation_zone:
+                with shutdown_safe_zone:
                     await self.__redis.delete(f'process:{uuid}:state')
 
                 self.__process_instances[uuid] = self.__create_process(uuid)
@@ -234,10 +234,10 @@ class Manager:
         logger.info('Закончено создание процессов')
 
         for uuid in self.__worker_definitions.keys():
-            safe_cancellation_zone = SafeCancellationZone(self.__close_event)
+            shutdown_safe_zone = ShutdownSafeZone(self.__shutdown_event)
             self.__tasks.append((
-                asyncio.create_task(self.__monitor_process(uuid, safe_cancellation_zone)),
-                safe_cancellation_zone
+                asyncio.create_task(self.__monitor_process(uuid, shutdown_safe_zone)),
+                shutdown_safe_zone
             ))
 
         logger.info('Запушены задачи по отслеживанию работы процессов')
@@ -252,7 +252,7 @@ class Manager:
         logger.debug('Процессам послан сигнал SIGTERM')
 
         end_time = time.time() + max(
-            max(worker.settings.max_working_timeout for worker in process.workers) for process in self.__processes
+            max(worker.settings.execution_timeout for worker in process.workers) for process in self.__processes
         )
 
         while True:
