@@ -1,44 +1,44 @@
-import asyncio
 import hashlib
 import signal
-import time
-from multiprocessing import context
-from typing import Annotated, Literal
+from typing import Annotated
 from uuid import uuid4
 
 from loguru import logger
-from orjson import dumps, loads
-from pydantic import validate_call, AfterValidator, RedisDsn, BaseModel
-from pydantic_core import to_jsonable_python
+from orjson import dumps
+from pydantic import validate_call, AfterValidator, RedisDsn
 from redis.asyncio import Redis
 
-from everwork.worker_base import BaseWorker, ExecutorMode, ProcessGroup
-from everwork.worker_manager import WorkerManager
-from everwork.utils import ShutdownSafeZone, ShutdownEvent
+from everwork.process_supervisor import ProcessSupervisor
+from everwork.utils import ShutdownEvent
+from everwork.worker_base import BaseWorker, ExecutorMode, ProcessGroup, TriggerMode
+
+try:
+    from uvloop import new_event_loop
+except ImportError:
+    from asyncio import new_event_loop
 
 
-def check_worker_names(processes: list[ProcessGroup]) -> list[ProcessGroup]:
+def check_worker_names(process_groups: list[ProcessGroup]) -> list[ProcessGroup]:
     names = set()
 
-    for process in processes:
-        for worker in process.workers:
+    for process_group in process_groups:
+        for worker in process_group.workers:
             if worker.settings.name in names:
                 raise ValueError(f"{worker.settings.name} не уникально")
 
             names.add(worker.settings.name)
 
-    return processes
-
-
-class ProcessState(BaseModel):
-    status: Literal['waiting', 'running']
-    end_time: float | None
+    return process_groups
 
 
 class Manager:
 
     @validate_call
-    def __init__(self, redis_dsn: RedisDsn, processes: Annotated[list[ProcessGroup], AfterValidator(check_worker_names)]) -> None:
+    def __init__(
+        self,
+        redis_dsn: RedisDsn,
+        process_groups: Annotated[list[ProcessGroup], AfterValidator(check_worker_names)]
+    ) -> None:
         self.__redis_dsn = redis_dsn
         self.__redis = Redis.from_url(
             url=redis_dsn.encoded_string(),
@@ -46,26 +46,24 @@ class Manager:
             decode_responses=True
         )
 
-        self.__processes: list[ProcessGroup] = processes
+        self.__process_groups = process_groups
 
-        self.__process_instances: dict[str, context.SpawnProcess] = {}
         self.__worker_definitions: dict[str, list[type[BaseWorker]]] = {}
 
-        for process_data in self.__processes:
-            for _ in range(process_data.replicas):
-                self.__worker_definitions[str(uuid4())] = process_data.workers
+        for process_group in self.__process_groups:
+            for _ in range(process_group.replicas):
+                self.__worker_definitions[str(uuid4())] = process_group.workers
 
         self.__shutdown_event = ShutdownEvent()
-        self.__tasks: list[tuple[asyncio.Task, ShutdownSafeZone]] = []
+        self.__process_supervisors: list[ProcessSupervisor] = []
 
         self.__scripts: dict[str, str] = {}
 
-    def __set_closed_flag(self, *_) -> None:
+    def __set_shutdown_flag(self, *_) -> None:
         self.__shutdown_event.set()
 
-        for task, shutdown_safe_zone in self.__tasks:
-            if shutdown_safe_zone.is_use():
-                task.cancel()
+        for process_supervisor in self.__process_supervisors:
+            process_supervisor.stop()
 
     async def __init_process(self) -> None:
         await self.__redis.delete(*(f'process:{uuid}:state' for uuid in self.__worker_definitions.keys()))
@@ -73,28 +71,36 @@ class Manager:
     async def __init_workers(self) -> None:
         keys: list[str] = []
 
-        for process in self.__processes:
-            for worker in process.workers:
+        for process_group in self.__process_groups:
+            for worker in process_group.workers:
                 keys.append(f'worker:{worker.settings.name}:is_worker_on')
 
         response = await self.__redis.mget(keys)
 
         value = {key: 0 for key, is_worker_on in zip(keys, response) if is_worker_on is None}
 
-        if not value:
-            return
+        if value:
+            await self.__redis.mset(value)
 
-        await self.__redis.mset(value)
+        for process_group in self.__process_groups:
+            for worker in process_group.workers:
+                if isinstance(worker.settings.mode, TriggerMode) and worker.settings.mode.source_streams is None:
+                    continue
+
+                for stream_name in (worker.settings.mode.source_streams | {f'worker:{worker.settings.name}:stream'}):
+                    groups = await self.__redis.xinfo_groups(stream_name)
+
+                    if any(group['name'] == worker.settings.name for group in groups):
+                        continue
+
+                    await self.__redis.xgroup_create(stream_name, worker.settings.name, mkstream=True)
 
     async def __register_limit_args(self) -> None:
         pipeline = self.__redis.pipeline()
 
-        for process_data in self.__processes:
-            for worker in process_data.workers:
-                if not isinstance(worker.settings.mode, ExecutorMode):
-                    continue
-
-                if worker.settings.mode.limited_args is None:
+        for process_group in self.__process_groups:
+            for worker in process_group.workers:
+                if not isinstance(worker.settings.mode, ExecutorMode) or worker.settings.mode.limited_args is None:
                     continue
 
                 await pipeline.delete(f'worker:{worker.settings.name}:taken_limit_args')
@@ -105,94 +111,6 @@ class Manager:
                 )
 
         await pipeline.execute()
-
-    def __create_process(self, uuid: str) -> context.SpawnProcess:
-        process = context.SpawnProcess(
-            target=WorkerManager.run,
-            kwargs=to_jsonable_python({
-                'uuid': uuid,
-                'workers': self.__worker_definitions[uuid],
-                'redis_dsn': self.__redis_dsn,
-                'scripts': self.__scripts
-            }),
-            daemon=True
-        )
-        process.start()
-        return process
-
-    async def __monitor_process(self, uuid: str, shutdown_safe_zone: ShutdownSafeZone) -> None:
-        worker_names = ', '.join(worker.settings.name for worker in self.__worker_definitions[uuid])
-
-        tasks: dict[str, asyncio.Task] = {}
-
-        try:
-            while not self.__shutdown_event.is_set():
-                with shutdown_safe_zone:
-                    data = await self.__redis.brpop([f'process:{uuid}:state'])
-
-                state = ProcessState.model_validate(loads(data[1]))
-
-                if state.status == 'waiting':
-                    continue
-
-                # noinspection PyTypeChecker
-                tasks = {
-                    'timeout': asyncio.create_task(asyncio.sleep(state.end_time - time.time())),
-                    'wait_complete': asyncio.create_task(self.__redis.brpop([f'process:{uuid}:state'])),
-                }
-
-                with shutdown_safe_zone:
-                    await asyncio.wait(tasks.values(), return_when=asyncio.FIRST_COMPLETED)
-
-                if tasks['wait_complete'].done():
-                    if not tasks['timeout'].done():
-                        tasks['timeout'].cancel()
-
-                    continue
-
-                if not tasks['wait_complete'].done():
-                    tasks['wait_complete'].cancel()
-
-                logger.warning(f'Начат перезапуск процесса. Состав: {worker_names}')
-
-                self.__process_instances[uuid].terminate()
-                logger.debug(f'Отправлен сигнал SIGTERM процессу. Состав: {worker_names}')
-
-                end_time = time.time() + 3
-
-                with shutdown_safe_zone:
-                    while True:
-                        if time.time() > end_time:
-                            break
-
-                        if not self.__process_instances[uuid].is_alive():
-                            break
-
-                        await asyncio.sleep(0.1)
-
-                if self.__process_instances[uuid].is_alive():
-                    self.__process_instances[uuid].kill()
-                    logger.warning(f'Отправлен сигнал SIGKILL процессу. Состав: {worker_names}')
-
-                self.__process_instances[uuid].join()
-                self.__process_instances[uuid].close()
-
-                with shutdown_safe_zone:
-                    await self.__redis.delete(f'process:{uuid}:state')
-
-                self.__process_instances[uuid] = self.__create_process(uuid)
-
-                await asyncio.sleep(0.1)
-
-                logger.warning(f'Завершен перезапуск процесса. Состав: {worker_names}')
-        except asyncio.CancelledError:
-            pass
-        except Exception as error:
-            logger.exception(f'Мониторинг процесса неожиданно завершился. Состав: {worker_names}. {error}')
-
-        for task in tasks.values():
-            if not task.done():
-                task.cancel()
 
     async def __register_set_state_script(self) -> str:
         return await self.__redis.script_load(
@@ -205,80 +123,46 @@ class Manager:
             """
         )
 
+    async def __register_handle_error_script(self) -> str:
+        raise NotImplementedError
+
+    async def __register_handle_cancel_script(self) -> str:
+        raise NotImplementedError
+
+    async def __register_handle_success_script(self) -> str:
+        raise NotImplementedError
+
     async def run(self) -> None:
         logger.info('Manager запушен')
 
-        signal.signal(signal.SIGINT, self.__set_closed_flag)
-        signal.signal(signal.SIGTERM, self.__set_closed_flag)
+        signal.signal(signal.SIGINT, self.__set_shutdown_flag)
+        signal.signal(signal.SIGTERM, self.__set_shutdown_flag)
+        logger.debug('Установлены обработчики сигналов')
 
         self.__scripts['set_state'] = await self.__register_set_state_script()
-
-        logger.debug('Скрипты успешно зарегистрированы')
+        self.__scripts['handle_error'] = await self.__register_handle_error_script()
+        self.__scripts['handle_cancel'] = await self.__register_handle_cancel_script()
+        self.__scripts['handle_success'] = await self.__register_handle_success_script()
+        logger.debug('Зарегистрированы скрипты')
 
         await self.__init_process()
-
-        logger.info('Процессы инициализированы')
+        logger.info('Инициализированы процессы')
 
         await self.__init_workers()
         await self.__register_limit_args()
+        logger.info('Инициализированы workers и limit args')
 
-        logger.info('Workers, limit args инициализированы')
+        logger.info('Начато создание наблюдателей над процессами')
 
-        logger.info('Начато создание процессов')
+        for uuid, workers in self.__worker_definitions.items():
+            process_supervisor = ProcessSupervisor(uuid, workers, self.__shutdown_event, self.__redis_dsn, self.__scripts)
+            process_supervisor.start()
 
-        for uuid in self.__worker_definitions.keys():
-            self.__process_instances[uuid] = self.__create_process(uuid)
+            self.__process_supervisors.append(process_supervisor)
 
-        await asyncio.sleep(0.1)
+        logger.info('Наблюдатели над процессами запущены')
 
-        logger.info('Закончено создание процессов')
+        for process_supervisor in self.__process_supervisors:
+            process_supervisor.wait()
 
-        for uuid in self.__worker_definitions.keys():
-            shutdown_safe_zone = ShutdownSafeZone(self.__shutdown_event)
-            self.__tasks.append((
-                asyncio.create_task(self.__monitor_process(uuid, shutdown_safe_zone)),
-                shutdown_safe_zone
-            ))
-
-        logger.info('Запушены задачи по отслеживанию работы процессов')
-
-        await asyncio.gather(*map(lambda x: x[0], self.__tasks), return_exceptions=True)
-
-        logger.info('Manager начал процесс завершения')
-
-        for process in self.__process_instances.values():
-            process.terminate()
-
-        logger.debug('Процессам послан сигнал SIGTERM')
-
-        end_time = time.time() + max(
-            max(worker.settings.execution_timeout for worker in process.workers) for process in self.__processes
-        )
-
-        while True:
-            if time.time() > end_time:
-                logger.warning('Процессы не успели завершиться')
-                break
-
-            if all(not process.is_alive() for process in self.__process_instances.values()):
-                logger.debug('Процессы успешно завершились')
-                break
-
-            await asyncio.sleep(0.1)
-
-        for process in self.__process_instances.values():
-            process.kill()
-
-        logger.debug('Процессам послан сигнал SIGKILL')
-
-        for process in self.__process_instances.values():
-            process.join()
-
-        for process in self.__process_instances.values():
-            process.close()
-
-        logger.debug('Процессы закрыты')
-
-        await self.__redis.close()
-
-        logger.info('Manager завершен')
+        logger.info('Менеджер успешно завершил работу')
