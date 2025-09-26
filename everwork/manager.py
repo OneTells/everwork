@@ -63,7 +63,7 @@ class Manager:
         self.__shutdown_event.set()
 
         for process_supervisor in self.__process_supervisors:
-            process_supervisor.stop()
+            process_supervisor.close()
 
     async def __init_process(self) -> None:
         await self.__redis.delete(*(f'process:{uuid}:state' for uuid in self.__worker_definitions.keys()))
@@ -158,7 +158,7 @@ class Manager:
 
         for uuid, workers in self.__worker_definitions.items():
             process_supervisor = ProcessSupervisor(uuid, workers, self.__shutdown_event, self.__redis_dsn, self.__scripts)
-            process_supervisor.start()
+            process_supervisor.run()
 
             self.__process_supervisors.append(process_supervisor)
 

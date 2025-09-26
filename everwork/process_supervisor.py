@@ -45,7 +45,7 @@ class ProcessSupervisor:
 
         self.__redis = Redis.from_url(url=redis_dsn.encoded_string(), protocol=3, decode_responses=True)
 
-        self.__thread = Thread(target=lambda: self.__runner.run(self.__start()), daemon=True)
+        self.__thread = Thread(target=lambda: self.__runner.run(self.__run()), daemon=True)
 
         self.__data = to_jsonable_python({'uuid': uuid, 'workers': workers, 'redis_dsn': redis_dsn, 'scripts': scripts})
         self.__process: context.SpawnProcess
@@ -90,7 +90,7 @@ class ProcessSupervisor:
         self.__process.close()
         logger.debug(f'Завершен процесс. Состав: {self.__worker_names}')
 
-    async def __start(self) -> None:
+    async def __run(self) -> None:
         logger.debug(f'Запущен наблюдатель. Состав: {self.__worker_names}')
 
         self.__start_process()
@@ -140,13 +140,13 @@ class ProcessSupervisor:
 
         logger.debug(f'Наблюдатель завершил работу. Состав: {self.__worker_names}')
 
-    def start(self) -> None:
+    def run(self) -> None:
         self.__thread.start()
 
     def wait(self) -> None:
         self.__thread.join()
 
-    def stop(self) -> None:
+    def close(self) -> None:
         logger.debug(f'Вызван метод закрытия системы по управлению процессом. Состав: {self.__worker_names}')
 
         if not self.__shutdown_safe_zone.is_use():
