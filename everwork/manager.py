@@ -154,7 +154,7 @@ class Manager:
         await self.__register_limit_args()
         logger.info('Инициализированы limit args')
 
-        logger.info('Начато создание наблюдателей над процессами')
+        logger.info('Начато создание наблюдателей')
 
         for uuid, workers in self.__worker_definitions.items():
             process_supervisor = ProcessSupervisor(uuid, workers, self.__shutdown_event, self.__redis_dsn, self.__scripts)
@@ -162,11 +162,12 @@ class Manager:
 
             self.__process_supervisors.append(process_supervisor)
 
-        logger.info('Наблюдатели над процессами запущены')
+        logger.info('Наблюдатели запущены')
 
         for process_supervisor in self.__process_supervisors:
             process_supervisor.wait()
 
         self.__redis.close()
+        logger.debug('Менеджер закрыл Redis')
 
         logger.info('Менеджер успешно завершил работу')

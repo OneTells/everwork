@@ -47,7 +47,7 @@ class ProcessSupervisor:
 
         self.__thread = Thread(target=lambda: self.__runner.run(self.__start()), daemon=True)
 
-        self.__data = to_jsonable_python({'uuid': uuid, 'workers': workers, 'scripts': scripts, 'redis_dsn': redis_dsn})
+        self.__data = to_jsonable_python({'uuid': uuid, 'workers': workers, 'redis_dsn': redis_dsn, 'scripts': scripts})
         self.__process: context.SpawnProcess
 
     def __start_process(self) -> None:
@@ -91,7 +91,7 @@ class ProcessSupervisor:
         logger.debug(f'Завершен процесс. Состав: {self.__worker_names}')
 
     async def __start(self) -> None:
-        logger.debug(f'Запущена система по управлению процессом. Состав: {self.__worker_names}')
+        logger.debug(f'Запущен наблюдатель. Состав: {self.__worker_names}')
 
         self.__start_process()
 
@@ -134,9 +134,11 @@ class ProcessSupervisor:
             logger.exception(f'Мониторинг процесса неожиданно завершился. Состав: {self.__worker_names}. {error}')
 
         await self.__close_process()
-        await self.__redis.close()
 
-        logger.debug(f'Система по управлению процессом закрыта. Состав: {self.__worker_names}')
+        await self.__redis.close()
+        logger.debug(f'Наблюдатель закрыл Redis. Состав: {self.__worker_names}')
+
+        logger.debug(f'Наблюдатель завершил работу. Состав: {self.__worker_names}')
 
     def start(self) -> None:
         self.__thread.start()
