@@ -31,7 +31,7 @@ def check_worker_names(process_groups: list[ProcessGroup]) -> list[ProcessGroup]
     return process_groups
 
 
-class Manager:
+class ProcessManager:
 
     @validate_call
     def __init__(
