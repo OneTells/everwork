@@ -40,13 +40,13 @@ class Manager:
         process_groups: Annotated[list[ProcessGroup], AfterValidator(check_worker_names)]
     ) -> None:
         self.__redis_dsn = redis_dsn
+        self.__process_groups = process_groups
+
         self.__redis = Redis.from_url(
             url=redis_dsn.encoded_string(),
             protocol=3,
             decode_responses=True
         )
-
-        self.__process_groups = process_groups
 
         self.__worker_definitions: dict[str, list[type[BaseWorker]]] = {}
 
@@ -149,8 +149,10 @@ class Manager:
         logger.info('Инициализированы процессы')
 
         await self.__init_workers()
+        logger.info('Инициализированы workers')
+
         await self.__register_limit_args()
-        logger.info('Инициализированы workers и limit args')
+        logger.info('Инициализированы limit args')
 
         logger.info('Начато создание наблюдателей над процессами')
 
