@@ -167,4 +167,6 @@ class Manager:
         for process_supervisor in self.__process_supervisors:
             process_supervisor.wait()
 
+        self.__redis.close()
+
         logger.info('Менеджер успешно завершил работу')
