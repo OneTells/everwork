@@ -5,19 +5,17 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class ExecutorMode(BaseModel):
-    source_streams: Annotated[set[str], Field(min_length=1)]
-
-    limited_args: Annotated[list[dict[str, Any]], Field(min_length=1)] | None = None
+    limited_args: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class TriggerMode(BaseModel):
     execution_interval: Annotated[float, Field(gt=0)]
 
-    source_streams: Annotated[set[str], Field(min_length=1)] | None = None
-
 
 class WorkerSettings(BaseModel):
     name: Annotated[str, Field(min_length=1)]
+
+    source_streams: set[str] = Field(default_factory=set)
     mode: ExecutorMode | TriggerMode
 
     execution_timeout: Annotated[float, Field(gt=0)] = 180
@@ -58,7 +56,7 @@ class ProcessGroup(BaseModel):
     def validator(self) -> Self:
         if self.replicas == 1:
             if any(
-                isinstance(worker.settings.mode, ExecutorMode) and worker.settings.mode.limited_args is not None
+                isinstance(worker.settings.mode, ExecutorMode) and worker.settings.mode.limited_args
                 for worker in self.workers
             ):
                 raise ValueError('При использовании LimitArgs должна быть репликация')

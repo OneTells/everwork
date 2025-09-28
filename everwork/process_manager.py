@@ -10,7 +10,7 @@ from redis.asyncio import Redis
 
 from everwork.process_supervisor import ProcessSupervisor
 from everwork.utils import ShutdownEvent
-from everwork.worker_base import BaseWorker, ExecutorMode, ProcessGroup, TriggerMode
+from everwork.worker_base import BaseWorker, ExecutorMode, ProcessGroup
 
 try:
     from uvloop import new_event_loop
@@ -60,6 +60,8 @@ class ProcessManager:
         self.__scripts: dict[str, str] = {}
 
     def __set_shutdown_flag(self, *_) -> None:
+        logger.info('Вызван метод закрытия наблюдателя процесса')
+
         self.__shutdown_event.set()
 
         for process_supervisor in self.__process_supervisors:
@@ -84,10 +86,7 @@ class ProcessManager:
 
         for process_group in self.__process_groups:
             for worker in process_group.workers:
-                if isinstance(worker.settings.mode, TriggerMode) and worker.settings.mode.source_streams is None:
-                    continue
-
-                for stream_name in (worker.settings.mode.source_streams | {f'worker:{worker.settings.name}:stream'}):
+                for stream_name in (worker.settings.source_streams | {f'worker:{worker.settings.name}:stream'}):
                     groups = await self.__redis.xinfo_groups(stream_name)
 
                     if any(group['name'] == worker.settings.name for group in groups):
@@ -100,7 +99,7 @@ class ProcessManager:
 
         for process_group in self.__process_groups:
             for worker in process_group.workers:
-                if not isinstance(worker.settings.mode, ExecutorMode) or worker.settings.mode.limited_args is None:
+                if not isinstance(worker.settings.mode, ExecutorMode) or not worker.settings.mode.limited_args:
                     continue
 
                 await pipeline.delete(f'worker:{worker.settings.name}:taken_limit_args')
@@ -137,13 +136,12 @@ class ProcessManager:
 
         signal.signal(signal.SIGINT, self.__set_shutdown_flag)
         signal.signal(signal.SIGTERM, self.__set_shutdown_flag)
-        logger.debug('Установлены обработчики сигналов')
 
         self.__scripts['set_state'] = await self.__register_set_state_script()
         self.__scripts['handle_error'] = await self.__register_handle_error_script()
         self.__scripts['handle_cancel'] = await self.__register_handle_cancel_script()
         self.__scripts['handle_success'] = await self.__register_handle_success_script()
-        logger.debug('Зарегистрированы скрипты')
+        logger.info('Зарегистрированы скрипты')
 
         await self.__init_process()
         logger.info('Инициализированы процессы')
@@ -154,7 +152,7 @@ class ProcessManager:
         await self.__register_limit_args()
         logger.info('Инициализированы limit args')
 
-        logger.info('Начато создание наблюдателей')
+        logger.info('Начато создание наблюдателей процесса')
 
         for uuid, workers in self.__worker_definitions.items():
             process_supervisor = ProcessSupervisor(uuid, workers, self.__shutdown_event, self.__redis_dsn, self.__scripts)
@@ -162,12 +160,11 @@ class ProcessManager:
 
             self.__process_supervisors.append(process_supervisor)
 
-        logger.info('Наблюдатели запущены')
+        logger.info('Наблюдатели процесса запущены')
 
         for process_supervisor in self.__process_supervisors:
             process_supervisor.wait()
 
         self.__redis.close()
-        logger.debug('Менеджер закрыл Redis')
 
         logger.info('Менеджер успешно завершил работу')

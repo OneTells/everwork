@@ -51,94 +51,82 @@ class ProcessSupervisor:
         self.__process: context.SpawnProcess
 
     def __start_process(self) -> None:
-        logger.debug(f'Начат запуск процесса. Состав: {self.__worker_names}')
-
         self.__process = context.SpawnProcess(target=WorkerManager.run, kwargs=self.__data, daemon=True)
         self.__process.start()
 
-        logger.debug(f'Процесс запущен. Состав: {self.__worker_names}')
+        logger.debug(f'{self.__worker_names}: Процесс запущен')
 
     async def __close_process(self) -> None:
-        logger.debug(f'Начат процесс завершения процесса. Состав: {self.__worker_names}')
+        logger.debug(f'{self.__worker_names}: Начат процесс завершения процесса')
 
         self.__process.terminate()
-        logger.debug(f'Процессу отправлен сигнал SIGTERM. Состав: {self.__worker_names}')
 
         end_time = time.time() + self.__SHUTDOWN_TIMEOUT_SECONDS
-
-        logger.debug(f'Ожидание завершения процесса. Состав: {self.__worker_names}')
 
         with self.__shutdown_safe_zone:
             while True:
                 if time.time() > end_time:
-                    logger.warning(f'Процесс не завершился за отведенное время. Состав: {self.__worker_names}')
+                    logger.warning(f'{self.__worker_names}: Процесс не завершился за отведенное время')
                     break
 
                 if not self.__process.is_alive():
-                    logger.debug(f'Процесс завершился за отведенное время. Состав: {self.__worker_names}')
                     break
 
                 await asyncio.sleep(0.1)
 
         if self.__process.is_alive():
             self.__process.kill()
-            logger.warning(f'Процессу отправлен сигнал SIGKILL. Состав: {self.__worker_names}')
+            logger.warning(f'{self.__worker_names}: Процессу отправлен сигнал SIGKILL')
 
         self.__process.join()
-        logger.debug(f'Ресурсы процесса освобождены. Состав: {self.__worker_names}')
-
         self.__process.close()
-        logger.debug(f'Завершен процесс. Состав: {self.__worker_names}')
+
+        logger.debug(f'{self.__worker_names}: Процесс завершен')
 
     async def __run(self) -> None:
-        logger.debug(f'Запущен наблюдатель. Состав: {self.__worker_names}')
+        logger.debug(f'{self.__worker_names}: Запущен наблюдатель процесса')
 
         self.__start_process()
 
         try:
             while not self.__shutdown_event.is_set():
-                logger.debug(f'Ожидание состояния процесса. Состав: {self.__worker_names}')
+                logger.debug(f'{self.__worker_names}: Ожидание получения состояния процесса')
 
                 with self.__shutdown_safe_zone:
                     data = await self.__redis.brpop([f'process:{self.__uuid}:state'])
 
-                logger.debug(f'Получено состояние процесса. Состав: {self.__worker_names}')
-
                 state = ProcessState.model_validate(loads(data[1]))
 
-                logger.debug(f'Начать процесс отслеживание работы {state.worker_name}. Состав: {self.__worker_names}')
+                logger.debug(f'{self.__worker_names}: Начать процесс отслеживание работы {state.worker_name}')
 
                 with self.__shutdown_safe_zone:
                     with suppress(TimeoutError):
                         async with asyncio.timeout(state.end_time - time.time()):
                             await self.__redis.brpop([f'process:{self.__uuid}:state'])
 
-                        logger.debug(f'Worker {state.worker_name} успешно отработал. Состав: {self.__worker_names}')
+                        logger.debug(f'{self.__worker_names}: Worker {state.worker_name} успешно отработал')
                         continue
 
-                logger.warning(f'Worker {state.worker_name} завис. Начат перезапуск процесса. Состав: {self.__worker_names}')
+                logger.warning(f'{self.__worker_names}: Worker {state.worker_name} завис. Начат перезапуск процесса')
 
                 await self.__close_process()
 
                 with self.__shutdown_safe_zone:
                     await self.__redis.delete(f'process:{self.__uuid}:state')
 
-                logger.debug(f'Состояние процесса очищено. Состав: {self.__worker_names}')
-
                 self.__start_process()
 
-                logger.warning(f'Завершен перезапуск процесса. Состав: {self.__worker_names}')
+                logger.warning(f'{self.__worker_names}: Завершен перезапуск процесса')
         except asyncio.CancelledError:
-            logger.debug(f'Мониторинг процесса отменен. Состав: {self.__worker_names}')
+            logger.debug(f'{self.__worker_names}: Мониторинг процесса отменен')
         except Exception as error:
-            logger.exception(f'Мониторинг процесса неожиданно завершился. Состав: {self.__worker_names}. {error}')
+            logger.exception(f'{self.__worker_names}: Мониторинг процесса неожиданно завершился: {error}')
 
         await self.__close_process()
 
         await self.__redis.close()
-        logger.debug(f'Наблюдатель закрыл Redis. Состав: {self.__worker_names}')
 
-        logger.debug(f'Наблюдатель завершил работу. Состав: {self.__worker_names}')
+        logger.debug(f'{self.__worker_names}: Наблюдатель процесса завершил работу')
 
     def run(self) -> None:
         self.__thread.start()
@@ -147,17 +135,15 @@ class ProcessSupervisor:
         self.__thread.join()
 
     def close(self) -> None:
-        logger.debug(f'Вызван метод закрытия системы по управлению процессом. Состав: {self.__worker_names}')
+        logger.debug(f'{self.__worker_names}: Вызван метод закрытия наблюдателя процесса')
 
         if not self.__shutdown_safe_zone.is_use():
-            logger.debug(f'Безопасная зона не используется. Состав: {self.__worker_names}')
+            logger.debug(f'{self.__worker_names}: Безопасная зона не используется')
             return
 
         def stop_event_loop() -> None:
-            logger.debug(f'Вызвана остановка цикла событий. Состав: {self.__worker_names}')
             self.__runner.close()
-            logger.debug(f'Цикл событий остановлен. Состав: {self.__worker_names}')
+            logger.debug(f'{self.__worker_names}: Цикл событий остановлен')
 
         # noinspection PyTypeChecker
         self.__runner.get_loop().call_soon_threadsafe(stop_event_loop)
-        logger.debug(f'Запланирована остановка цикла событий. Состав: {self.__worker_names}')
