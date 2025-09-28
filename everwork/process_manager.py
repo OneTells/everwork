@@ -152,8 +152,6 @@ class ProcessManager:
         await self.__register_limit_args()
         logger.info('Инициализированы limit args')
 
-        logger.info('Начато создание наблюдателей процесса')
-
         for uuid, workers in self.__worker_definitions.items():
             process_supervisor = ProcessSupervisor(uuid, workers, self.__shutdown_event, self.__redis_dsn, self.__scripts)
             process_supervisor.run()
