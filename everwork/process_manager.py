@@ -132,7 +132,7 @@ class ProcessManager:
         raise NotImplementedError
 
     async def run(self) -> None:
-        logger.info('Manager запушен')
+        logger.info('Менеджер запушен')
 
         signal.signal(signal.SIGINT, self.__set_shutdown_flag)
         signal.signal(signal.SIGTERM, self.__set_shutdown_flag)
