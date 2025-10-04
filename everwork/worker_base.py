@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class ExecutorMode(BaseModel):
-    limited_args: list[dict[str, Any]] = Field(default_factory=list)
+    pass
 
 
 class TriggerMode(BaseModel):
@@ -44,7 +44,7 @@ class BaseWorker(ABC):
         return
 
     @abstractmethod
-    async def __call__(self, **kwargs) -> list[WorkerEvent] | None:
+    async def __call__(self, **kwargs: Any) -> None:
         raise NotImplementedError
 
 
@@ -54,13 +54,6 @@ class ProcessGroup(BaseModel):
 
     @model_validator(mode='after')
     def validator(self) -> Self:
-        if self.replicas == 1:
-            if any(
-                isinstance(worker.settings.mode, ExecutorMode) and worker.settings.mode.limited_args
-                for worker in self.workers
-            ):
-                raise ValueError('При использовании LimitArgs должна быть репликация')
-
         if self.replicas > 1:
             if len(self.workers) > 1:
                 raise ValueError('Репликация не работает с несколькими worker')

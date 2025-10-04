@@ -1,6 +1,13 @@
 from asyncio import CancelledError
 from typing import Self
 
+from orjson import dumps
+from pydantic_core import to_jsonable_python
+from redis.asyncio import Redis
+from redis.exceptions import NoScriptError
+
+from everwork import WorkerEvent
+
 
 def timer(*, hours: int = 0, minutes: int = 0, seconds: int = 0, milliseconds: int = 0) -> float:
     return hours * 3600 + minutes * 60 + seconds + milliseconds / 1000
@@ -36,3 +43,53 @@ class ShutdownSafeZone:
 
     def __exit__(self, *_) -> None:
         self.__is_use = False
+
+
+class EventPublisher:
+
+    def __init__(self, redis: Redis, max_batch_size: int = 500) -> None:
+        self.__redis = redis
+        self.__max_batch_size = max_batch_size
+
+        self.__events: list[WorkerEvent] = []
+        self.__script_sha: str | None = None
+
+    async def __register_script(self) -> None:
+        self.__script_sha = await self.__redis.script_load(
+            """
+            for i = 1, #ARGV, 2 do
+                local stream_key = ARGV[i]
+                local event_data = ARGV[i+1]
+                redis.call('XADD', stream_key, '*', 'data', event_data)
+            end
+            """
+        )
+
+    async def add_event(self, event: WorkerEvent) -> None:
+        self.__events.append(event)
+
+        if len(self.__events) >= self.__max_batch_size:
+            await self.flush_events()
+
+    async def flush_events(self) -> None:
+        if not self.__events:
+            return
+
+        if self.__script_sha is None:
+            await self.__register_script()
+
+        args = [item for event in self.__events for item in (event.target_stream, dumps(to_jsonable_python(event.data)))]
+
+        try:
+            await self.__redis.evalsha(self.__script_sha, 0, *args)
+        except NoScriptError:
+            await self.__register_script()
+            await self.__redis.evalsha(self.__script_sha, 0, *args)
+
+        self.__events.clear()
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *_) -> None:
+        await self.flush_events()
