@@ -5,6 +5,7 @@ from typing import Any
 from uuid import uuid4
 
 from loguru import logger
+from orjson import loads
 from pydantic import BaseModel
 from redis.asyncio import Redis
 
@@ -71,7 +72,7 @@ class TriggerResourceHandler(BaseResourceHandler):
 
                 self.resources = Resources(stream_name=stream_name, message_id=message_id)
 
-                return kwargs['data']
+                return loads(kwargs['data'])
 
         logger.debug(f'[{self._worker.settings.name}] ')
 
@@ -106,4 +107,4 @@ class ExecutorResourceHandler(BaseResourceHandler):
 
         self.resources = Resources(stream_name=stream_name, message_id=message_id)
 
-        return kwargs['data']
+        return loads(kwargs['data'])
