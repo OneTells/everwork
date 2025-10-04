@@ -12,7 +12,7 @@ from redis.asyncio import Redis
 from redis.exceptions import NoScriptError
 
 from everwork.resource_handler import BaseResourceHandler
-from everwork.utils import ShutdownSafeZone, ShutdownEvent
+from everwork.utils import ShutdownSafeZone, ShutdownEvent, EventPublisher
 from everwork.worker_base import BaseWorker
 
 try:
@@ -35,7 +35,11 @@ class WorkerSupervisor:
     ) -> None:
         self.__uuid = uuid4()
 
+        self.__redis = Redis.from_url(url=redis_dsn, protocol=3, decode_responses=True)
+
         self.__worker = worker()
+        self.__worker.event_publisher = EventPublisher(self.__redis, self.__worker.settings.event_publisher_settings)
+
         self.__function = validate_call(validate_return=True)(self.__worker.__call__)
 
         self.__shutdown_event = shutdown_event
@@ -43,8 +47,6 @@ class WorkerSupervisor:
 
         self.__lock = lock
         self.__pipe_connection = pipe_connection
-
-        self.__redis = Redis.from_url(url=redis_dsn, protocol=3, decode_responses=True)
 
         self.__resource_handler = resource_handler(self.__redis, self.__worker, self.__shutdown_safe_zone)
 
@@ -181,7 +183,8 @@ class WorkerSupervisor:
                     self.__notify_event_start()
 
                     try:
-                        await self.__function(**kwargs)  # type: ignore
+                        async with self.__worker.event_publisher:
+                            await self.__function(**kwargs)  # type: ignore
                     except Exception as error:
                         logger.exception(f'[{self.__worker.settings.name}] Ошибка обработки ивента: {error}')
                         await self.__handle_error()

@@ -8,8 +8,8 @@ from loguru import logger
 from pydantic import BaseModel
 from redis.asyncio import Redis
 
-from everwork import BaseWorker
 from everwork.utils import ShutdownSafeZone
+from everwork.worker_base import BaseWorker
 
 
 class Resources(BaseModel):
@@ -33,12 +33,12 @@ class BaseResourceHandler(ABC):
             | {f'worker:{self._worker.settings.name}:stream': '>'}
         )
 
+    def clear(self) -> None:
+        self.resources = None
+
     @abstractmethod
     async def get_kwargs(self) -> dict[str, Any]:
         raise NotImplementedError
-
-    def clear(self) -> None:
-        self.resources = None
 
 
 class TriggerResourceHandler(BaseResourceHandler):

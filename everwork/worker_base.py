@@ -3,6 +3,8 @@ from typing import Annotated, Any, Self
 
 from pydantic import BaseModel, Field, model_validator
 
+from everwork.utils import EventPublisher
+
 
 class ExecutorMode(BaseModel):
     pass
@@ -12,6 +14,10 @@ class TriggerMode(BaseModel):
     execution_interval: Annotated[float, Field(gt=0)]
 
 
+class EventPublisherSettings(BaseModel):
+    max_batch_size: Annotated[int, Field(ge=1)] = 500
+
+
 class WorkerSettings(BaseModel):
     name: Annotated[str, Field(min_length=1)]
 
@@ -19,6 +25,7 @@ class WorkerSettings(BaseModel):
     mode: ExecutorMode | TriggerMode
 
     execution_timeout: Annotated[float, Field(gt=0)] = 180
+    event_publisher_settings: EventPublisherSettings = Field(default_factory=EventPublisherSettings)
 
 
 class WorkerEvent(BaseModel):
@@ -28,19 +35,23 @@ class WorkerEvent(BaseModel):
 
 class BaseWorker(ABC):
     settings: WorkerSettings
+    event_publisher: EventPublisher
 
     def __init_subclass__(cls) -> None:
         cls.settings = cls.get_settings()
+
+    async def add_event(self, event: WorkerEvent) -> None:
+        await self.event_publisher.add_event(event)
 
     @staticmethod
     @abstractmethod
     def get_settings() -> WorkerSettings:
         raise NotImplementedError
 
-    async def startup(self) -> None:
+    async def shutdown(self) -> None:
         return
 
-    async def shutdown(self) -> None:
+    async def startup(self) -> None:
         return
 
     @abstractmethod

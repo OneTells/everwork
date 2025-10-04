@@ -6,7 +6,7 @@ from pydantic_core import to_jsonable_python
 from redis.asyncio import Redis
 from redis.exceptions import NoScriptError
 
-from everwork import WorkerEvent
+from everwork.worker_base import EventPublisherSettings, WorkerEvent
 
 
 def timer(*, hours: int = 0, minutes: int = 0, seconds: int = 0, milliseconds: int = 0) -> float:
@@ -31,9 +31,6 @@ class ShutdownSafeZone:
         self.__shutdown_event = shutdown_event
         self.__is_use = False
 
-    def is_use(self) -> bool:
-        return self.__is_use
-
     def __enter__(self) -> Self:
         if self.__shutdown_event.is_set():
             raise CancelledError()
@@ -44,15 +41,24 @@ class ShutdownSafeZone:
     def __exit__(self, *_) -> None:
         self.__is_use = False
 
+    def is_use(self) -> bool:
+        return self.__is_use
+
 
 class EventPublisher:
 
-    def __init__(self, redis: Redis, max_batch_size: int = 500) -> None:
+    def __init__(self, redis: Redis, settings: EventPublisherSettings) -> None:
         self.__redis = redis
-        self.__max_batch_size = max_batch_size
+        self.__settings = settings
 
         self.__events: list[WorkerEvent] = []
         self.__script_sha: str | None = None
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *_) -> None:
+        await self.flush_events()
 
     async def __register_script(self) -> None:
         self.__script_sha = await self.__redis.script_load(
@@ -68,7 +74,7 @@ class EventPublisher:
     async def add_event(self, event: WorkerEvent) -> None:
         self.__events.append(event)
 
-        if len(self.__events) >= self.__max_batch_size:
+        if len(self.__events) >= self.__settings.max_batch_size:
             await self.flush_events()
 
     async def flush_events(self) -> None:
@@ -87,9 +93,3 @@ class EventPublisher:
             await self.__redis.evalsha(self.__script_sha, 0, *args)
 
         self.__events.clear()
-
-    async def __aenter__(self) -> Self:
-        return self
-
-    async def __aexit__(self, *_) -> None:
-        await self.flush_events()
