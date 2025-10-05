@@ -55,7 +55,7 @@ class WorkerSupervisor:
 
         self.__scripts: dict[str, str] = {}
 
-    async def __register_handle_error_script(self) -> None:
+    async def __load_handle_error_script(self) -> None:
         self.__scripts['handle_error'] = await self.__redis.script_load(
             """
             redis.call('XACK', KEYS[1], KEYS[2], KEYS[3])
@@ -68,7 +68,7 @@ class WorkerSupervisor:
             """
         )
 
-    async def __register_handle_cancel_script(self) -> None:
+    async def __load_handle_cancel_script(self) -> None:
         self.__scripts['handle_cancel'] = await self.__redis.script_load(
             """
             local messages = redis.call('XRANGE', KEYS[1], KEYS[3], KEYS[3], 'COUNT', 1)
@@ -93,7 +93,7 @@ class WorkerSupervisor:
         try:
             await self.__redis.evalsha(self.__scripts['handle_error'], 3, *keys_and_args)
         except NoScriptError:
-            await self.__register_handle_error_script()
+            await self.__load_handle_error_script()
             await self.__redis.evalsha(self.__scripts['handle_error'], 3, *keys_and_args)
 
     async def __handle_cancel(self) -> None:
@@ -109,7 +109,7 @@ class WorkerSupervisor:
         try:
             await self.__redis.evalsha(self.__scripts['handle_cancel'], 3, *keys)
         except NoScriptError:
-            await self.__register_handle_cancel_script()
+            await self.__load_handle_cancel_script()
             await self.__redis.evalsha(self.__scripts['handle_cancel'], 3, *keys)
 
     async def __handle_success(self) -> None:
@@ -138,8 +138,8 @@ class WorkerSupervisor:
     async def __run(self):
         logger.debug(f'[{self.__worker.settings.name}] Запушен наблюдатель воркера')
 
-        await self.__register_handle_error_script()
-        await self.__register_handle_cancel_script()
+        await self.__load_handle_error_script()
+        await self.__load_handle_cancel_script()
         logger.info(f'[{self.__worker.settings.name}] Зарегистрированы скрипты')
 
         try:

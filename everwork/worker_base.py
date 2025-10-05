@@ -40,8 +40,8 @@ class BaseWorker(ABC):
     def __init_subclass__(cls) -> None:
         cls.settings = cls.get_settings()
 
-    async def add_events(self, events: WorkerEvent | list[WorkerEvent]) -> None:
-        await self.event_publisher.add_events(events)
+    async def add_event(self, event: WorkerEvent | list[WorkerEvent]) -> None:
+        await self.event_publisher.add(event)
 
     @staticmethod
     @abstractmethod

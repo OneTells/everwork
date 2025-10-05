@@ -3,7 +3,7 @@ from typing import Self
 
 from redis.asyncio import Redis
 
-from everwork.api import WorkerAPI
+from everwork.stream_client import StreamClient
 from everwork.worker_base import EventPublisherSettings, WorkerEvent
 
 
@@ -46,7 +46,7 @@ class ShutdownSafeZone:
 class EventPublisher:
 
     def __init__(self, redis: Redis, settings: EventPublisherSettings) -> None:
-        self.__api = WorkerAPI(redis)
+        self.__stream_client = StreamClient(redis)
         self.__settings = settings
 
         self.__events: list[WorkerEvent] = []
@@ -55,20 +55,20 @@ class EventPublisher:
         return self
 
     async def __aexit__(self, *_) -> None:
-        await self.publish_events()
+        await self.publish()
 
-    async def add_events(self, events: WorkerEvent | list[WorkerEvent]) -> None:
-        if isinstance(events, WorkerEvent):
-            self.__events.append(events)
+    async def add(self, event: WorkerEvent | list[WorkerEvent]) -> None:
+        if isinstance(event, WorkerEvent):
+            self.__events.append(event)
         else:
-            self.__events.extend(events)
+            self.__events.extend(event)
 
         if len(self.__events) >= self.__settings.max_batch_size:
-            await self.publish_events()
+            await self.publish()
 
-    async def publish_events(self) -> None:
+    async def publish(self) -> None:
         if not self.__events:
             return
 
-        await self.__api.push_events(self.__events)
+        await self.__stream_client.push_event(self.__events)
         self.__events.clear()
