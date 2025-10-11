@@ -1,9 +1,7 @@
 import asyncio
 import time
-from datetime import datetime, UTC
 from multiprocessing import connection
 from threading import Thread, Lock
-from uuid import uuid4
 
 from loguru import logger
 from orjson import dumps
@@ -11,9 +9,9 @@ from pydantic import validate_call
 from redis.asyncio import Redis
 from redis.exceptions import NoScriptError
 
-from everwork.resource_handler import BaseResourceHandler
-from everwork.utils import ShutdownSafeZone, ShutdownEvent, EventPublisher
-from everwork.worker_base import BaseWorker
+from .resource_handler import BaseResourceHandler
+from .utils import ShutdownSafeZone, ShutdownEvent
+from .worker_base import BaseWorker
 
 try:
     from uvloop import new_event_loop
@@ -33,13 +31,9 @@ class WorkerSupervisor:
         pipe_connection: connection.Connection,
         resource_handler: type[BaseResourceHandler]
     ) -> None:
-        self.__uuid = uuid4()
-
-        self.__redis = Redis.from_url(url=redis_dsn, protocol=3, decode_responses=True)
+        self.__redis = Redis.from_url(redis_dsn, protocol=3, decode_responses=True)
 
         self.__worker = worker()
-        self.__worker.event_publisher = EventPublisher(self.__redis, self.__worker.settings.event_publisher_settings)
-
         self.__function = validate_call(validate_return=True)(self.__worker.__call__)
 
         self.__shutdown_event = shutdown_event
@@ -48,25 +42,12 @@ class WorkerSupervisor:
         self.__lock = lock
         self.__pipe_connection = pipe_connection
 
-        self.__resource_handler = resource_handler(self.__redis, self.__worker, self.__shutdown_safe_zone)
+        self.__resource_handler = resource_handler(self.__redis, self.__worker.settings, self.__shutdown_safe_zone)
 
         self.__runner = asyncio.Runner(loop_factory=new_event_loop)
         self.__thread = Thread(target=lambda: self.__runner.run(self.__run()), daemon=True)
 
         self.__scripts: dict[str, str] = {}
-
-    async def __load_handle_error_script(self) -> None:
-        self.__scripts['handle_error'] = await self.__redis.script_load(
-            """
-            redis.call('XACK', KEYS[1], KEYS[2], KEYS[3])
-            redis.call('XADD', 'errors:stream', '*',
-                'worker', KEYS[2],
-                'stream_name', KEYS[1],
-                'message_id', KEYS[3],
-                'timestamp', ARGV[1]
-            )
-            """
-        )
 
     async def __load_handle_cancel_script(self) -> None:
         self.__scripts['handle_cancel'] = await self.__redis.script_load(
@@ -83,25 +64,18 @@ class WorkerSupervisor:
         if self.__resource_handler.resources is None:
             return
 
-        keys_and_args = [
-            self.__resource_handler.resources.stream_name,
-            self.__worker.settings.name,
-            self.__resource_handler.resources.message_id,
-            datetime.now(UTC).isoformat()
-        ]
-
-        try:
-            await self.__redis.evalsha(self.__scripts['handle_error'], 3, *keys_and_args)
-        except NoScriptError:
-            await self.__load_handle_error_script()
-            await self.__redis.evalsha(self.__scripts['handle_error'], 3, *keys_and_args)
+        await self.__redis.xack(
+            name=self.__resource_handler.resources.stream,
+            groupname=self.__worker.settings.name,
+            message_ids=[self.__resource_handler.resources.message_id]
+        )
 
     async def __handle_cancel(self) -> None:
         if self.__resource_handler.resources is None:
             return
 
         keys = [
-            self.__resource_handler.resources.stream_name,
+            self.__resource_handler.resources.stream,
             self.__worker.settings.name,
             self.__resource_handler.resources.message_id
         ]
@@ -117,7 +91,7 @@ class WorkerSupervisor:
             return
 
         await self.__redis.xack(
-            name=self.__resource_handler.resources.stream_name,
+            name=self.__resource_handler.resources.stream,
             groupname=self.__worker.settings.name,
             message_ids=[self.__resource_handler.resources.message_id]
         )
@@ -138,16 +112,19 @@ class WorkerSupervisor:
     async def __run(self):
         logger.debug(f'[{self.__worker.settings.name}] Запушен наблюдатель воркера')
 
-        await self.__load_handle_error_script()
+        await self.__redis.initialize()
+
+        self.__worker.initialize(self.__redis)
+
         await self.__load_handle_cancel_script()
-        logger.info(f'[{self.__worker.settings.name}] Зарегистрированы скрипты')
+        logger.info(f'[{self.__worker.settings.name}] Скрипты зарегистрированы')
 
         try:
             await self.__worker.startup()
         except Exception as error:
             logger.exception(f'[{self.__worker.settings.name}] Не удалось выполнить startup: {error}')
 
-            await self.__redis.close()
+            await self.__redis.aclose()
             return
 
         try:
@@ -186,7 +163,12 @@ class WorkerSupervisor:
                         async with self.__worker.event_publisher:
                             await self.__function(**kwargs)  # type: ignore
                     except Exception as error:
-                        logger.exception(f'[{self.__worker.settings.name}] Ошибка обработки ивента: {error}')
+                        logger.exception(
+                            f'[{self.__worker.settings.name}] Не удалось обработать ивент. '
+                            f'Поток: {self.__resource_handler.resources.stream}; '
+                            f'ID сообщения: {self.__resource_handler.resources.message_id}; '
+                            f'Ошибка: {error}'
+                        )
                         await self.__handle_error()
                     else:
                         await self.__handle_success()
@@ -207,7 +189,7 @@ class WorkerSupervisor:
         except Exception as error:
             logger.exception(f'[{self.__worker.settings.name}] Не удалось выполнить shutdown: {error}')
 
-        await self.__redis.close()
+        await self.__redis.aclose()
 
         logger.debug(f'[{self.__worker.settings.name}] Наблюдатель воркера завершил работ')
 

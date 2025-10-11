@@ -6,10 +6,10 @@ from threading import Lock
 from loguru import logger
 from pydantic import validate_call, RedisDsn
 
-from everwork.resource_handler import TriggerResourceHandler, ExecutorResourceHandler
-from everwork.utils import ShutdownEvent
-from everwork.worker_base import BaseWorker, TriggerMode
-from everwork.worker_supervisor import WorkerSupervisor
+from .resource_handler import TriggerResourceHandler, ExecutorResourceHandler
+from .utils import ShutdownEvent
+from .worker_base import BaseWorker, TriggerMode
+from .worker_supervisor import WorkerSupervisor
 
 try:
     from uvloop import new_event_loop

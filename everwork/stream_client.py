@@ -3,7 +3,7 @@ from pydantic_core import to_jsonable_python
 from redis.asyncio import Redis
 from redis.exceptions import NoScriptError
 
-from everwork.worker_base import WorkerEvent
+from .worker_base import WorkerEvent
 
 
 class StreamClient:
@@ -43,9 +43,3 @@ class StreamClient:
         except NoScriptError:
             await self.__load_push_event_script()
             await self.__redis.evalsha(self.__scripts['push_event'], 0, *args)
-
-    async def get_all_streams(self) -> list[str]:
-        pass
-
-    async def trim_stream_by_timestamp(self, stream_name: str, timestamp: int):
-        pass

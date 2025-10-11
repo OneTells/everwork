@@ -6,9 +6,9 @@ from loguru import logger
 from pydantic import validate_call, AfterValidator, RedisDsn
 from redis.asyncio import Redis
 
-from everwork.process_supervisor import ProcessSupervisor
-from everwork.utils import ShutdownEvent
-from everwork.worker_base import ProcessGroup
+from .process_supervisor import ProcessSupervisor
+from .utils import ShutdownEvent
+from .worker_base import ProcessGroup
 
 try:
     from uvloop import new_event_loop
@@ -75,13 +75,13 @@ class ProcessManager:
 
         for process_group in self.__process_groups:
             for worker in process_group.workers:
-                for stream_name in (worker.settings.source_streams | {f'worker:{worker.settings.name}:stream'}):
-                    groups = await redis.xinfo_groups(stream_name)
+                for stream in (worker.settings.source_streams | {f'worker:{worker.settings.name}:stream'}):
+                    groups = await redis.xinfo_groups(stream)
 
                     if any(group['name'] == worker.settings.name for group in groups):
                         continue
 
-                    await pipeline.xgroup_create(stream_name, worker.settings.name, mkstream=True)
+                    await pipeline.xgroup_create(stream, worker.settings.name, mkstream=True)
 
         await pipeline.execute()
 
@@ -91,7 +91,7 @@ class ProcessManager:
         signal.signal(signal.SIGINT, self.__handle_shutdown_signal)
         signal.signal(signal.SIGTERM, self.__handle_shutdown_signal)
 
-        async with Redis.from_url(url=self.__redis_dsn, protocol=3, decode_responses=True) as redis:
+        async with Redis.from_url(self.__redis_dsn, protocol=3, decode_responses=True) as redis:
             await self.__init_workers(redis)
 
         logger.info('Инициализированы workers')

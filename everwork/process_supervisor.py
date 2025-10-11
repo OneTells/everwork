@@ -6,9 +6,9 @@ from loguru import logger
 from orjson import loads
 from pydantic import BaseModel
 
-from everwork.utils import ShutdownSafeZone, ShutdownEvent
-from everwork.worker_base import BaseWorker
-from everwork.worker_manager import WorkerManager
+from .utils import ShutdownSafeZone, ShutdownEvent
+from .worker_base import BaseWorker
+from .worker_manager import WorkerManager
 
 try:
     from uvloop import new_event_loop

@@ -1,9 +1,11 @@
 from abc import ABC, abstractmethod
-from typing import Annotated, Any, Self
+from typing import Annotated, Any, Self, ClassVar
 
 from pydantic import BaseModel, Field, model_validator
+from redis.asyncio import Redis
 
-from everwork.utils import EventPublisher
+from .stream_client import StreamClient
+from .utils import EventPublisher
 
 
 class ExecutorMode(BaseModel):
@@ -34,25 +36,30 @@ class WorkerEvent(BaseModel):
 
 
 class BaseWorker(ABC):
-    settings: WorkerSettings
-    event_publisher: EventPublisher
+    settings: ClassVar[WorkerSettings]
 
     def __init_subclass__(cls) -> None:
-        cls.settings = cls.get_settings()
+        cls.settings = cls._get_settings()
 
-    async def add_event(self, event: WorkerEvent | list[WorkerEvent]) -> None:
+    def __init__(self) -> None:
+        self.event_publisher: EventPublisher | None = None
+
+    def initialize(self, redis: Redis) -> None:
+        self.event_publisher = EventPublisher(StreamClient(redis), self.settings.event_publisher_settings)
+
+    async def _add_event(self, event: WorkerEvent | list[WorkerEvent]) -> None:
         await self.event_publisher.add(event)
 
-    @staticmethod
+    @classmethod
     @abstractmethod
-    def get_settings() -> WorkerSettings:
+    def _get_settings(cls) -> WorkerSettings:
         raise NotImplementedError
 
     async def shutdown(self) -> None:
-        return
+        pass
 
     async def startup(self) -> None:
-        return
+        pass
 
     @abstractmethod
     async def __call__(self, **kwargs: Any) -> None:

@@ -1,14 +1,12 @@
 from asyncio import CancelledError
 from typing import Self
 
-from redis.asyncio import Redis
-
-from everwork.stream_client import StreamClient
-from everwork.worker_base import EventPublisherSettings, WorkerEvent
+from .stream_client import StreamClient
+from .worker_base import EventPublisherSettings, WorkerEvent
 
 
-def timer(*, hours: int = 0, minutes: int = 0, seconds: int = 0, milliseconds: int = 0) -> float:
-    return hours * 3600 + minutes * 60 + seconds + milliseconds / 1000
+def timer(*, weeks: int = 0, days: int = 0, hours: int = 0, minutes: int = 0, seconds: int = 0, milliseconds: int = 0) -> float:
+    return weeks * 604800 + days * 86400 + hours * 3600 + minutes * 60 + seconds + milliseconds / 1000
 
 
 class ShutdownEvent:
@@ -45,8 +43,8 @@ class ShutdownSafeZone:
 
 class EventPublisher:
 
-    def __init__(self, redis: Redis, settings: EventPublisherSettings) -> None:
-        self.__stream_client = StreamClient(redis)
+    def __init__(self, stream_client: StreamClient, settings: EventPublisherSettings) -> None:
+        self.__stream_client = stream_client
         self.__settings = settings
 
         self.__events: list[WorkerEvent] = []
