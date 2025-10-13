@@ -1,6 +1,7 @@
 import asyncio
 import signal
 from typing import Annotated
+from uuid import UUID
 
 from loguru import logger
 from pydantic import validate_call, AfterValidator, RedisDsn
@@ -34,9 +35,11 @@ class ProcessManager:
     @validate_call
     def __init__(
         self,
+        uuid: Annotated[str, AfterValidator(lambda x: UUID(x) and x)],
         redis_dsn: RedisDsn,
         process_groups: Annotated[list[ProcessGroup], AfterValidator(check_worker_names)]
     ) -> None:
+        self.__uuid = uuid
         self.__redis_dsn = redis_dsn.encoded_string()
         self.__process_groups = process_groups
 
@@ -62,7 +65,7 @@ class ProcessManager:
 
         for process_group in self.__process_groups:
             for worker in process_group.workers:
-                keys.append(f'worker:{worker.settings.name}:is_worker_on')
+                keys.append(f'workers:{worker.settings.name}:is_worker_on')
 
         response = await redis.mget(keys)
 
@@ -75,7 +78,7 @@ class ProcessManager:
 
         for process_group in self.__process_groups:
             for worker in process_group.workers:
-                for stream in (worker.settings.source_streams | {f'worker:{worker.settings.name}:stream'}):
+                for stream in (worker.settings.source_streams | {f'workers:{worker.settings.name}:stream'}):
                     groups = await redis.xinfo_groups(stream)
 
                     if any(group['name'] == worker.settings.name for group in groups):

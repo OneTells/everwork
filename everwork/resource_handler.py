@@ -31,7 +31,7 @@ class BaseResourceHandler(ABC):
 
         self._streams = (
             {processing_stream: '>' for processing_stream in self._worker_settings.source_streams}
-            | {f'worker:{self._worker_settings.name}:stream': '>'}
+            | {f'workers:{self._worker_settings.name}:stream': '>'}
         )
 
     def clear(self) -> None:
@@ -47,7 +47,7 @@ class TriggerResourceHandler(BaseResourceHandler):
     async def get_kwargs(self) -> dict[str, Any]:
         logger.debug(f'[{self._worker_settings.name}] ')
 
-        last_time = await self._redis.get(f'worker:{self._worker_settings.name}:last_time')
+        last_time = await self._redis.get(f'workers:{self._worker_settings.name}:last_time')
 
         start_time = time.time()
         timeout = self._worker_settings.mode.execution_interval - (start_time - float(last_time or 0))
@@ -81,7 +81,7 @@ class TriggerResourceHandler(BaseResourceHandler):
 
         logger.debug(f'[{self._worker_settings.name}] ')
 
-        await self._redis.set(f'worker:{self._worker_settings.name}:last_time', time.time())
+        await self._redis.set(f'workers:{self._worker_settings.name}:last_time', time.time())
 
         return {}
 

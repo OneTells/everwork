@@ -5,6 +5,7 @@ from multiprocessing import Pipe, connection, context
 from loguru import logger
 from orjson import loads
 from pydantic import BaseModel
+from redis.asyncio import Redis
 
 from .utils import ShutdownSafeZone, ShutdownEvent
 from .worker_base import BaseWorker
@@ -24,6 +25,8 @@ class EventStartMessage(BaseModel):
 class ProcessSupervisor:
 
     def __init__(self, redis_dsn: str, workers: list[type[BaseWorker]], shutdown_event: ShutdownEvent) -> None:
+        self.__redis_dsn = redis_dsn
+
         self.__workers = workers
         self.__worker_names = ', '.join(worker.settings.name for worker in workers)
 
@@ -72,8 +75,46 @@ class ProcessSupervisor:
 
         logger.debug(f'[{self.__worker_names}] Процесс завершен')
 
+    async def __check_for_hung_tasks(self):
+        logger.debug(f'[{self.__worker_names}] Начат процесс проверки на зависшие задачи')
+
+        async with Redis.from_url(self.__redis_dsn, protocol=3, decode_responses=True) as redis:
+            async with redis.pipeline() as pipeline:
+                for worker in self.__workers:
+                    for stream in (worker.settings.source_streams | {f'workers:{worker.settings.name}:stream'}):
+                        pending_info = await redis.xpending(stream, worker.settings.name)
+
+                        if pending_info['pending'] == 0:
+                            continue
+
+                        pending_messages = await redis.xpending_range(
+                            name=stream,
+                            groupname=worker.settings.name,
+                            min=pending_info['min'],
+                            max=pending_info['max'],
+                            count=pending_info['pending']
+                        )
+
+                        message_ids = list(map(lambda x: x['message_id'], pending_messages))
+                        await pipeline.xack(stream, worker.settings.name, *message_ids)
+
+                        for msg in pending_messages:
+                            logger.warning(
+                                f'[{self.__worker_names}] Обнаружено зависшее сообщение. '
+                                f'Поток: {stream}; '
+                                f'Воркер (группа): {worker.settings.name}; '
+                                f'ID сообщения: {msg["message_id"]}; '
+                                f'Время обработки (ms): {msg["elapsed"]}'
+                            )
+
+                await pipeline.execute()
+
+        logger.debug(f'[{self.__worker_names}] Завершен процесс проверки на зависшие задачи')
+
     async def __run(self) -> None:
         logger.debug(f'[{self.__worker_names}] Запущен наблюдатель процесса')
+
+        await self.__check_for_hung_tasks()
 
         await asyncio.to_thread(self.__start_process)
 
@@ -98,6 +139,9 @@ class ProcessSupervisor:
                 logger.warning(f'[{self.__worker_names}] Воркер {state.worker_name} завис. Начат перезапуск процесса')
 
                 await asyncio.to_thread(self.__close_process)
+
+                await self.__check_for_hung_tasks()
+
                 await asyncio.to_thread(self.__start_process)
 
                 logger.warning(f'[{self.__worker_names}] Завершен перезапуск процесса')
@@ -110,6 +154,8 @@ class ProcessSupervisor:
 
         self.__pipe_reader_connection.close()
         self.__pipe_writer_connection.close()
+
+        await self.__check_for_hung_tasks()
 
         logger.debug(f'[{self.__worker_names}] Наблюдатель процесса завершил работу')
 

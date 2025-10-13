@@ -55,7 +55,7 @@ class WorkerSupervisor:
             local messages = redis.call('XRANGE', KEYS[1], KEYS[3], KEYS[3], 'COUNT', 1)
             if #messages > 0 then
                 redis.call('XACK', KEYS[1], KEYS[2], KEYS[3])
-                redis.call('XADD', 'worker:' .. KEYS[2] .. ':stream', '*', unpack(messages[1][2]))
+                redis.call('XADD', 'workers:' .. KEYS[2] .. ':stream', '*', unpack(messages[1][2]))
             end
             """
         )
@@ -106,7 +106,7 @@ class WorkerSupervisor:
         self.__pipe_connection.send_bytes(b'')
 
     async def __get_is_worker_on(self) -> bool:
-        value = await self.__redis.get(f'worker:{self.__worker.settings.name}:is_worker_on')
+        value = await self.__redis.get(f'workers:{self.__worker.settings.name}:is_worker_on')
         return value == '1'
 
     async def __run(self):
