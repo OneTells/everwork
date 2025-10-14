@@ -165,8 +165,8 @@ class WorkerSupervisor:
                     except Exception as error:
                         logger.exception(
                             f'[{self.__worker.settings.name}] Не удалось обработать ивент. '
-                            f'Поток: {self.__resource_handler.resources.stream}; '
-                            f'ID сообщения: {self.__resource_handler.resources.message_id}; '
+                            f'Поток: {self.__resource_handler.resources.stream}. '
+                            f'ID сообщения: {self.__resource_handler.resources.message_id}. '
                             f'Ошибка: {error}'
                         )
                         await self.__handle_error()

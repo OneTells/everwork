@@ -4,6 +4,7 @@ from typing import Annotated
 from uuid import UUID
 
 from loguru import logger
+from orjson import loads, dumps
 from pydantic import validate_call, AfterValidator, RedisDsn
 from redis.asyncio import Redis
 
@@ -17,7 +18,7 @@ except ImportError:
     from asyncio import new_event_loop
 
 
-def check_worker_names(process_groups: list[ProcessGroup]) -> list[ProcessGroup]:
+def _check_worker_names(process_groups: list[ProcessGroup]) -> list[ProcessGroup]:
     names = set()
 
     for process_group in process_groups:
@@ -37,7 +38,7 @@ class ProcessManager:
         self,
         uuid: Annotated[str, AfterValidator(lambda x: UUID(x) and x)],
         redis_dsn: RedisDsn,
-        process_groups: Annotated[list[ProcessGroup], AfterValidator(check_worker_names)]
+        process_groups: Annotated[list[ProcessGroup], AfterValidator(_check_worker_names)]
     ) -> None:
         self.__uuid = uuid
         self.__redis_dsn = redis_dsn.encoded_string()
@@ -61,32 +62,39 @@ class ProcessManager:
             process_supervisor.close()
 
     async def __init_workers(self, redis: Redis) -> None:
-        keys: list[str] = []
+        old_workers_map: dict[str, set[str]] = loads(await redis.get(f'managers:{self.__uuid}'))
+        new_workers_map = {w.settings.name: w.settings.source_streams for g in self.__process_groups for w in g.workers}
 
-        for process_group in self.__process_groups:
-            for worker in process_group.workers:
-                keys.append(f'workers:{worker.settings.name}:is_worker_on')
+        async with redis.pipeline() as pipe:
+            if old_worker_names := old_workers_map.keys() - new_workers_map.keys():
+                await pipe.delete(
+                    *(f'workers:{worker_name}:is_worker_on' for worker_name in old_worker_names),
+                    *(f'workers:{worker_name}:last_time' for worker_name in old_worker_names),
+                )
 
-        response = await redis.mget(keys)
+            if new_worker_names := new_workers_map.keys() - old_workers_map.keys():
+                await pipe.mset({f'workers:{worker_name}:is_worker_on': 0 for worker_name in new_worker_names})
 
-        value = {key: 0 for key, is_worker_on in zip(keys, response) if is_worker_on is None}
+            await pipe.set(f'managers:{self.__uuid}', dumps(new_workers_map))
+            await pipe.sadd('managers', self.__uuid)
 
-        if value:
-            await redis.mset(value)
+            await pipe.sadd('streams', *(s for g in self.__process_groups for w in g.workers for s in w.settings.source_streams))
 
-        pipeline = redis.pipeline()
+            await pipe.execute()
 
-        for process_group in self.__process_groups:
-            for worker in process_group.workers:
-                for stream in (worker.settings.source_streams | {f'workers:{worker.settings.name}:stream'}):
-                    groups = await redis.xinfo_groups(stream)
+    async def __init_stream_groups(self, redis: Redis) -> None:
+        async with redis.pipeline() as pipe:
+            for process_group in self.__process_groups:
+                for worker in process_group.workers:
+                    for stream in (worker.settings.source_streams | {f'workers:{worker.settings.name}:stream'}):
+                        groups = await redis.xinfo_groups(stream)
 
-                    if any(group['name'] == worker.settings.name for group in groups):
-                        continue
+                        if any(group['name'] == worker.settings.name for group in groups):
+                            continue
 
-                    await pipeline.xgroup_create(stream, worker.settings.name, mkstream=True)
+                        await pipe.xgroup_create(stream, worker.settings.name, mkstream=True)
 
-        await pipeline.execute()
+            await pipe.execute()
 
     async def run(self) -> None:
         logger.info('Процесс менеджер запушен')
@@ -96,6 +104,7 @@ class ProcessManager:
 
         async with Redis.from_url(self.__redis_dsn, protocol=3, decode_responses=True) as redis:
             await self.__init_workers(redis)
+            await self.__init_stream_groups(redis)
 
         logger.info('Инициализированы workers')
 

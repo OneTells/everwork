@@ -79,7 +79,7 @@ class ProcessSupervisor:
         logger.debug(f'[{self.__worker_names}] Начат процесс проверки на зависшие задачи')
 
         async with Redis.from_url(self.__redis_dsn, protocol=3, decode_responses=True) as redis:
-            async with redis.pipeline() as pipeline:
+            async with redis.pipeline() as pipe:
                 for worker in self.__workers:
                     for stream in (worker.settings.source_streams | {f'workers:{worker.settings.name}:stream'}):
                         pending_info = await redis.xpending(stream, worker.settings.name)
@@ -95,19 +95,18 @@ class ProcessSupervisor:
                             count=pending_info['pending']
                         )
 
-                        message_ids = list(map(lambda x: x['message_id'], pending_messages))
-                        await pipeline.xack(stream, worker.settings.name, *message_ids)
+                        await pipe.xack(stream, worker.settings.name, *map(lambda x: x['message_id'], pending_messages))
 
-                        for msg in pending_messages:
+                        for message in pending_messages:
                             logger.warning(
                                 f'[{self.__worker_names}] Обнаружено зависшее сообщение. '
-                                f'Поток: {stream}; '
-                                f'Воркер (группа): {worker.settings.name}; '
-                                f'ID сообщения: {msg["message_id"]}; '
-                                f'Время обработки (ms): {msg["elapsed"]}'
+                                f'Поток: {stream}. '
+                                f'Воркер (группа): {worker.settings.name}. '
+                                f'ID сообщения: {message["message_id"]}. '
+                                f'Время обработки (ms): {message["elapsed"]}'
                             )
 
-                await pipeline.execute()
+                await pipe.execute()
 
         logger.debug(f'[{self.__worker_names}] Завершен процесс проверки на зависшие задачи')
 
