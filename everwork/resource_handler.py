@@ -45,7 +45,7 @@ class BaseResourceHandler(ABC):
 class TriggerResourceHandler(BaseResourceHandler):
 
     async def get_kwargs(self) -> dict[str, Any]:
-        logger.debug(f'[{self._worker_settings.name}] ')
+        logger.debug(f'[{self._worker_settings.name}] Начало получения сообщения')
 
         last_time = await self._redis.get(f'workers:{self._worker_settings.name}:last_time')
 
@@ -62,10 +62,8 @@ class TriggerResourceHandler(BaseResourceHandler):
                     block=int(timeout)
                 )
 
-            logger.debug(f'[{self._worker_settings.name}] ')
-
             if data is not None:
-                logger.debug(f'[{self._worker_settings.name}] ')
+                logger.debug(f'[{self._worker_settings.name}] Сообщение получено: {data}')
 
                 stream, stream_value = list(data.items())[0]
                 message_id, kwargs = stream_value[0]
@@ -74,12 +72,12 @@ class TriggerResourceHandler(BaseResourceHandler):
 
                 return loads(kwargs['data'])
 
-        logger.debug(f'[{self._worker_settings.name}] ')
+        timeout -= (time.time() - start_time)
+
+        logger.debug(f'[{self._worker_settings.name}] Заснул на {timeout:.4f} секунд')
 
         with self._shutdown_safe_zone:
-            await asyncio.sleep(timeout - (time.time() - start_time))
-
-        logger.debug(f'[{self._worker_settings.name}] ')
+            await asyncio.sleep(timeout)
 
         await self._redis.set(f'workers:{self._worker_settings.name}:last_time', time.time())
 
@@ -89,7 +87,7 @@ class TriggerResourceHandler(BaseResourceHandler):
 class ExecutorResourceHandler(BaseResourceHandler):
 
     async def get_kwargs(self) -> dict[str, Any]:
-        logger.debug(f'[{self._worker_settings.name}] ')
+        logger.debug(f'[{self._worker_settings.name}] Начало получения сообщения')
 
         with self._shutdown_safe_zone:
             data: dict[str, list[tuple[str, dict[str, Any]]]] = await self._redis.xreadgroup(
@@ -100,7 +98,7 @@ class ExecutorResourceHandler(BaseResourceHandler):
                 block=0
             )
 
-        logger.debug(f'[{self._worker_settings.name}] ')
+        logger.debug(f'[{self._worker_settings.name}] Сообщение получено: {data}')
 
         stream, stream_value = list(data.items())[0]
         message_id, kwargs = stream_value[0]
