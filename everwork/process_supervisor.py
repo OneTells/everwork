@@ -7,14 +7,9 @@ from orjson import loads
 from pydantic import BaseModel
 from redis.asyncio import Redis
 
+from .base_worker import BaseWorker
 from .utils import ShutdownSafeZone, ShutdownEvent
-from .worker_base import BaseWorker
 from .worker_manager import WorkerManager
-
-try:
-    from uvloop import new_event_loop
-except ImportError:
-    from asyncio import new_event_loop
 
 
 class EventStartMessage(BaseModel):
@@ -49,22 +44,24 @@ class ProcessSupervisor:
         logger.debug(f'[{self.__worker_names}] Процесс запущен')
 
     def __close_process(self) -> None:
+        if self.__process is None:
+            return
+
         logger.debug(f'[{self.__worker_names}] Начат процесс завершения процесса')
 
         self.__process.terminate()
 
         end_time = time.time() + max(worker.settings.execution_timeout for worker in self.__workers)
 
-        with self.__shutdown_safe_zone:
-            while True:
-                if time.time() > end_time:
-                    logger.warning(f'[{self.__worker_names}] Процесс не завершился за отведенное время')
-                    break
+        while True:
+            if time.time() > end_time:
+                logger.warning(f'[{self.__worker_names}] Процесс не завершился за отведенное время')
+                break
 
-                if not self.__process.is_alive():
-                    break
+            if not self.__process.is_alive():
+                break
 
-                time.sleep(0.1)
+            time.sleep(0.01)
 
         if self.__process.is_alive():
             self.__process.kill()
@@ -72,6 +69,7 @@ class ProcessSupervisor:
 
         self.__process.join()
         self.__process.close()
+        self.__process = None
 
         logger.debug(f'[{self.__worker_names}] Процесс завершен')
 
@@ -139,9 +137,16 @@ class ProcessSupervisor:
 
                 await asyncio.to_thread(self.__close_process)
 
+                if self.__shutdown_event.is_set():
+                    break
+
                 await self.__check_for_hung_tasks()
 
+                if self.__shutdown_event.is_set():
+                    break
+
                 await asyncio.to_thread(self.__start_process)
+                await asyncio.sleep(0.5)
 
                 logger.warning(f'[{self.__worker_names}] Завершен перезапуск процесса')
         except asyncio.CancelledError:

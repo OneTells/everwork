@@ -1,5 +1,6 @@
 import asyncio
 import signal
+from itertools import chain
 from typing import Annotated
 from uuid import UUID
 
@@ -8,14 +9,9 @@ from orjson import loads, dumps
 from pydantic import validate_call, AfterValidator, RedisDsn
 from redis.asyncio import Redis
 
+from .base_worker import ProcessGroup
 from .process_supervisor import ProcessSupervisor
 from .utils import ShutdownEvent
-from .worker_base import ProcessGroup
-
-try:
-    from uvloop import new_event_loop
-except ImportError:
-    from asyncio import new_event_loop
 
 
 def _check_worker_names(process_groups: list[ProcessGroup]) -> list[ProcessGroup]:
@@ -54,7 +50,7 @@ class ProcessManager:
                 )
 
     def __handle_shutdown_signal(self, *_) -> None:
-        logger.info('Вызван метод закрытия наблюдателя процесса')
+        logger.info('Получен сигнал о закрытии менеджера процессов')
 
         self.__shutdown_event.set()
 
@@ -62,8 +58,13 @@ class ProcessManager:
             process_supervisor.close()
 
     async def __init_workers(self, redis: Redis) -> None:
-        old_workers_map: dict[str, set[str]] = loads(await redis.get(f'managers:{self.__uuid}'))
-        new_workers_map = {w.settings.name: w.settings.source_streams for g in self.__process_groups for w in g.workers}
+        managers_data = await redis.get(f'managers:{self.__uuid}')
+        old_workers_map: dict[str, list[str]] = {} if managers_data is None else loads(managers_data)
+
+        new_workers_map = {
+            w.settings.name: list(w.settings.source_streams) + [f'workers:{w.settings.name}:stream']
+            for g in self.__process_groups for w in g.workers
+        }
 
         async with redis.pipeline() as pipe:
             if old_worker_names := old_workers_map.keys() - new_workers_map.keys():
@@ -78,7 +79,8 @@ class ProcessManager:
             await pipe.set(f'managers:{self.__uuid}', dumps(new_workers_map))
             await pipe.sadd('managers', self.__uuid)
 
-            await pipe.sadd('streams', *(s for g in self.__process_groups for w in g.workers for s in w.settings.source_streams))
+            if new_workers_map:
+                await pipe.sadd('streams', *(chain.from_iterable(new_workers_map.values())))
 
             await pipe.execute()
 
@@ -87,17 +89,18 @@ class ProcessManager:
             for process_group in self.__process_groups:
                 for worker in process_group.workers:
                     for stream in (worker.settings.source_streams | {f'workers:{worker.settings.name}:stream'}):
-                        groups = await redis.xinfo_groups(stream)
+                        if await redis.exists(stream):
+                            groups = await redis.xinfo_groups(stream)
 
-                        if any(group['name'] == worker.settings.name for group in groups):
-                            continue
+                            if any(group['name'] == worker.settings.name for group in groups):
+                                continue
 
                         await pipe.xgroup_create(stream, worker.settings.name, mkstream=True)
 
             await pipe.execute()
 
     async def run(self) -> None:
-        logger.info('Процесс менеджер запушен')
+        logger.info('Менеджер процессов запушен')
 
         signal.signal(signal.SIGINT, self.__handle_shutdown_signal)
         signal.signal(signal.SIGTERM, self.__handle_shutdown_signal)
@@ -106,13 +109,13 @@ class ProcessManager:
             await self.__init_workers(redis)
             await self.__init_stream_groups(redis)
 
-        logger.info('Инициализированы workers')
+        logger.info('Компоненты инициализированы')
 
         for process_supervisor in self.__process_supervisors:
             process_supervisor.run()
 
-        logger.info('Наблюдатели процесса запущены')
+        logger.info('Наблюдатели процессов запущены')
 
         await asyncio.gather(*map(lambda x: x.task, self.__process_supervisors))
 
-        logger.info('Процесс менеджер завершил работу')
+        logger.info('Менеджер процессов завершил работу')

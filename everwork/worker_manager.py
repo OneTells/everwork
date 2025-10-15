@@ -4,11 +4,11 @@ from multiprocessing import connection
 from threading import Lock
 
 from loguru import logger
-from pydantic import validate_call, RedisDsn
 
+from .base_worker import BaseWorker
 from .resource_handler import TriggerResourceHandler, ExecutorResourceHandler
+from .schemas import TriggerMode
 from .utils import ShutdownEvent
-from .worker_base import BaseWorker, TriggerMode
 from .worker_supervisor import WorkerSupervisor
 
 try:
@@ -41,7 +41,7 @@ class WorkerManager:
             )
 
     def __handle_shutdown_signal(self, *_) -> None:
-        logger.info(f'[{self.__worker_names}] Вызван метод закрытия наблюдателя воркера')
+        logger.info(f'[{self.__worker_names}] Получен сигнал о закрытии менеджера воркеров')
 
         self.__shutdown_event.set()
 
@@ -49,7 +49,7 @@ class WorkerManager:
             worker_supervisor.close()
 
     async def __run(self) -> None:
-        logger.info(f'[{self.__worker_names}] Воркер менеджер запущен')
+        logger.info(f'[{self.__worker_names}] Менеджер воркеров запущен')
 
         signal.signal(signal.SIGINT, signal.SIG_IGN)
         signal.signal(signal.SIGTERM, self.__handle_shutdown_signal)
@@ -57,17 +57,17 @@ class WorkerManager:
         for worker_supervisor in self.__worker_supervisors:
             worker_supervisor.run()
 
-        logger.info(f'[{self.__worker_names}] Наблюдатели воркера запущены')
+        logger.info(f'[{self.__worker_names}] Наблюдатели воркеров запущены')
 
         for worker_supervisor in self.__worker_supervisors:
             worker_supervisor.wait()
 
         self.__pipe_connection.close()
 
-        logger.info(f'[{self.__worker_names}] Воркер менеджер завершил работу')
+        logger.info(f'[{self.__worker_names}] Менеджер воркеров завершил работу')
 
     @classmethod
-    @validate_call
-    def run(cls, redis_dsn: RedisDsn, workers: list[type[BaseWorker]], pipe_connection: connection.Connection) -> None:
+    @logger.catch
+    def run(cls, redis_dsn: str, workers: list[type[BaseWorker]], pipe_connection: connection.Connection) -> None:
         with asyncio.Runner(loop_factory=new_event_loop) as runner:
-            runner.run(cls(redis_dsn.encoded_string(), workers, pipe_connection).__run())
+            runner.run(cls(redis_dsn, workers, pipe_connection).__run())

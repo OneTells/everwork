@@ -8,8 +8,9 @@ from orjson import loads
 from pydantic import BaseModel, RedisDsn, Field
 from redis.asyncio import Redis
 
+from ..base_worker import BaseWorker
+from ..schemas import WorkerSettings, TriggerMode
 from ..utils import timer
-from ..worker_base import BaseWorker, WorkerSettings, TriggerMode
 
 
 class RetentionWorkerConfig(BaseModel):
@@ -43,7 +44,7 @@ class BaseRetentionWorker(BaseWorker, ABC):
         streams: set[str] = await redis.smembers('streams')
 
         if not streams:
-            logger.debug(f'[{self.settings.name}] Нет стримов для очистки')
+            logger.debug(f'({self.settings.name}) Нет стримов для очистки')
             return
 
         threshold_id = int(time.time() - self.__config.max_age_seconds) * 1000
@@ -59,7 +60,7 @@ class BaseRetentionWorker(BaseWorker, ABC):
         empty_streams = [s for s in streams if stream_lengths[s] == 0]
 
         if not empty_streams:
-            logger.debug(f'[{self.settings.name}] Нет пустых стримов для удаления')
+            logger.debug(f'({self.settings.name}) Нет пустых стримов для удаления')
             return
 
         managers: set[str] = await redis.smembers('managers')
@@ -75,18 +76,18 @@ class BaseRetentionWorker(BaseWorker, ABC):
         ))
 
         if not (streams_to_delete := list(set(empty_streams) - all_active_streams)):
-            logger.debug(f'[{self.settings.name}] Нет стримов для удаления')
+            logger.debug(f'({self.settings.name}) Нет стримов для удаления')
             return
 
         await redis.srem('streams', *streams_to_delete)
         logger.debug(
-            f'[{self.settings.name}] Удалены {len(streams_to_delete)} стримов. '
+            f'({self.settings.name}) Удалены {len(streams_to_delete)} стримов. '
             f'Всего обработано: {len(streams)}. '
             f'Удалены следующие стримы: {streams_to_delete}'
         )
 
     async def __call__(self) -> None:
-        logger.debug(f'[{self.settings.name}] Начато очищение стримов')
+        logger.debug(f'({self.settings.name}) Начато очищение стримов')
 
         start_time = time.perf_counter()
 
@@ -94,6 +95,6 @@ class BaseRetentionWorker(BaseWorker, ABC):
             await self.__cleanup_streams(redis)
 
         logger.debug(
-            f'[{self.settings.name}] Стримы успешно очищены. '
+            f'({self.settings.name}) Стримы успешно очищены. '
             f'Время выполнения: {time.perf_counter() - start_time:.6f} секунд'
         )

@@ -11,7 +11,7 @@ from redis.exceptions import NoScriptError
 
 from .resource_handler import BaseResourceHandler
 from .utils import ShutdownSafeZone, ShutdownEvent
-from .worker_base import BaseWorker
+from .base_worker import BaseWorker
 
 try:
     from uvloop import new_event_loop
@@ -110,26 +110,26 @@ class WorkerSupervisor:
         return value == '1'
 
     async def __run(self):
-        logger.debug(f'[{self.__worker.settings.name}] Запушен наблюдатель воркера')
+        logger.debug(f'({self.__worker.settings.name}) Запушен наблюдатель воркера')
 
         await self.__redis.initialize()
 
         self.__worker.initialize(self.__redis)
 
         await self.__load_handle_cancel_script()
-        logger.info(f'[{self.__worker.settings.name}] Скрипты зарегистрированы')
+        logger.info(f'({self.__worker.settings.name}) Скрипты зарегистрированы')
 
         try:
             await self.__worker.startup()
         except Exception as error:
-            logger.exception(f'[{self.__worker.settings.name}] Не удалось выполнить startup: {error}')
+            logger.exception(f'({self.__worker.settings.name}) Не удалось выполнить startup: {error}')
 
             await self.__redis.aclose()
             return
 
         try:
             while not self.__shutdown_event.is_set():
-                logger.debug(f'[{self.__worker.settings.name}] Проверка состояния воркера')
+                logger.debug(f'({self.__worker.settings.name}) Проверяю состояния воркера')
 
                 if not (await self.__get_is_worker_on()):
                     with self.__shutdown_safe_zone:
@@ -137,12 +137,12 @@ class WorkerSupervisor:
 
                     continue
 
-                logger.debug(f'[{self.__worker.settings.name}] Начинаю получение ивента')
+                logger.debug(f'({self.__worker.settings.name}) Начинаю получение ивента')
 
                 try:
                     kwargs = await self.__resource_handler.get_kwargs()
                 except asyncio.CancelledError:
-                    logger.debug(f'[{self.__worker.settings.name}] Получение ивента отменено')
+                    logger.debug(f'({self.__worker.settings.name}) Получение ивента отменено')
                     await self.__handle_cancel()
                     continue
 
@@ -150,12 +150,12 @@ class WorkerSupervisor:
                     self.__shutdown_event.is_set()
                     or not (await self.__get_is_worker_on())
                 ):
-                    logger.debug(f'[{self.__worker.settings.name}] Ивент получен, но был отменен')
+                    logger.debug(f'({self.__worker.settings.name}) Ивент получен, но был отменен')
                     await self.__handle_cancel()
                     continue
 
                 with self.__lock:
-                    logger.debug(f'[{self.__worker.settings.name}] Начата обработка ивента')
+                    logger.debug(f'({self.__worker.settings.name}) Начата обработка ивента')
 
                     self.__notify_event_start()
 
@@ -164,7 +164,7 @@ class WorkerSupervisor:
                             await self.__function(**kwargs)  # type: ignore
                     except Exception as error:
                         logger.exception(
-                            f'[{self.__worker.settings.name}] Не удалось обработать ивент. '
+                            f'({self.__worker.settings.name}) Не удалось обработать ивент. '
                             f'Поток: {self.__resource_handler.resources.stream}. '
                             f'ID сообщения: {self.__resource_handler.resources.message_id}. '
                             f'Ошибка: {error}'
@@ -178,20 +178,20 @@ class WorkerSupervisor:
                     del kwargs
                     self.__resource_handler.clear()
 
-                    logger.debug(f'[{self.__worker.settings.name}] Завершена обработка ивента')
+                    logger.debug(f'({self.__worker.settings.name}) Завершена обработка ивента')
         except asyncio.CancelledError:
-            logger.debug(f'[{self.__worker.settings.name}] Мониторинг воркера отменен')
+            logger.debug(f'({self.__worker.settings.name}) Мониторинг воркера отменен')
         except Exception as error:
-            logger.exception(f'[{self.__worker.settings.name}] Мониторинг воркера неожиданно завершился: {error}')
+            logger.exception(f'({self.__worker.settings.name}) Мониторинг воркера неожиданно завершился: {error}')
 
         try:
             await self.__worker.shutdown()
         except Exception as error:
-            logger.exception(f'[{self.__worker.settings.name}] Не удалось выполнить shutdown: {error}')
+            logger.exception(f'({self.__worker.settings.name}) Не удалось выполнить shutdown: {error}')
 
         await self.__redis.aclose()
 
-        logger.debug(f'[{self.__worker.settings.name}] Наблюдатель воркера завершил работ')
+        logger.debug(f'({self.__worker.settings.name}) Наблюдатель воркера завершил работ')
 
     def run(self) -> None:
         self.__thread.start()
@@ -200,15 +200,15 @@ class WorkerSupervisor:
         self.__thread.join()
 
     def close(self) -> None:
-        logger.debug(f'[{self.__worker.settings.name}] Вызван метод закрытия наблюдателя воркера')
+        logger.debug(f'({self.__worker.settings.name}) Вызван метод закрытия наблюдателя воркера')
 
         if not self.__shutdown_safe_zone.is_use():
-            logger.debug(f'[{self.__worker.settings.name}]  Безопасная зона не используется')
+            logger.debug(f'({self.__worker.settings.name}) Безопасная зона не используется')
             return
 
         def stop_event_loop() -> None:
             self.__runner.close()
-            logger.debug(f'[{self.__worker.settings.name}] Цикл событий остановлен')
+            logger.debug(f'({self.__worker.settings.name}) Цикл событий остановлен')
 
         # noinspection PyTypeChecker
         self.__runner.get_loop().call_soon_threadsafe(stop_event_loop)

@@ -1,15 +1,14 @@
+from .base_worker import BaseWorker, ProcessGroup
 from .process_manager import ProcessManager
-from .stream_client import StreamClient
-from .utils import EventPublisher, timer
-from .worker_base import (
-    BaseWorker,
+from .schemas import (
     EventPublisherSettings,
     ExecutorMode,
-    ProcessGroup,
     TriggerMode,
     WorkerEvent,
     WorkerSettings,
 )
+from .stream_client import StreamClient
+from .utils import EventPublisher, timer
 
 __all__ = (
     'BaseWorker',

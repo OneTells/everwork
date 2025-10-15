@@ -2,7 +2,7 @@ from asyncio import CancelledError
 from typing import Self
 
 from .stream_client import StreamClient
-from .worker_base import EventPublisherSettings, WorkerEvent
+from .schemas import EventPublisherSettings, WorkerEvent
 
 
 def timer(*, weeks: int = 0, days: int = 0, hours: int = 0, minutes: int = 0, seconds: int = 0, milliseconds: int = 0) -> float:

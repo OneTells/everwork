@@ -3,7 +3,7 @@ from pydantic_core import to_jsonable_python
 from redis.asyncio import Redis
 from redis.exceptions import NoScriptError
 
-from .worker_base import WorkerEvent
+from .schemas import WorkerEvent
 
 
 class StreamClient:
