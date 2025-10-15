@@ -9,9 +9,9 @@ from pydantic import validate_call
 from redis.asyncio import Redis
 from redis.exceptions import NoScriptError
 
+from .base_worker import BaseWorker
 from .resource_handler import BaseResourceHandler
 from .utils import ShutdownSafeZone, ShutdownEvent
-from .base_worker import BaseWorker
 
 try:
     from uvloop import new_event_loop
@@ -206,9 +206,13 @@ class WorkerSupervisor:
             logger.debug(f'({self.__worker.settings.name}) Безопасная зона не используется')
             return
 
-        def stop_event_loop() -> None:
-            self.__runner.close()
-            logger.debug(f'({self.__worker.settings.name}) Цикл событий остановлен')
+        def cancel_all_tasks() -> None:
+            loop = self.__runner.get_loop()
+
+            for task in asyncio.all_tasks(loop):
+                task.cancel()
+
+            logger.debug(f'({self.__worker.settings.name}) Все задачи в цикле отменены')
 
         # noinspection PyTypeChecker
-        self.__runner.get_loop().call_soon_threadsafe(stop_event_loop)
+        self.__runner.get_loop().call_soon_threadsafe(cancel_all_tasks)
