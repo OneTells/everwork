@@ -12,7 +12,7 @@ from .utils import ShutdownSafeZone, ShutdownEvent
 from .worker_manager import WorkerManager
 
 
-class EventStartMessage(BaseModel):
+class _EventStartMessage(BaseModel):
     worker_name: str
     end_time: float
 
@@ -122,7 +122,7 @@ class ProcessSupervisor:
                 with self.__shutdown_safe_zone:
                     await asyncio.to_thread(self.__pipe_reader_connection.poll, None)
 
-                state = EventStartMessage.model_validate(loads(self.__pipe_reader_connection.recv_bytes()))
+                state = _EventStartMessage.model_validate(loads(self.__pipe_reader_connection.recv_bytes()))
 
                 logger.debug(f'[{self.__worker_names}] Начать процесс отслеживание работы {state.worker_name}')
 
@@ -153,6 +153,8 @@ class ProcessSupervisor:
             logger.debug(f'[{self.__worker_names}] Мониторинг процесса отменен')
         except Exception as error:
             logger.exception(f'[{self.__worker_names}] Мониторинг процесса неожиданно завершился: {error}')
+
+        logger.debug(f'[{self.__worker_names}] Наблюдатель процесса начал завершение')
 
         await asyncio.to_thread(self.__close_process)
 

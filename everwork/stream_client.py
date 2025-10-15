@@ -1,3 +1,5 @@
+from itertools import chain
+
 from orjson import dumps
 from pydantic_core import to_jsonable_python
 from redis.asyncio import Redis
@@ -33,10 +35,7 @@ class StreamClient:
         if 'push_event' not in self.__scripts:
             await self.__load_push_event_script()
 
-        args = []
-
-        for event in events:
-            args.extend([event.target_stream, dumps(to_jsonable_python(event.data))])
+        args = list(chain.from_iterable((event.target_stream, dumps(to_jsonable_python(event.data)))))
 
         try:
             await self.__redis.evalsha(self.__scripts['push_event'], 0, *args)

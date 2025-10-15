@@ -67,7 +67,6 @@ class WorkerManager:
         logger.info(f'[{self.__worker_names}] Менеджер воркеров завершил работу')
 
     @classmethod
-    @logger.catch
     def run(cls, redis_dsn: str, workers: list[type[BaseWorker]], pipe_connection: connection.Connection) -> None:
         with asyncio.Runner(loop_factory=new_event_loop) as runner:
             runner.run(cls(redis_dsn, workers, pipe_connection).__run())

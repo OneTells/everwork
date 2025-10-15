@@ -184,6 +184,8 @@ class WorkerSupervisor:
         except Exception as error:
             logger.exception(f'({self.__worker.settings.name}) Мониторинг воркера неожиданно завершился: {error}')
 
+        logger.debug(f'({self.__worker.settings.name}) Наблюдатель воркера начал завершение')
+
         try:
             await self.__worker.shutdown()
         except Exception as error:
@@ -206,13 +208,13 @@ class WorkerSupervisor:
             logger.debug(f'({self.__worker.settings.name}) Безопасная зона не используется')
             return
 
-        def cancel_all_tasks() -> None:
-            loop = self.__runner.get_loop()
+        loop = self.__runner.get_loop()
 
+        def cancel_all_tasks() -> None:
             for task in asyncio.all_tasks(loop):
                 task.cancel()
 
             logger.debug(f'({self.__worker.settings.name}) Все задачи в цикле отменены')
 
         # noinspection PyTypeChecker
-        self.__runner.get_loop().call_soon_threadsafe(cancel_all_tasks)
+        loop.call_soon_threadsafe(cancel_all_tasks)
