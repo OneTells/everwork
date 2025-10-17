@@ -62,7 +62,7 @@ class TriggerResourceHandler(BaseResourceHandler):
                     block=int(timeout)
                 )
 
-            if not data:
+            if data:
                 logger.debug(f'({self._worker_settings.name}) Сообщение получено: {data}')
 
                 stream, stream_value = list(data.items())[0]
