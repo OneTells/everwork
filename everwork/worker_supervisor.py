@@ -97,12 +97,18 @@ class WorkerSupervisor:
         )
 
     def __notify_event_start(self) -> None:
+        if self.__shutdown_event.is_set():
+            return
+
         self.__pipe_connection.send_bytes(dumps({
             'worker_name': self.__worker.settings.name,
             'end_time': time.time() + self.__worker.settings.execution_timeout
         }))
 
     def __notify_event_end(self) -> None:
+        if self.__shutdown_event.is_set():
+            return
+
         self.__pipe_connection.send_bytes(b'')
 
     async def __get_is_worker_on(self) -> bool:
