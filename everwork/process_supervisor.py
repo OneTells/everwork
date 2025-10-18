@@ -40,10 +40,10 @@ class ProcessSupervisor:
             'pipe_connection': self.__pipe_writer_connection,
             'logger_': logger
         }
-        self.__process: context.SpawnProcess | None = None
+        self.__process: context.ForkServerProcess | None = None
 
     def __start_process(self) -> None:
-        self.__process = context.SpawnProcess(target=WorkerManager.run, kwargs=self.__data, daemon=True)
+        self.__process = context.ForkServerProcess(target=WorkerManager.run, kwargs=self.__data, daemon=True)
         self.__process.start()
 
         logger.debug(f'[{self.__worker_names}] Процесс запущен')
