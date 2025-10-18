@@ -119,3 +119,5 @@ class ProcessManager:
         await asyncio.gather(*map(lambda x: x.task, self.__process_supervisors))
 
         logger.info('Менеджер процессов завершил работу')
+
+        await logger.complete()

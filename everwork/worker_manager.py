@@ -1,15 +1,19 @@
 import asyncio
 import signal
+import typing
 from multiprocessing import connection
 from threading import Lock
 
-from loguru import logger
+from loguru import logger, Logger
 
 from .base_worker import BaseWorker
 from .resource_handler import TriggerResourceHandler, ExecutorResourceHandler
 from .schemas import TriggerMode
 from .utils import ShutdownEvent
 from .worker_supervisor import WorkerSupervisor
+
+if typing.TYPE_CHECKING:
+    from loguru import Logger
 
 try:
     from uvloop import new_event_loop
@@ -66,7 +70,17 @@ class WorkerManager:
 
         logger.info(f'[{self.__worker_names}] Менеджер воркеров завершил работу')
 
+        await logger.complete()
+
     @classmethod
-    def run(cls, redis_dsn: str, workers: list[type[BaseWorker]], pipe_connection: connection.Connection) -> None:
+    def run(
+        cls,
+        redis_dsn: str,
+        workers: list[type[BaseWorker]],
+        pipe_connection: connection.Connection,
+        logger_: Logger
+    ) -> None:
+        logger_.reinstall()
+
         with asyncio.Runner(loop_factory=new_event_loop) as runner:
             runner.run(cls(redis_dsn, workers, pipe_connection).__run())

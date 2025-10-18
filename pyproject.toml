@@ -7,9 +7,12 @@ requires-python = ">=3.12,<4.0"
 dependencies = [
     "hiredis~=3.3.0",
     "logger>=1.4",
-    "loguru~=0.7.3",
+    "loguru",
     "orjson~=3.11.3",
     "pydantic~=2.12.3",
     "redis~=6.4.0",
     "uvloop ~= 0.21.0 ; sys_platform == 'linux'",
 ]
+
+[tool.uv.sources]
+loguru = { git = "https://github.com/Delgan/loguru", rev = "7db92d5a0b5aefaca474bcd50592468a6b8dbd8e" }

@@ -112,8 +112,6 @@ class WorkerSupervisor:
     async def __run(self):
         logger.debug(f'({self.__worker.settings.name}) Запушен наблюдатель воркера')
 
-        await self.__redis.initialize()
-
         self.__worker.initialize(self.__redis)
 
         await self.__load_handle_cancel_script()
@@ -123,8 +121,6 @@ class WorkerSupervisor:
             await self.__worker.startup()
         except Exception as error:
             logger.exception(f'({self.__worker.settings.name}) Не удалось выполнить startup: {error}')
-
-            await self.__redis.aclose()
             return
 
         try:
@@ -195,17 +191,21 @@ class WorkerSupervisor:
         except Exception as error:
             logger.exception(f'({self.__worker.settings.name}) Не удалось выполнить shutdown: {error}')
 
-        await self.__redis.aclose()
-
         logger.debug(f'({self.__worker.settings.name}) Наблюдатель воркера завершил работ')
 
     def run(self) -> None:
-        def __run() -> None:
+        async def __run_wrapper() -> None:
+            async with self.__redis:
+                await self.__run()
+
+            await logger.complete()
+
+        def __run_in_thread() -> None:
             with asyncio.Runner(loop_factory=new_event_loop) as runner:
                 self.__loop = runner.get_loop()
-                runner.run(self.__run())
+                runner.run(__run_wrapper())
 
-        self.__thread = Thread(target=__run, daemon=True)
+        self.__thread = Thread(target=__run_in_thread, daemon=True)
         self.__thread.start()
 
     def wait(self) -> None:

@@ -34,7 +34,12 @@ class ProcessSupervisor:
         self.__pipe_reader_connection: connection.Connection = connections[0]
         self.__pipe_writer_connection: connection.Connection = connections[1]
 
-        self.__data = {'redis_dsn': redis_dsn, 'workers': workers, 'pipe_connection': self.__pipe_writer_connection}
+        self.__data = {
+            'redis_dsn': redis_dsn,
+            'workers': workers,
+            'pipe_connection': self.__pipe_writer_connection,
+            'logger_': logger
+        }
         self.__process: context.SpawnProcess | None = None
 
     def __start_process(self) -> None:
