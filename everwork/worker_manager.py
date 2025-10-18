@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import asyncio
 import signal
+import typing
 from multiprocessing import connection
 from threading import Lock
 
-import loguru
 from loguru import logger
 
 from .base_worker import BaseWorker
@@ -11,6 +13,9 @@ from .resource_handler import TriggerResourceHandler, ExecutorResourceHandler
 from .schemas import TriggerMode
 from .utils import ShutdownEvent
 from .worker_supervisor import WorkerSupervisor
+
+if typing.TYPE_CHECKING:
+    from loguru import Logger
 
 try:
     from uvloop import new_event_loop
@@ -75,7 +80,7 @@ class WorkerManager:
         redis_dsn: str,
         workers: list[type[BaseWorker]],
         pipe_connection: connection.Connection,
-        logger_: loguru.Logger
+        logger_: Logger
     ) -> None:
         logger_.reinstall()
 
