@@ -72,7 +72,7 @@ class TriggerResourceHandler(BaseResourceHandler):
 
                 return loads(kwargs['data'])
 
-        timeout -= (time.time() - start_time)
+        timeout = max(timeout - (time.time() - start_time), 0)
 
         logger.debug(f'({self._worker_settings.name}) Заснул на {timeout:.4f} секунд')
 
