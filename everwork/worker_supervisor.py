@@ -44,8 +44,8 @@ class WorkerSupervisor:
 
         self.__resource_handler = resource_handler(self.__redis, self.__worker.settings, self.__shutdown_safe_zone)
 
-        self.__runner = asyncio.Runner(loop_factory=new_event_loop)
-        self.__thread = Thread(target=lambda: self.__runner.run(self.__run()), daemon=True)
+        self.__loop: asyncio.AbstractEventLoop | None = None
+        self.__thread: Thread | None = None
 
         self.__scripts: dict[str, str] = {}
 
@@ -200,6 +200,12 @@ class WorkerSupervisor:
         logger.debug(f'({self.__worker.settings.name}) Наблюдатель воркера завершил работ')
 
     def run(self) -> None:
+        def __run() -> None:
+            with asyncio.Runner(loop_factory=new_event_loop) as runner:
+                self.__loop = runner.get_loop()
+                runner.run(self.__run())
+
+        self.__thread = Thread(target=__run, daemon=True)
         self.__thread.start()
 
     def wait(self) -> None:
@@ -212,13 +218,11 @@ class WorkerSupervisor:
             logger.debug(f'({self.__worker.settings.name}) Безопасная зона не используется')
             return
 
-        loop = self.__runner.get_loop()
-
         def cancel_all_tasks() -> None:
-            for task in asyncio.all_tasks(loop):
+            for task in asyncio.all_tasks(self.__loop):
                 task.cancel()
 
             logger.debug(f'({self.__worker.settings.name}) Все задачи в цикле отменены')
 
         # noinspection PyTypeChecker
-        loop.call_soon_threadsafe(cancel_all_tasks)
+        self.__loop.call_soon_threadsafe(cancel_all_tasks)
