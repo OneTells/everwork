@@ -1,8 +1,10 @@
 import asyncio
+import os
 import time
 import tracemalloc
 from multiprocessing import Pipe, connection, context
 
+import psutil
 from loguru import logger
 from orjson import loads
 from pydantic import BaseModel
@@ -11,6 +13,25 @@ from redis.asyncio import Redis
 from .base_worker import BaseWorker
 from .utils import ShutdownSafeZone, ShutdownEvent
 from .worker_manager import WorkerManager
+
+
+def log_memory_usage(prefix=""):
+    """Логирование использования памяти"""
+    process = psutil.Process(os.getpid())
+    memory_info = process.memory_info()
+
+    # Текущая память процесса
+    logger.info(f"{prefix} Memory - RSS: {memory_info.rss / 1024 / 1024:.2f} MB, "
+                f"VMS: {memory_info.vms / 1024 / 1024:.2f} MB")
+
+    # Статистика tracemalloc
+    if tracemalloc.is_tracing():
+        snapshot = tracemalloc.take_snapshot()
+        top_stats = snapshot.statistics('lineno')[:5]
+
+        logger.info(f"{prefix} Top memory allocations:")
+        for stat in top_stats:
+            logger.info(f"  {stat.size / 1024:.1f} KiB | {stat.count} blocks | {stat.traceback.format()[-1]}")
 
 
 class _EventStartMessage(BaseModel):
@@ -114,9 +135,9 @@ class ProcessSupervisor:
         logger.debug(f'[{self.__worker_names}] Завершен процесс проверки на зависшие задачи')
 
     async def __run(self) -> None:
-        tracemalloc.start()
-
         logger.debug(f'[{self.__worker_names}] Запущен наблюдатель процесса')
+
+        tracemalloc.start()
 
         await self.__check_for_hung_tasks()
 
@@ -152,13 +173,9 @@ class ProcessSupervisor:
                 await asyncio.to_thread(self.__start_process)
                 await asyncio.sleep(0.5)
 
+                log_memory_usage()
+
                 logger.warning(f'[{self.__worker_names}] Завершен перезапуск процесса')
-
-                snapshot = tracemalloc.take_snapshot()
-
-                for stat in snapshot.statistics("lineno"):
-                    logger.info(f'{stat}')
-
         except asyncio.CancelledError:
             logger.debug(f'[{self.__worker_names}] Мониторинг процесса отменен')
         except Exception as error:

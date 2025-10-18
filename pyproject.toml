@@ -9,7 +9,8 @@ dependencies = [
     "logger>=1.4",
     "loguru~=0.7.3",
     "orjson~=3.11.3",
-    "pydantic~=2.12.2",
+    "psutil>=7.1.0",
+    "pydantic~=2.12.3",
     "redis~=6.4.0",
     "uvloop ~= 0.21.0 ; sys_platform == 'linux'",
 ]
