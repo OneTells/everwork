@@ -4,7 +4,7 @@ import typing
 from multiprocessing import connection
 from threading import Lock
 
-from loguru import logger, Logger
+from loguru import logger
 
 from .base_worker import BaseWorker
 from .resource_handler import TriggerResourceHandler, ExecutorResourceHandler
