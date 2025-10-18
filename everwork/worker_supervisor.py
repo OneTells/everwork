@@ -163,12 +163,16 @@ class WorkerSupervisor:
                         async with self.__worker.event_publisher:
                             await self.__function(**kwargs)  # type: ignore
                     except Exception as error:
-                        logger.exception(
-                            f'({self.__worker.settings.name}) Не удалось обработать ивент. '
-                            f'Поток: {self.__resource_handler.resources.stream}. '
-                            f'ID сообщения: {self.__resource_handler.resources.message_id}. '
-                            f'Ошибка: {error}'
-                        )
+                        if self.__resource_handler.resources is not None:
+                            logger.exception(
+                                f'({self.__worker.settings.name}) Не удалось обработать сообщение из потока. '
+                                f'Поток: {self.__resource_handler.resources.stream}. '
+                                f'ID сообщения: {self.__resource_handler.resources.message_id}. '
+                                f'Ошибка: {error}'
+                            )
+                        else:
+                            logger.exception(f'({self.__worker.settings.name}) Не удалось обработать ивент. Ошибка: {error}')
+
                         await self.__handle_error()
                     else:
                         await self.__handle_success()
