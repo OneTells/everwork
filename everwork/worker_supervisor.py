@@ -151,6 +151,14 @@ class WorkerSupervisor:
                     continue
 
                 with self.__lock:
+                    # if (
+                    #     self.__shutdown_event.is_set()
+                    #     or not (await self.__get_is_worker_on())
+                    # ):
+                    #     logger.debug(f'({self.__worker.settings.name}) Ивент получен, но был отменен')
+                    #     await self.__handle_cancel()
+                    #     continue
+
                     logger.debug(f'({self.__worker.settings.name}) Начата обработка ивента')
 
                     self.__notify_event_start()
