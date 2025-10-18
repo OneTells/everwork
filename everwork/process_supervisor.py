@@ -27,7 +27,7 @@ def log_memory_usage(prefix=""):
     # Статистика tracemalloc
     if tracemalloc.is_tracing():
         snapshot = tracemalloc.take_snapshot()
-        top_stats = snapshot.statistics('lineno')[:5]
+        top_stats = snapshot.statistics('lineno')
 
         logger.info(f"{prefix} Top memory allocations:")
         for stat in top_stats:
