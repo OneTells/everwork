@@ -137,8 +137,9 @@ class ProcessSupervisor:
 
                 await asyncio.to_thread(self.__close_process)
 
-                if self.__shutdown_event.is_set():
-                    break
+                if self.__pipe_reader_connection.poll():
+                    self.__pipe_reader_connection.recv_bytes()
+                    continue
 
                 await self.__check_for_hung_tasks()
 
