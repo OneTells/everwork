@@ -70,8 +70,8 @@ class ProcessSupervisor:
             time.sleep(0.01)
 
         if self.__process.is_alive():
+            logger.warning(f'[{self.__worker_names}] Процессу будет отправлен сигнал SIGKILL')
             self.__process.kill()
-            logger.warning(f'[{self.__worker_names}] Процессу отправлен сигнал SIGKILL')
 
         logger.debug(f'[{self.__worker_names}] Закрытие процесса и очистка ресурсов')
 
