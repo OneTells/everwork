@@ -71,6 +71,10 @@ class ProcessSupervisor:
         self.__process.close()
         self.__process = None
 
+        while self.__pipe_reader_connection.poll():
+            self.__pipe_reader_connection.recv_bytes()
+            continue
+
         logger.debug(f'[{self.__worker_names}] Процесс завершен')
 
     async def __check_for_hung_tasks(self):
@@ -137,10 +141,6 @@ class ProcessSupervisor:
 
                 await asyncio.to_thread(self.__close_process)
 
-                if self.__pipe_reader_connection.poll():
-                    self.__pipe_reader_connection.recv_bytes()
-                    continue
-
                 await self.__check_for_hung_tasks()
 
                 if self.__shutdown_event.is_set():
@@ -159,10 +159,10 @@ class ProcessSupervisor:
 
         await asyncio.to_thread(self.__close_process)
 
+        await self.__check_for_hung_tasks()
+
         self.__pipe_reader_connection.close()
         self.__pipe_writer_connection.close()
-
-        await self.__check_for_hung_tasks()
 
         logger.debug(f'[{self.__worker_names}] Наблюдатель процесса завершил работу')
 
