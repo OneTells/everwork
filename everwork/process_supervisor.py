@@ -66,6 +66,8 @@ class ProcessSupervisor:
         end_time = time.time() + max(worker.settings.execution_timeout for worker in self.__workers)
 
         while True:
+            logger.debug('1.5')
+
             if time.time() > end_time:
                 logger.warning(f'[{self.__worker_names}] Процесс не завершился за отведенное время')
                 break
