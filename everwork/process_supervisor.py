@@ -77,11 +77,14 @@ class ProcessSupervisor:
         if self.__process.is_alive():
             logger.warning(f'[{self.__worker_names}] Процессу будет отправлен сигнал SIGKILL')
             self.__process.kill()
-
+        print(1)
         logger.debug(f'[{self.__worker_names}] Закрытие процесса и очистка ресурсов')
+        print(2)
 
         self.__process.join()
+        print(3)
         self.__process.close()
+        print(4)
         self.__process = None
 
         self.__pipe_reader_connection.close()
