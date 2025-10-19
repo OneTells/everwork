@@ -61,6 +61,7 @@ class ProcessSupervisor:
         logger.debug(f'[{self.__worker_names}] Начат процесс завершения процесса')
 
         self.__process.terminate()
+        logger.debug('1')
 
         end_time = time.time() + max(worker.settings.execution_timeout for worker in self.__workers)
 
@@ -73,7 +74,7 @@ class ProcessSupervisor:
                 break
 
             time.sleep(0.01)
-
+        logger.debug('2')
         if self.__process.is_alive():
             logger.warning(f'[{self.__worker_names}] Процессу будет отправлен сигнал SIGKILL')
             self.__process.kill()
@@ -81,13 +82,10 @@ class ProcessSupervisor:
         logger.debug(f'[{self.__worker_names}] Закрытие процесса и очистка ресурсов')
 
         self.__process.join()
+        logger.debug('3')
         self.__process.close()
         self.__process = None
-
-        while self.__pipe_reader_connection.poll():
-            self.__pipe_reader_connection.recv_bytes()
-            continue
-
+        logger.debug('4')
         self.__pipe_reader_connection.close()
         self.__pipe_writer_connection.close()
 
