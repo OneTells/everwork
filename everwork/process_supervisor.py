@@ -1,6 +1,6 @@
 import asyncio
 import time
-from multiprocessing import Pipe, connection, context
+from multiprocessing import Pipe, connection, context, Process
 
 from loguru import logger
 from orjson import loads
@@ -43,8 +43,7 @@ class ProcessSupervisor:
         self.__process: context.ForkServerProcess | None = None
 
     def __start_process(self) -> None:
-        # self.__process = context.ForkServerProcess(target=WorkerManager.run, kwargs=self.__data, daemon=True)
-        self.__process = context.SpawnProcess(target=WorkerManager.run, kwargs=self.__data, daemon=True)
+        self.__process = Process(target=WorkerManager.run, kwargs=self.__data, daemon=True)
         self.__process.start()
 
         logger.debug(f'[{self.__worker_names}] Процесс запущен')

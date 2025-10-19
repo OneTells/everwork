@@ -1,6 +1,8 @@
 import asyncio
 import signal
 from itertools import chain
+from multiprocessing import get_start_method
+from platform import system
 from typing import Annotated
 from uuid import UUID
 
@@ -50,7 +52,7 @@ class ProcessManager:
                 )
 
     def __handle_shutdown_signal(self, *_) -> None:
-        logger.info('Получен сигнал о закрытии менеджера процессов')
+        # logger.info('Получен сигнал о закрытии менеджера процессов')
 
         self.__shutdown_event.set()
 
@@ -100,6 +102,14 @@ class ProcessManager:
             await pipe.execute()
 
     async def run(self) -> None:
+        if system() != 'Linux':
+            logger.critical('Библиотека работает только на Linux')
+            return
+
+        if get_start_method() not in ('spawn', 'forkserver'):
+            logger.critical('Библиотека работает только с spawn или forkserver методом запуска процессов')
+            return
+
         logger.info('Менеджер процессов запушен')
 
         signal.signal(signal.SIGINT, self.__handle_shutdown_signal)
