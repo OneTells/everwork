@@ -30,25 +30,30 @@ class ProcessSupervisor:
 
         self.task: asyncio.Task | None = None
 
+        self.__pipe_reader_connection: connection.Connection | None = None
+        self.__pipe_writer_connection: connection.Connection | None = None
+
+        self.__process: context.ForkServerProcess | None = None
+
+    def __start_process(self) -> None:
         connections = Pipe(duplex=False)
         self.__pipe_reader_connection: connection.Connection = connections[0]
         self.__pipe_writer_connection: connection.Connection = connections[1]
 
-        self.__data = {
-            'redis_dsn': redis_dsn,
-            'workers': workers,
-            'pipe_connection': self.__pipe_writer_connection,
-            'logger_': logger
-        }
-        self.__process: context.ForkServerProcess | None = None
-
-    def __start_process(self) -> None:
-        self.__process = Process(target=WorkerManager.run, kwargs=self.__data, daemon=True)
+        self.__process = Process(
+            target=WorkerManager.run,
+            kwargs={
+                'redis_dsn': self.__redis_dsn,
+                'workers': self.__workers,
+                'pipe_connection': self.__pipe_writer_connection,
+                'logger_': logger
+            },
+            daemon=True
+        )
         self.__process.start()
 
         logger.debug(f'[{self.__worker_names}] Процесс запущен')
 
-    @logger.catch
     def __close_process(self) -> None:
         if self.__process is None:
             return
@@ -82,6 +87,9 @@ class ProcessSupervisor:
         while self.__pipe_reader_connection.poll():
             self.__pipe_reader_connection.recv_bytes()
             continue
+
+        self.__pipe_reader_connection.close()
+        self.__pipe_writer_connection.close()
 
         logger.debug(f'[{self.__worker_names}] Процесс завершен')
 
@@ -168,9 +176,6 @@ class ProcessSupervisor:
         await asyncio.to_thread(self.__close_process)
 
         await self.__check_for_hung_tasks()
-
-        self.__pipe_reader_connection.close()
-        self.__pipe_writer_connection.close()
 
         logger.debug(f'[{self.__worker_names}] Наблюдатель процесса завершил работу')
 
