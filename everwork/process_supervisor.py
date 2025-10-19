@@ -65,27 +65,22 @@ class ProcessSupervisor:
 
         end_time = time.time() + max(worker.settings.execution_timeout for worker in self.__workers)
 
-        try:
-            while True:
-                logger.debug('1.5')
-                print('1.5')
+        while True:
+            logger.debug('1.5')
 
-                if time.time() > end_time:
-                    logger.warning(f'[{self.__worker_names}] Процесс не завершился за отведенное время')
-                    break
-                logger.debug('1.6')
-                print('1.6')
-                if not self.__process.is_alive():
-                    break
-                logger.debug('1.7')
-                print('1.7')
-                time.sleep(0.01)
-                logger.debug('1.8')
-                print('1.8')
-        except Exception as error:
-            logger.exception(f'1212')
-            raise error
+            if time.time() > end_time:
+                logger.warning(f'[{self.__worker_names}] Процесс не завершился за отведенное время')
+                break
+            logger.debug('1.6')
+
+            if not self.__process.is_alive():
+                break
+            logger.debug('1.7')
+            time.sleep(0.01)
+            logger.debug('1.8')
+
         logger.debug('2')
+
         if self.__process.is_alive():
             logger.warning(f'[{self.__worker_names}] Процессу будет отправлен сигнал SIGKILL')
             self.__process.kill()
@@ -93,9 +88,12 @@ class ProcessSupervisor:
         logger.debug(f'[{self.__worker_names}] Закрытие процесса и очистка ресурсов')
 
         self.__process.join()
+
         logger.debug('3')
+
         self.__process.close()
         self.__process = None
+
         logger.debug('4')
         self.__pipe_reader_connection.close()
         self.__pipe_writer_connection.close()
