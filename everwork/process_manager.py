@@ -52,7 +52,7 @@ class ProcessManager:
                 )
 
     def __handle_shutdown_signal(self, *_) -> None:
-        # logger.info('Получен сигнал о закрытии менеджера процессов')
+        logger.info('Получен сигнал о закрытии менеджера процессов')
 
         self.__shutdown_event.set()
 

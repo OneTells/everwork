@@ -48,6 +48,7 @@ class ProcessSupervisor:
 
         logger.debug(f'[{self.__worker_names}] Процесс запущен')
 
+    @logger.catch
     def __close_process(self) -> None:
         if self.__process is None:
             return

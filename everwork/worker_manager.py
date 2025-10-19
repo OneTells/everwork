@@ -47,7 +47,7 @@ class WorkerManager:
             )
 
     def __handle_shutdown_signal(self, *_) -> None:
-        # logger.info(f'[{self.__worker_names}] Получен сигнал о закрытии менеджера воркеров')
+        logger.info(f'[{self.__worker_names}] Получен сигнал о закрытии менеджера воркеров')
 
         self.__shutdown_event.set()
 
