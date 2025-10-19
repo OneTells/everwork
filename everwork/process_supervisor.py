@@ -77,6 +77,7 @@ class ProcessSupervisor:
                     break
                 logger.debug('1.7')
                 time.sleep(0.01)
+                logger.debug('1.8')
         except Exception as error:
             logger.exception(f'1212')
             raise error
