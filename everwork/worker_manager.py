@@ -72,8 +72,6 @@ class WorkerManager:
 
         logger.info(f'[{self.__worker_names}] Менеджер воркеров завершил работу')
 
-        await logger.complete()
-
     @classmethod
     def run(
         cls,

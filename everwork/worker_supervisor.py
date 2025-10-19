@@ -209,11 +209,8 @@ class WorkerSupervisor:
 
     def run(self) -> None:
         async def __run_wrapper() -> None:
-            try:
-                async with self.__redis:
-                    await self.__run()
-            finally:
-                await logger.complete()
+            async with self.__redis:
+                await self.__run()
 
         def __run_in_thread() -> None:
             with asyncio.Runner(loop_factory=new_event_loop) as runner:
