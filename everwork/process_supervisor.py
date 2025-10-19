@@ -68,16 +68,20 @@ class ProcessSupervisor:
         try:
             while True:
                 logger.debug('1.5')
+                print('1.5')
 
                 if time.time() > end_time:
                     logger.warning(f'[{self.__worker_names}] Процесс не завершился за отведенное время')
                     break
                 logger.debug('1.6')
+                print('1.6')
                 if not self.__process.is_alive():
                     break
                 logger.debug('1.7')
+                print('1.7')
                 time.sleep(0.01)
                 logger.debug('1.8')
+                print('1.8')
         except Exception as error:
             logger.exception(f'1212')
             raise error
