@@ -80,7 +80,9 @@ class WorkerManager:
         pipe_connection: connection.Connection,
         logger_: Logger
     ) -> None:
-        # logger_.reinstall()
+        logger_.reinstall()
 
         with asyncio.Runner(loop_factory=new_event_loop) as runner:
             runner.run(cls(redis_dsn, workers, pipe_connection).__run())
+
+        print(2113)
