@@ -13,7 +13,6 @@ from redis.asyncio import Redis
 
 from .base_worker import ProcessGroup
 from .process_supervisor import ProcessSupervisor
-from .utils import ShutdownEvent
 
 
 def _check_worker_names(process_groups: list[ProcessGroup]) -> list[ProcessGroup]:
@@ -42,22 +41,12 @@ class ProcessManager:
         self.__redis_dsn = redis_dsn.encoded_string()
         self.__process_groups = process_groups
 
-        self.__shutdown_event = ShutdownEvent()
-        self.__process_supervisors: list[ProcessSupervisor] = []
-
-        for process_group in self.__process_groups:
-            for _ in range(process_group.replicas):
-                self.__process_supervisors.append(
-                    ProcessSupervisor(self.__redis_dsn, process_group.workers, self.__shutdown_event)
-                )
+        self.__shutdown_event = asyncio.Event()
 
     def __handle_shutdown_signal(self, *_) -> None:
         logger.info('Получен сигнал о закрытии менеджера процессов')
 
         self.__shutdown_event.set()
-
-        for process_supervisor in self.__process_supervisors:
-            process_supervisor.close()
 
     async def __init_workers(self, redis: Redis) -> None:
         managers_data = await redis.get(f'managers:{self.__uuid}')
@@ -121,12 +110,12 @@ class ProcessManager:
 
         logger.info('Компоненты инициализированы')
 
-        for process_supervisor in self.__process_supervisors:
-            process_supervisor.run()
+        async with asyncio.TaskGroup() as tg:
+            for process_group in self.__process_groups:
+                for _ in range(process_group.replicas):
+                    tg.create_task(ProcessSupervisor(self.__redis_dsn, process_group.workers, self.__shutdown_event).run())
 
-        logger.info('Наблюдатели процессов запущены')
-
-        await asyncio.gather(*map(lambda x: x.task, self.__process_supervisors))
+            logger.info('Наблюдатели процессов запущены')
 
         logger.info('Менеджер процессов завершил работу')
 

@@ -1,6 +1,8 @@
 import asyncio
+import os
+import signal
 import time
-from multiprocessing import Pipe, connection, context, Process
+from multiprocessing import Process, Pipe, connection
 
 from loguru import logger
 from orjson import loads
@@ -8,7 +10,6 @@ from pydantic import BaseModel
 from redis.asyncio import Redis
 
 from .base_worker import BaseWorker
-from .utils import ShutdownSafeZone, ShutdownEvent
 from .worker_manager import WorkerManager
 
 
@@ -17,23 +18,50 @@ class _EventStartMessage(BaseModel):
     end_time: float
 
 
+async def _wait_for_data(
+    pipe_connection: connection.Connection,
+    shutdown_event: asyncio.Event,
+    timeout: float | None = None
+) -> bool:
+    if timeout is not None and timeout <= 0:
+        return pipe_connection.poll(0)
+
+    loop = asyncio.get_running_loop()
+
+    future = loop.create_future()
+    shutdown_task = asyncio.create_task(shutdown_event.wait())
+
+    def callback() -> None:
+        if not future.done() and pipe_connection.poll(0):
+            future.set_result(True)
+
+    loop.add_reader(pipe_connection.fileno(), callback)  # type: ignore
+
+    try:
+        await asyncio.wait((shutdown_task, future), timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        loop.remove_reader(pipe_connection.fileno())
+
+        if not shutdown_task.done():
+            shutdown_task.cancel()
+
+    return future.done()
+
+
 class ProcessSupervisor:
+    __SHUTDOWN_TIMEOUT_SECONDS = 20
 
-    def __init__(self, redis_dsn: str, workers: list[type[BaseWorker]], shutdown_event: ShutdownEvent) -> None:
+    def __init__(self, redis_dsn: str, workers: list[type[BaseWorker]], shutdown_event: asyncio.Event) -> None:
         self.__redis_dsn = redis_dsn
-
         self.__workers = workers
-        self.__worker_names = ', '.join(worker.settings.name for worker in workers)
-
         self.__shutdown_event = shutdown_event
-        self.__shutdown_safe_zone = ShutdownSafeZone(shutdown_event)
 
-        self.task: asyncio.Task | None = None
+        self.__worker_names = ', '.join(worker.settings.name for worker in workers)
 
         self.__pipe_reader_connection: connection.Connection | None = None
         self.__pipe_writer_connection: connection.Connection | None = None
 
-        self.__process: context.ForkServerProcess | None = None
+        self.__process: Process | None = None
 
     def __start_process(self) -> None:
         connections = Pipe(duplex=False)
@@ -52,21 +80,18 @@ class ProcessSupervisor:
         )
         self.__process.start()
 
-        logger.debug(f'[{self.__worker_names}] Процесс запущен')
-
     def __close_process(self) -> None:
         if self.__process is None:
             return
 
-        logger.debug(f'[{self.__worker_names}] Начат процесс завершения процесса')
-
-        self.__process.terminate()
+        if self.__process.is_alive():
+            logger.debug(f'[{self.__worker_names}] Подан сигнал о закрытии процесса')
+            os.kill(self.__process.pid, signal.SIGUSR1)
 
         end_time = time.time() + max(worker.settings.execution_timeout for worker in self.__workers)
 
         while True:
             if time.time() > end_time:
-                logger.warning(f'[{self.__worker_names}] Процесс не завершился за отведенное время')
                 break
 
             if not self.__process.is_alive():
@@ -75,26 +100,35 @@ class ProcessSupervisor:
             time.sleep(0.01)
 
         if self.__process.is_alive():
-            logger.warning(f'[{self.__worker_names}] Процессу будет отправлен сигнал SIGKILL')
-            self.__process.kill()
-        print(1)
-        logger.debug(f'[{self.__worker_names}] Закрытие процесса и очистка ресурсов')
-        print(2)
+            logger.debug(f'[{self.__worker_names}] Подан сигнал о немедленном закрытии процесса')
+            os.kill(self.__process.pid, signal.SIGTERM)
+
+        end_time = time.time() + self.__SHUTDOWN_TIMEOUT_SECONDS
+
+        while True:
+            if time.time() > end_time:
+                break
+
+            if not self.__process.is_alive():
+                break
+
+            time.sleep(0.01)
+
+        if self.__process.is_alive():
+            logger.critical(
+                f'[{self.__worker_names}] Не удалось мягко завершить процесс, отправлен сигнал SIGKILL. '
+                f'Возможно зависание воркеров, необходимо перезапустить менеджер'
+            )
+            os.kill(self.__process.pid, signal.SIGKILL)
 
         self.__process.join()
-        print(3)
         self.__process.close()
-        print(4)
         self.__process = None
 
         self.__pipe_reader_connection.close()
         self.__pipe_writer_connection.close()
 
-        logger.debug(f'[{self.__worker_names}] Процесс завершен')
-
     async def __check_for_hung_tasks(self):
-        logger.debug(f'[{self.__worker_names}] Начат процесс проверки на зависшие задачи')
-
         async with Redis.from_url(self.__redis_dsn, protocol=3, decode_responses=True) as redis:
             async with redis.pipeline() as pipe:
                 for worker in self.__workers:
@@ -125,68 +159,51 @@ class ProcessSupervisor:
 
                 await pipe.execute()
 
-        logger.debug(f'[{self.__worker_names}] Завершен процесс проверки на зависшие задачи')
-
-    async def __run(self) -> None:
+    async def run(self) -> None:
         logger.debug(f'[{self.__worker_names}] Запущен наблюдатель процесса')
 
         await self.__check_for_hung_tasks()
-
         await asyncio.to_thread(self.__start_process)
 
-        try:
-            while not self.__shutdown_event.is_set():
-                logger.debug(f'[{self.__worker_names}] Ожидание исполнения задачи одним из воркеров')
+        while not self.__shutdown_event.is_set():
+            await _wait_for_data(
+                self.__pipe_reader_connection,
+                self.__shutdown_event
+            )
 
-                with self.__shutdown_safe_zone:
-                    await asyncio.to_thread(self.__pipe_reader_connection.poll, None)
+            if self.__shutdown_event.is_set():
+                break
 
-                state = _EventStartMessage.model_validate(loads(self.__pipe_reader_connection.recv_bytes()))
+            state = _EventStartMessage.model_validate(loads(self.__pipe_reader_connection.recv_bytes()))
 
-                logger.debug(f'[{self.__worker_names}] Начать процесс отслеживание работы {state.worker_name}')
+            is_exist_data = await _wait_for_data(
+                self.__pipe_reader_connection,
+                self.__shutdown_event,
+                state.end_time - time.time()
+            )
 
-                with self.__shutdown_safe_zone:
-                    is_not_empty = await asyncio.to_thread(self.__pipe_reader_connection.poll, state.end_time - time.time())
+            if self.__shutdown_event.is_set():
+                break
 
-                if is_not_empty:
-                    self.__pipe_reader_connection.recv_bytes()
-                    continue
+            if is_exist_data:
+                self.__pipe_reader_connection.recv_bytes()
+                continue
 
-                logger.warning(f'[{self.__worker_names}] Воркер {state.worker_name} завис. Начат перезапуск процесса')
+            logger.warning(f'[{self.__worker_names}] Воркер {state.worker_name} завис. Начат перезапуск процесса')
 
-                await asyncio.to_thread(self.__close_process)
+            await asyncio.to_thread(self.__close_process)
+            await self.__check_for_hung_tasks()
 
-                await self.__check_for_hung_tasks()
+            if self.__shutdown_event.is_set():
+                break
 
-                if self.__shutdown_event.is_set():
-                    break
+            await asyncio.to_thread(self.__start_process)
 
-                await asyncio.to_thread(self.__start_process)
-                await asyncio.sleep(0.5)
-
-                logger.warning(f'[{self.__worker_names}] Завершен перезапуск процесса')
-        except asyncio.CancelledError:
-            logger.debug(f'[{self.__worker_names}] Мониторинг процесса отменен')
-        except Exception as error:
-            logger.exception(f'[{self.__worker_names}] Мониторинг процесса неожиданно завершился: {error}')
+            logger.warning(f'[{self.__worker_names}] Завершен перезапуск процесса')
 
         logger.debug(f'[{self.__worker_names}] Наблюдатель процесса начал завершение')
 
         await asyncio.to_thread(self.__close_process)
-
         await self.__check_for_hung_tasks()
 
         logger.debug(f'[{self.__worker_names}] Наблюдатель процесса завершил работу')
-
-    def run(self) -> None:
-        self.task = asyncio.create_task(self.__run())
-
-    def close(self) -> None:
-        logger.debug(f'[{self.__worker_names}] Вызван метод закрытия наблюдателя процесса')
-
-        if not self.__shutdown_safe_zone.is_use():
-            logger.debug(f'[{self.__worker_names}] Безопасная зона не используется')
-            return
-
-        self.task.cancel()
-        logger.debug(f'[{self.__worker_names}] Задача остановлена')

@@ -82,5 +82,5 @@ class WorkerManager:
     ) -> None:
         logger_.reinstall()
 
-        with asyncio.Runner(loop_factory=new_event_loop, debug=True) as runner:
+        with asyncio.Runner(loop_factory=new_event_loop) as runner:
             runner.run(cls(redis_dsn, workers, pipe_connection).__run())
