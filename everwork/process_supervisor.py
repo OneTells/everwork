@@ -75,8 +75,7 @@ class ProcessSupervisor:
                 'workers': self.__workers,
                 'pipe_connection': self.__pipe_writer_connection,
                 'logger_': logger
-            },
-            daemon=True
+            }
         )
         self.__process.start()
 
@@ -176,7 +175,7 @@ class ProcessSupervisor:
 
             state = _EventStartMessage.model_validate(loads(self.__pipe_reader_connection.recv_bytes()))
 
-            is_exist_data = await _wait_for_data(
+            is_exist_message = await _wait_for_data(
                 self.__pipe_reader_connection,
                 self.__shutdown_event,
                 state.end_time - time.time()
@@ -185,7 +184,7 @@ class ProcessSupervisor:
             if self.__shutdown_event.is_set():
                 break
 
-            if is_exist_data:
+            if is_exist_message:
                 self.__pipe_reader_connection.recv_bytes()
                 continue
 

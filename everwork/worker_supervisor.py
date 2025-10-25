@@ -1,6 +1,7 @@
 import asyncio
 import time
 from multiprocessing import connection
+from queue import Queue
 from threading import Thread, Lock
 
 from loguru import logger
@@ -70,6 +71,8 @@ class WorkerSupervisor:
             message_ids=[self.__resource_handler.resources.message_id]
         )
 
+        self.__resource_handler.clear()
+
     async def __handle_cancel(self) -> None:
         if self.__resource_handler.resources is None:
             return
@@ -86,6 +89,8 @@ class WorkerSupervisor:
             await self.__load_handle_cancel_script()
             await self.__redis.evalsha(self.__scripts['handle_cancel'], 3, *keys)
 
+        self.__resource_handler.clear()
+
     async def __handle_success(self) -> None:
         if self.__resource_handler.resources is None:
             return
@@ -95,6 +100,8 @@ class WorkerSupervisor:
             groupname=self.__worker.settings.name,
             message_ids=[self.__resource_handler.resources.message_id]
         )
+
+        self.__resource_handler.clear()
 
     def __notify_event_start(self) -> None:
         if self.__shutdown_event.is_set():
@@ -131,15 +138,11 @@ class WorkerSupervisor:
 
         try:
             while not self.__shutdown_event.is_set():
-                logger.debug(f'({self.__worker.settings.name}) Проверяю состояния воркера')
-
                 if not (await self.__get_is_worker_on()):
                     with self.__shutdown_safe_zone:
                         await asyncio.sleep(self.__WORKER_POLL_INTERVAL_SECONDS)
 
                     continue
-
-                logger.debug(f'({self.__worker.settings.name}) Начинаю получение ивента')
 
                 try:
                     kwargs = await self.__resource_handler.get_kwargs()
@@ -157,15 +160,13 @@ class WorkerSupervisor:
                     continue
 
                 with self.__lock:
-                    # if (
-                    #     self.__shutdown_event.is_set()
-                    #     or not (await self.__get_is_worker_on())
-                    # ):
-                    #     logger.debug(f'({self.__worker.settings.name}) Ивент получен, но был отменен')
-                    #     await self.__handle_cancel()
-                    #     continue
-
-                    logger.debug(f'({self.__worker.settings.name}) Начата обработка ивента')
+                    if (
+                        self.__shutdown_event.is_set()
+                        or not (await self.__get_is_worker_on())
+                    ):
+                        logger.debug(f'({self.__worker.settings.name}) Ивент получен, но был отменен')
+                        await self.__handle_cancel()
+                        continue
 
                     self.__notify_event_start()
 
@@ -188,11 +189,7 @@ class WorkerSupervisor:
                         await self.__handle_success()
 
                     self.__notify_event_end()
-
                     del kwargs
-                    self.__resource_handler.clear()
-
-                    logger.debug(f'({self.__worker.settings.name}) Завершена обработка ивента')
         except asyncio.CancelledError:
             logger.debug(f'({self.__worker.settings.name}) Мониторинг воркера отменен')
         except Exception as error:
@@ -217,7 +214,7 @@ class WorkerSupervisor:
                 self.__loop = runner.get_loop()
                 runner.run(__run_wrapper())
 
-        self.__thread = Thread(target=__run_in_thread, daemon=True)
+        self.__thread = Thread(target=__run_in_thread)
         self.__thread.start()
 
     def wait(self) -> None:
