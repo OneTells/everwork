@@ -158,12 +158,7 @@ class ProcessSupervisor:
 
                 await pipe.execute()
 
-    async def run(self) -> None:
-        logger.debug(f'[{self.__worker_names}] Запущен наблюдатель процесса')
-
-        await self.__check_for_hung_tasks()
-        await asyncio.to_thread(self.__start_process)
-
+    async def __run_monitoring(self):
         while not self.__shutdown_event.is_set():
             await _wait_for_data(
                 self.__pipe_reader_connection,
@@ -171,7 +166,7 @@ class ProcessSupervisor:
             )
 
             if self.__shutdown_event.is_set():
-                break
+                return
 
             state = _EventStartMessage.model_validate(loads(self.__pipe_reader_connection.recv_bytes()))
 
@@ -182,7 +177,7 @@ class ProcessSupervisor:
             )
 
             if self.__shutdown_event.is_set():
-                break
+                return
 
             if is_exist_message:
                 self.__pipe_reader_connection.recv_bytes()
@@ -194,11 +189,19 @@ class ProcessSupervisor:
             await self.__check_for_hung_tasks()
 
             if self.__shutdown_event.is_set():
-                break
+                return
 
             await asyncio.to_thread(self.__start_process)
 
             logger.warning(f'[{self.__worker_names}] Завершен перезапуск процесса')
+
+    async def run(self) -> None:
+        logger.debug(f'[{self.__worker_names}] Запущен наблюдатель процесса')
+
+        await self.__check_for_hung_tasks()
+        await asyncio.to_thread(self.__start_process)
+
+        await self.__run_monitoring()
 
         logger.debug(f'[{self.__worker_names}] Наблюдатель процесса начал завершение')
 

@@ -44,8 +44,6 @@ class ProcessManager:
         self.__shutdown_event = asyncio.Event()
 
     def __handle_shutdown_signal(self, *_) -> None:
-        logger.info('Получен сигнал о закрытии менеджера процессов')
-
         self.__shutdown_event.set()
 
     async def __init_workers(self, redis: Redis) -> None:
