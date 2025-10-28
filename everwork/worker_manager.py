@@ -5,7 +5,6 @@ import signal
 import time
 import typing
 from multiprocessing import connection
-from threading import Thread
 
 from loguru import logger
 from orjson import dumps
@@ -13,8 +12,8 @@ from pydantic import validate_call
 from redis.asyncio import Redis
 
 from .base_worker import BaseWorker
-from .resource_manager import ResourceManager
-from .utils import ThreadSafeEventChannel
+from .resource_manager import ResourceManagerRunner
+from .utils import SingleValueChannel
 
 if typing.TYPE_CHECKING:
     from loguru import Logger
@@ -32,15 +31,14 @@ class WorkerManager:
         self.__workers = workers
         self.__pipe_connection = pipe_connection
 
-        self.__redis = Redis.from_url(redis_dsn, protocol=3, decode_responses=True)
         self.__worker_names = ', '.join(worker.settings.name for worker in workers)
 
         self.__is_shutdown = False
 
-        self.__response_channel = ThreadSafeEventChannel[tuple[str, dict[str, typing.Any]]]()
-        self.__answer_channel = ThreadSafeEventChannel[bool]()
+        self.__response_channel = SingleValueChannel[tuple[str, dict[str, typing.Any]]]()
+        self.__answer_channel = SingleValueChannel[bool]()
 
-        self.__resource_manager = ResourceManager(
+        self.__resource_manager_runner = ResourceManagerRunner(
             self.__redis_dsn,
             self.__workers,
             self.__response_channel,
@@ -52,7 +50,7 @@ class WorkerManager:
 
     def __handle_shutdown_signal(self, *_) -> None:
         self.__is_shutdown = True
-        self.__resource_manager.cancel()
+        self.__resource_manager_runner.cancel()
 
     def __handle_terminate_signal(self, *_) -> None:
         if not self.__is_execute:
@@ -75,7 +73,7 @@ class WorkerManager:
 
         self.__pipe_connection.send_bytes(b'')
 
-    async def __init_workers(self) -> None:
+    async def __init_workers(self, redis: Redis) -> None:
         for worker in self.__workers:
             try:
                 worker_obj = worker()
@@ -83,7 +81,7 @@ class WorkerManager:
                 logger.exception(f'({worker.settings.name}) Не удалось выполнить __init__: {error}')
                 continue
 
-            worker_obj.initialize(self.__redis)
+            worker_obj.initialize(redis)
             worker_obj.__call__ = validate_call(worker_obj.__call__)
 
             self.__worker_instances[worker_obj.settings.name] = worker_obj
@@ -102,13 +100,13 @@ class WorkerManager:
             except Exception as error:
                 logger.exception(f'({worker.settings.name}) Не удалось выполнить shutdown: {error}')
 
-    async def __run_worker_loop(self) -> None:
-        await self.__init_workers()
+    async def __run_worker_loop(self, redis: Redis) -> None:
+        await self.__init_workers(redis)
         await self.__startup_workers()
 
         while True:
             try:
-                worker_name, kwargs = await self.__response_channel.get()
+                worker_name, kwargs = await self.__response_channel.receive()
             except asyncio.CancelledError:
                 logger.debug(f'[{self.__worker_names}] Чтение канала было отменено')
                 break
@@ -125,14 +123,14 @@ class WorkerManager:
                         await worker.__call__(**kwargs)
                 finally:
                     self.__is_execute = False
-            except KeyboardInterrupt:
+            except asyncio.CancelledError:
                 logger.exception(f'({worker_name}) Задача обрабатывалась дольше максимально разрешенного времени')
-                self.__answer_channel.put(False)
+                self.__answer_channel.send(False)
             except Exception as error:
                 logger.exception(f'({worker_name}) Не удалось обработать ивент. Ошибка: {error}')
-                self.__answer_channel.put(False)
+                self.__answer_channel.send(False)
             else:
-                self.__answer_channel.put(True)
+                self.__answer_channel.send(True)
             finally:
                 del worker_name, kwargs, worker
 
@@ -140,37 +138,35 @@ class WorkerManager:
 
         await self.__shutdown_workers()
 
-    async def __run(self) -> None:
+    async def run(self) -> None:
         logger.debug(f'[{self.__worker_names}] Менеджер воркеров запущен')
 
         signal.signal(signal.SIGUSR1, self.__handle_shutdown_signal)
         signal.signal(signal.SIGTERM, self.__handle_terminate_signal)
 
-        self.__response_channel.set_loop(asyncio.get_running_loop())
+        self.__response_channel.bind_to_event_loop(asyncio.get_running_loop())
 
-        resource_manager_thread = Thread(target=self.__resource_manager.run)
-        resource_manager_thread.start()
+        self.__resource_manager_runner.start()
 
-        async with self.__redis:
-            await self.__run_worker_loop()
+        async with Redis.from_url(self.__redis_dsn, protocol=3, decode_responses=True) as redis:
+            await self.__run_worker_loop(redis)
 
         logger.debug(f'[{self.__worker_names}] Менеджер воркеров начал завершение')
 
-        resource_manager_thread.join()
+        self.__resource_manager_runner.join()
 
         self.__pipe_connection.close()
 
         logger.debug(f'[{self.__worker_names}] Менеджер воркеров завершил работу')
 
-    @classmethod
-    def run(
-        cls,
-        redis_dsn: str,
-        workers: list[type[BaseWorker]],
-        pipe_connection: connection.Connection,
-        logger_: Logger
-    ) -> None:
-        logger_.reinstall()
 
-        with asyncio.Runner(loop_factory=new_event_loop) as runner:
-            runner.run(cls(redis_dsn, workers, pipe_connection).__run())
+def run_worker_manager_process(
+    redis_dsn: str,
+    workers: list[type[BaseWorker]],
+    pipe_connection: connection.Connection,
+    logger_: Logger
+) -> None:
+    logger_.reinstall()
+
+    with asyncio.Runner(loop_factory=new_event_loop) as runner:
+        runner.run(WorkerManager(redis_dsn, workers, pipe_connection).run())

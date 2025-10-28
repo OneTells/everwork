@@ -1,4 +1,5 @@
 import asyncio
+from threading import Thread
 from typing import Any
 
 from loguru import logger
@@ -6,12 +7,12 @@ from redis.asyncio import Redis
 
 from .base_worker import BaseWorker
 from .resource_supervisor import ResourceSupervisor
-from .utils import ThreadSafeEventChannel
+from .utils import SingleValueChannel
 
 try:
     from uvloop import new_event_loop
 except ImportError:
-    from asyncio import new_event_loop, get_running_loop
+    from asyncio import new_event_loop
 
 
 class ResourceManager:
@@ -20,34 +21,31 @@ class ResourceManager:
         self,
         redis_dsn: str,
         workers: list[type[BaseWorker]],
-        response_channel: ThreadSafeEventChannel[tuple[str, dict[str, Any]]],
-        answer_channel: ThreadSafeEventChannel[bool]
+        response_channel: SingleValueChannel[tuple[str, dict[str, Any]]],
+        answer_channel: SingleValueChannel[bool],
+        shutdown_event: asyncio.Event
     ) -> None:
-        self.__redis = Redis.from_url(redis_dsn, protocol=3, decode_responses=True)
-
+        self.__redis_dsn = redis_dsn
         self.__workers = workers
-        self.__worker_names = ', '.join(worker.settings.name for worker in workers)
-
         self.__response_channel = response_channel
         self.__answer_channel = answer_channel
+        self.__shutdown_event = shutdown_event
 
-        self.__shutdown_event = asyncio.Event()
+        self.__worker_names = ', '.join(worker.settings.name for worker in workers)
 
-        self.__loop: asyncio.AbstractEventLoop | None = None
-
-    async def __run(self) -> None:
+    async def run(self) -> None:
         logger.debug(f'[{self.__worker_names}] Менеджер ресурсов запущен')
 
-        self.__answer_channel.set_loop(get_running_loop())
+        self.__answer_channel.bind_to_event_loop(asyncio.get_running_loop())
 
         lock = asyncio.Lock()
 
-        async with self.__redis:
+        async with Redis.from_url(self.__redis_dsn, protocol=3, decode_responses=True) as redis:
             async with asyncio.TaskGroup() as tg:
                 for worker in self.__workers:
                     tg.create_task(
                         ResourceSupervisor(
-                            self.__redis,
+                            redis,
                             worker,
                             self.__response_channel,
                             self.__answer_channel,
@@ -58,15 +56,36 @@ class ResourceManager:
 
                 logger.debug('Наблюдатели ресурсов запущены')
 
-        self.__response_channel.cancel()
-        self.__answer_channel.cancel()
+        self.__response_channel.close()
+        self.__answer_channel.close()
 
         logger.debug(f'[{self.__worker_names}] Менеджер ресурсов завершил работу')
 
-    def run(self) -> None:
-        with asyncio.Runner(loop_factory=new_event_loop) as runner:
-            self.__loop = runner.get_loop()
-            runner.run(self.__run())
+
+class ResourceManagerRunner:
+
+    def __init__(
+        self,
+        redis_dsn: str,
+        workers: list[type[BaseWorker]],
+        response_channel: SingleValueChannel[tuple[str, dict[str, Any]]],
+        answer_channel: SingleValueChannel[bool]
+    ) -> None:
+        self.__shutdown_event = asyncio.Event()
+        self.__resource_manager = ResourceManager(redis_dsn, workers, response_channel, answer_channel, self.__shutdown_event)
+
+        self.__loop = new_event_loop()
+        self.__thread = Thread(target=self.__run)
+
+    def __run(self) -> None:
+        with asyncio.Runner(loop_factory=lambda: self.__loop) as runner:
+            runner.run(self.__resource_manager.run())
+
+    def start(self) -> None:
+        self.__thread.start()
+
+    def join(self) -> None:
+        self.__thread.join()
 
     def cancel(self) -> None:
         # noinspection PyTypeChecker

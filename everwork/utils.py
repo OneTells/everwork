@@ -42,14 +42,12 @@ class EventPublisher:
         self.__events.clear()
 
 
-class ThreadSafeEventChannel[T]:
+class SingleValueChannel[T]:
 
     def __init__(self) -> None:
         self.__loop: asyncio.AbstractEventLoop | None = None
-
-        self.__data: T | None = None
+        self.__pending_data: T | None = None
         self.__waiter: asyncio.Future[bool] | None = None
-
         self.__is_closed = False
 
     def __notify_waiter(self) -> None:
@@ -60,7 +58,7 @@ class ThreadSafeEventChannel[T]:
         if not future.done():
             future.set_result(True)
 
-    def __cancel(self) -> None:
+    def __cancel_waiter(self) -> None:
         future = self.__waiter
 
         if not future or future.done():
@@ -68,20 +66,20 @@ class ThreadSafeEventChannel[T]:
 
         future.cancel()
 
-    def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+    def bind_to_event_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self.__loop = loop
 
-    def put(self, data: T) -> None:
-        self.__data = data
+    def send(self, data: T) -> None:
+        self.__pending_data = data
         # noinspection PyTypeChecker
         self.__loop.call_soon_threadsafe(self.__notify_waiter)
 
-    async def get(self) -> T:
+    async def receive(self) -> T:
         if self.__is_closed:
             raise CancelledError()
 
-        if (item := self.__data) is not None:
-            self.__data = None
+        if (item := self.__pending_data) is not None:
+            self.__pending_data = None
             return item
 
         future = self.__loop.create_future()
@@ -93,17 +91,17 @@ class ThreadSafeEventChannel[T]:
             self.__waiter = None
             raise
 
-        item = self.__data
-        self.__data = None
+        item = self.__pending_data
+        self.__pending_data = None
         return item
 
-    def cancel(self) -> None:
+    def close(self) -> None:
         if self.__is_closed:
             return
 
         self.__is_closed = True
         # noinspection PyTypeChecker
-        self.__loop.call_soon_threadsafe(self.__cancel)
+        self.__loop.call_soon_threadsafe(self.__cancel_waiter)
 
 
 async def wait_for_or_cancel[T](coroutine: Coroutine[Any, Any, T], event: asyncio.Event) -> T:

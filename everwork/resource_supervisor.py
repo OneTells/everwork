@@ -7,7 +7,7 @@ from redis.exceptions import NoScriptError
 
 from .base_worker import BaseWorker, TriggerMode
 from .resource_handler import TriggerResourceHandler, ExecutorResourceHandler
-from .utils import ThreadSafeEventChannel, wait_for_or_cancel
+from .utils import SingleValueChannel, wait_for_or_cancel
 
 
 class ResourceSupervisor:
@@ -17,8 +17,8 @@ class ResourceSupervisor:
         self,
         redis: Redis,
         worker: type[BaseWorker],
-        response_channel: ThreadSafeEventChannel[tuple[str, dict[str, Any]]],
-        answer_channel: ThreadSafeEventChannel[bool],
+        response_channel: SingleValueChannel[tuple[str, dict[str, Any]]],
+        answer_channel: SingleValueChannel[bool],
         lock: asyncio.Lock,
         shutdown_event: asyncio.Event
     ) -> None:
@@ -95,6 +95,47 @@ class ResourceSupervisor:
         value = await self.__redis.get(f'workers:{self.__worker.settings.name}:is_worker_on')
         return value == '1'
 
+    async def __process_worker_messages(self) -> None:
+        while not self.__shutdown_event.is_set():
+            if not (await self.__get_is_worker_on()):
+                try:
+                    await wait_for_or_cancel(asyncio.sleep(self.__WORKER_POLL_INTERVAL_SECONDS), self.__shutdown_event)
+                except asyncio.CancelledError:
+                    break
+
+                continue
+
+            try:
+                kwargs = await self.__resource_handler.get_kwargs()
+            except asyncio.CancelledError:
+                await self.__handle_cancel()
+                continue
+
+            if self.__shutdown_event.is_set() or not (await self.__get_is_worker_on()):
+                await self.__handle_cancel()
+                continue
+
+            async with self.__lock:
+                if self.__shutdown_event.is_set() or not (await self.__get_is_worker_on()):
+                    await self.__handle_cancel()
+                    continue
+
+                self.__response_channel.send((self.__worker.settings.name, kwargs))
+
+                is_success = self.__answer_channel.receive()
+
+                if not is_success:
+                    logger.debug(
+                        f'({self.__worker.settings.name}) Не удалось обработать сообщение из потока. '
+                        f'Поток: {self.__resource_handler.resources.stream}. '
+                        f'ID сообщения: {self.__resource_handler.resources.message_id}'
+                    )
+                    await self.__handle_error()
+                else:
+                    await self.__handle_success()
+
+                del kwargs
+
     async def run(self) -> None:
         logger.debug(f'({self.__worker.settings.name}) Запушен наблюдатель воркера')
 
@@ -102,48 +143,7 @@ class ResourceSupervisor:
         logger.debug(f'({self.__worker.settings.name}) Скрипты зарегистрированы')
 
         try:
-            while not self.__shutdown_event.is_set():
-                if not (await self.__get_is_worker_on()):
-                    try:
-                        await wait_for_or_cancel(
-                            asyncio.sleep(self.__WORKER_POLL_INTERVAL_SECONDS),
-                            self.__shutdown_event
-                        )
-                    except asyncio.CancelledError:
-                        break
-
-                    continue
-
-                try:
-                    kwargs = await self.__resource_handler.get_kwargs()
-                except asyncio.CancelledError:
-                    await self.__handle_cancel()
-                    continue
-
-                if self.__shutdown_event.is_set() or not (await self.__get_is_worker_on()):
-                    await self.__handle_cancel()
-                    continue
-
-                async with self.__lock:
-                    if self.__shutdown_event.is_set() or not (await self.__get_is_worker_on()):
-                        await self.__handle_cancel()
-                        continue
-
-                    self.__response_channel.put((self.__worker.settings.name, kwargs))
-
-                    is_success = self.__answer_channel.get()
-
-                    if not is_success:
-                        logger.debug(
-                            f'({self.__worker.settings.name}) Не удалось обработать сообщение из потока. '
-                            f'Поток: {self.__resource_handler.resources.stream}. '
-                            f'ID сообщения: {self.__resource_handler.resources.message_id}'
-                        )
-                        await self.__handle_error()
-                    else:
-                        await self.__handle_success()
-
-                    del kwargs
+            await self.__process_worker_messages()
         except Exception as error:
             logger.exception(f'({self.__worker.settings.name}) Мониторинг воркера неожиданно завершился: {error}')
 

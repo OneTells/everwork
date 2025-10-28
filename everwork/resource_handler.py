@@ -68,10 +68,7 @@ class TriggerResourceHandler(BaseResourceHandler):
 
         timeout = max(timeout - (time.time() - start_time), 0)
 
-        await wait_for_or_cancel(
-            asyncio.sleep(timeout),
-            self._shutdown_event
-        )
+        await wait_for_or_cancel(asyncio.sleep(timeout), self._shutdown_event)
 
         await self._redis.set(f'workers:{self._worker_settings.name}:last_time', time.time())
 

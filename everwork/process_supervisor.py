@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from redis.asyncio import Redis
 
 from .base_worker import BaseWorker
-from .worker_manager import WorkerManager
+from .worker_manager import run_worker_manager_process
 
 
 class _EventStartMessage(BaseModel):
@@ -69,7 +69,7 @@ class ProcessSupervisor:
         self.__pipe_writer_connection: connection.Connection = connections[1]
 
         self.__process = Process(
-            target=WorkerManager.run,
+            target=run_worker_manager_process,
             kwargs={
                 'redis_dsn': self.__redis_dsn,
                 'workers': self.__workers,
