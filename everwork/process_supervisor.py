@@ -1,8 +1,6 @@
 import asyncio
-import os
-import signal
 import time
-from multiprocessing import Process, Pipe, connection
+from multiprocessing import Pipe, connection
 
 from loguru import logger
 from orjson import loads
@@ -10,7 +8,7 @@ from pydantic import BaseModel
 from redis.asyncio import Redis
 
 from .base_worker import BaseWorker
-from .worker_manager import run_worker_manager_process
+from .worker_manager import WorkerManagerRunner
 
 
 class _EventStartMessage(BaseModel):
@@ -49,7 +47,6 @@ async def _wait_for_data(
 
 
 class ProcessSupervisor:
-    __SHUTDOWN_TIMEOUT_SECONDS = 20
 
     def __init__(self, redis_dsn: str, workers: list[type[BaseWorker]], shutdown_event: asyncio.Event) -> None:
         self.__redis_dsn = redis_dsn
@@ -61,68 +58,20 @@ class ProcessSupervisor:
         self.__pipe_reader_connection: connection.Connection | None = None
         self.__pipe_writer_connection: connection.Connection | None = None
 
-        self.__process: Process | None = None
+        self.__worker_manager_runner = WorkerManagerRunner(self.__redis_dsn, self.__workers)
 
-    def __start_process(self) -> None:
+    def __start_worker_manager(self) -> None:
         connections = Pipe(duplex=False)
         self.__pipe_reader_connection: connection.Connection = connections[0]
         self.__pipe_writer_connection: connection.Connection = connections[1]
 
-        self.__process = Process(
-            target=run_worker_manager_process,
-            kwargs={
-                'redis_dsn': self.__redis_dsn,
-                'workers': self.__workers,
-                'pipe_connection': self.__pipe_writer_connection,
-                'logger_': logger
-            }
-        )
-        self.__process.start()
+        self.__worker_manager_runner.start(self.__pipe_writer_connection)
 
-    def __close_process(self) -> None:
-        if self.__process is None:
+    def __close_worker_manager(self) -> None:
+        if self.__worker_manager_runner.is_close():
             return
 
-        if self.__process.is_alive():
-            logger.debug(f'[{self.__worker_names}] Подан сигнал о закрытии процесса')
-            os.kill(self.__process.pid, signal.SIGUSR1)
-
-        end_time = time.time() + max(worker.settings.execution_timeout for worker in self.__workers)
-
-        while True:
-            if time.time() > end_time:
-                break
-
-            if not self.__process.is_alive():
-                break
-
-            time.sleep(0.01)
-
-        if self.__process.is_alive():
-            logger.debug(f'[{self.__worker_names}] Подан сигнал о немедленном закрытии процесса')
-            os.kill(self.__process.pid, signal.SIGTERM)
-
-        end_time = time.time() + self.__SHUTDOWN_TIMEOUT_SECONDS
-
-        while True:
-            if time.time() > end_time:
-                break
-
-            if not self.__process.is_alive():
-                break
-
-            time.sleep(0.01)
-
-        if self.__process.is_alive():
-            logger.critical(
-                f'[{self.__worker_names}] Не удалось мягко завершить процесс, отправлен сигнал SIGKILL. '
-                f'Возможно зависание воркеров, необходимо перезапустить менеджер'
-            )
-            os.kill(self.__process.pid, signal.SIGKILL)
-
-        self.__process.join()
-        self.__process.close()
-        self.__process = None
+        self.__worker_manager_runner.close()
 
         self.__pipe_reader_connection.close()
         self.__pipe_writer_connection.close()
@@ -185,13 +134,13 @@ class ProcessSupervisor:
 
             logger.warning(f'[{self.__worker_names}] Воркер {state.worker_name} завис. Начат перезапуск процесса')
 
-            await asyncio.to_thread(self.__close_process)
+            await asyncio.to_thread(self.__close_worker_manager)
             await self.__check_for_hung_tasks()
 
             if self.__shutdown_event.is_set():
                 return
 
-            await asyncio.to_thread(self.__start_process)
+            await asyncio.to_thread(self.__start_worker_manager)
 
             logger.warning(f'[{self.__worker_names}] Завершен перезапуск процесса')
 
@@ -199,13 +148,13 @@ class ProcessSupervisor:
         logger.debug(f'[{self.__worker_names}] Запущен наблюдатель процесса')
 
         await self.__check_for_hung_tasks()
-        await asyncio.to_thread(self.__start_process)
+        await asyncio.to_thread(self.__start_worker_manager)
 
         await self.__run_monitoring()
 
         logger.debug(f'[{self.__worker_names}] Наблюдатель процесса начал завершение')
 
-        await asyncio.to_thread(self.__close_process)
+        await asyncio.to_thread(self.__close_worker_manager)
         await self.__check_for_hung_tasks()
 
         logger.debug(f'[{self.__worker_names}] Наблюдатель процесса завершил работу')

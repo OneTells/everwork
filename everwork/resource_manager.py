@@ -62,6 +62,18 @@ class ResourceManager:
         logger.debug(f'[{self.__worker_names}] Менеджер ресурсов завершил работу')
 
 
+def _run_resource_manager(
+    redis_dsn: str,
+    workers: list[type[BaseWorker]],
+    response_channel: SingleValueChannel[tuple[str, dict[str, Any]]],
+    answer_channel: SingleValueChannel[bool],
+    shutdown_event: asyncio.Event,
+    loop: asyncio.AbstractEventLoop
+) -> None:
+    with asyncio.Runner(loop_factory=lambda: loop) as runner:
+        runner.run(ResourceManager(redis_dsn, workers, response_channel, answer_channel, shutdown_event).run())
+
+
 class ResourceManagerRunner:
 
     def __init__(
@@ -72,14 +84,19 @@ class ResourceManagerRunner:
         answer_channel: SingleValueChannel[bool]
     ) -> None:
         self.__shutdown_event = asyncio.Event()
-        self.__resource_manager = ResourceManager(redis_dsn, workers, response_channel, answer_channel, self.__shutdown_event)
-
         self.__loop = new_event_loop()
-        self.__thread = Thread(target=self.__run)
 
-    def __run(self) -> None:
-        with asyncio.Runner(loop_factory=lambda: self.__loop) as runner:
-            runner.run(self.__resource_manager.run())
+        self.__thread = Thread(
+            target=_run_resource_manager,
+            kwargs={
+                'redis_dsn': redis_dsn,
+                'workers': workers,
+                'response_channel': response_channel,
+                'answer_channel': answer_channel,
+                'shutdown_event': self.__shutdown_event,
+                'loop': self.__loop
+            }
+        )
 
     def start(self) -> None:
         self.__thread.start()

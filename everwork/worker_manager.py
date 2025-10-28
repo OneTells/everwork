@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import signal
 import time
 import typing
-from multiprocessing import connection
+from multiprocessing import connection, Process
 
 from loguru import logger
 from orjson import dumps
@@ -160,7 +161,7 @@ class WorkerManager:
         logger.debug(f'[{self.__worker_names}] Менеджер воркеров завершил работу')
 
 
-def run_worker_manager_process(
+def _run_worker_manager(
     redis_dsn: str,
     workers: list[type[BaseWorker]],
     pipe_connection: connection.Connection,
@@ -170,3 +171,75 @@ def run_worker_manager_process(
 
     with asyncio.Runner(loop_factory=new_event_loop) as runner:
         runner.run(WorkerManager(redis_dsn, workers, pipe_connection).run())
+
+
+class WorkerManagerRunner:
+    __SHUTDOWN_TIMEOUT_SECONDS = 20
+
+    def __init__(self, redis_dsn: str, workers: list[type[BaseWorker]]) -> None:
+        self.__redis_dsn = redis_dsn
+        self.__workers = workers
+
+        self.__worker_names = ', '.join(worker.settings.name for worker in workers)
+
+        self.__process: Process | None = None
+
+    def is_close(self) -> bool:
+        return self.__process is None
+
+    def start(self, pipe_writer_connection: connection.Connection) -> None:
+        self.__process = Process(
+            target=_run_worker_manager,
+            kwargs={
+                'redis_dsn': self.__redis_dsn,
+                'workers': self.__workers,
+                'pipe_connection': pipe_writer_connection,
+                'logger_': logger
+            }
+        )
+        self.__process.start()
+
+    def close(self) -> None:
+        if self.__process is None:
+            return
+
+        if self.__process.is_alive():
+            logger.debug(f'[{self.__worker_names}] Подан сигнал о закрытии процесса')
+            os.kill(self.__process.pid, signal.SIGUSR1)
+
+        end_time = time.time() + max(worker.settings.execution_timeout for worker in self.__workers)
+
+        while True:
+            if time.time() > end_time:
+                break
+
+            if not self.__process.is_alive():
+                break
+
+            time.sleep(0.01)
+
+        if self.__process.is_alive():
+            logger.debug(f'[{self.__worker_names}] Подан сигнал о немедленном закрытии процесса')
+            os.kill(self.__process.pid, signal.SIGTERM)
+
+        end_time = time.time() + self.__SHUTDOWN_TIMEOUT_SECONDS
+
+        while True:
+            if time.time() > end_time:
+                break
+
+            if not self.__process.is_alive():
+                break
+
+            time.sleep(0.01)
+
+        if self.__process.is_alive():
+            logger.critical(
+                f'[{self.__worker_names}] Не удалось мягко завершить процесс, отправлен сигнал SIGKILL. '
+                f'Возможно зависание воркеров, необходимо перезапустить менеджер'
+            )
+            os.kill(self.__process.pid, signal.SIGKILL)
+
+        self.__process.join()
+        self.__process.close()
+        self.__process = None
