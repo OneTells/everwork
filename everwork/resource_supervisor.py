@@ -122,7 +122,7 @@ class ResourceSupervisor:
 
                 self.__response_channel.send((self.__worker.settings.name, kwargs))
 
-                is_success = self.__answer_channel.receive()
+                is_success = await self.__answer_channel.receive()
 
                 if not is_success:
                     logger.debug(
