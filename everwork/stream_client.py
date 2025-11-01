@@ -35,7 +35,7 @@ class StreamClient:
         if 'push_event' not in self.__scripts:
             await self.__load_push_event_script()
 
-        args = list(chain.from_iterable((event.target_stream, dumps(to_jsonable_python(event.data)))))
+        args = list(chain.from_iterable((event.target_stream, dumps(to_jsonable_python(event.data))) for event in events))
 
         try:
             await self.__redis.evalsha(self.__scripts['push_event'], 0, *args)

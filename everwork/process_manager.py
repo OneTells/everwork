@@ -9,9 +9,10 @@ from uuid import UUID
 from loguru import logger
 from orjson import loads, dumps
 from pydantic import validate_call, AfterValidator, RedisDsn
+from pydantic_core import to_jsonable_python
 from redis.asyncio import Redis
 
-from .base_worker import ProcessGroup
+from .base_worker import ProcessGroup, WorkerSettings
 from .process_supervisor import ProcessSupervisor
 
 
@@ -48,28 +49,29 @@ class ProcessManager:
 
     async def __init_workers(self, redis: Redis) -> None:
         managers_data = await redis.get(f'managers:{self.__uuid}')
-        old_workers_map: dict[str, list[str]] = {} if managers_data is None else loads(managers_data)
+        old_workers_settings: dict[str, WorkerSettings] = (
+            {} if managers_data is None else {k: WorkerSettings.model_validate(v) for k, v in loads(managers_data).items()}
+        )
 
-        new_workers_map = {
-            w.settings.name: list(w.settings.source_streams) + [f'workers:{w.settings.name}:stream']
-            for g in self.__process_groups for w in g.workers
+        new_workers_settings: dict[str, WorkerSettings] = {
+            w.settings.name: w.settings for g in self.__process_groups for w in g.workers
         }
 
         async with redis.pipeline() as pipe:
-            if old_worker_names := old_workers_map.keys() - new_workers_map.keys():
+            if old_worker_names := old_workers_settings.keys() - new_workers_settings.keys():
                 await pipe.delete(
                     *(f'workers:{worker_name}:is_worker_on' for worker_name in old_worker_names),
                     *(f'workers:{worker_name}:last_time' for worker_name in old_worker_names),
                 )
 
-            if new_worker_names := new_workers_map.keys() - old_workers_map.keys():
+            if new_worker_names := new_workers_settings.keys() - old_workers_settings.keys():
                 await pipe.mset({f'workers:{worker_name}:is_worker_on': 0 for worker_name in new_worker_names})
 
-            await pipe.set(f'managers:{self.__uuid}', dumps(new_workers_map))
+            await pipe.set(f'managers:{self.__uuid}', dumps(to_jsonable_python(new_workers_settings)))
             await pipe.sadd('managers', self.__uuid)
 
-            if new_workers_map:
-                await pipe.sadd('streams', *(chain.from_iterable(new_workers_map.values())))
+            if new_workers_settings:
+                await pipe.sadd('streams', *chain.from_iterable(map(lambda x: x.source_streams, new_workers_settings.values())))
 
             await pipe.execute()
 
@@ -77,7 +79,7 @@ class ProcessManager:
         async with redis.pipeline() as pipe:
             for process_group in self.__process_groups:
                 for worker in process_group.workers:
-                    for stream in (worker.settings.source_streams | {f'workers:{worker.settings.name}:stream'}):
+                    for stream in worker.settings.source_streams:
                         if await redis.exists(stream):
                             groups = await redis.xinfo_groups(stream)
 

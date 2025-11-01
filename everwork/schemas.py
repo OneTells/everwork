@@ -1,6 +1,6 @@
-from typing import Annotated, Any
+from typing import Annotated, Any, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ExecutorMode(BaseModel):
@@ -23,6 +23,11 @@ class WorkerSettings(BaseModel):
 
     execution_timeout: Annotated[float, Field(gt=0)] = 180
     event_publisher_settings: EventPublisherSettings = Field(default_factory=EventPublisherSettings)
+
+    @model_validator(mode='after')
+    def _configure_stream_sources(self) -> Self:
+        self.source_streams.add(f'workers:{self.name}:stream')
+        return self
 
 
 class WorkerEvent(BaseModel):

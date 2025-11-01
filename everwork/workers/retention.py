@@ -71,15 +71,21 @@ class BaseRetentionWorker(BaseWorker, ABC):
 
             results = await pipe.execute()
 
-        all_active_streams = set(chain.from_iterable(
-            loads(data).values() for data in results if data is not None
-        ))
+        all_active_streams = set(
+            chain.from_iterable(
+                map(
+                    lambda x: WorkerSettings.model_validate(x).source_streams,
+                    loads(data).values()
+                ) for data in results if data is not None
+            )
+        )
 
         if not (streams_to_delete := list(set(empty_streams) - all_active_streams)):
             logger.debug(f'({self.settings.name}) Нет стримов для удаления')
             return
 
         await redis.srem('streams', *streams_to_delete)
+
         logger.debug(
             f'({self.settings.name}) Удалены {len(streams_to_delete)} стримов. '
             f'Всего обработано: {len(streams)}. '

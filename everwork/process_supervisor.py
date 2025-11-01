@@ -80,7 +80,7 @@ class ProcessSupervisor:
         async with Redis.from_url(self.__redis_dsn, protocol=3, decode_responses=True) as redis:
             async with redis.pipeline() as pipe:
                 for worker in self.__workers:
-                    for stream in (worker.settings.source_streams | {f'workers:{worker.settings.name}:stream'}):
+                    for stream in worker.settings.source_streams:
                         pending_info = await redis.xpending(stream, worker.settings.name)
 
                         if pending_info['pending'] == 0:

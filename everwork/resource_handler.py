@@ -28,10 +28,7 @@ class BaseResourceHandler(ABC):
 
         self.resources: Resources | None = None
 
-        self._streams = (
-            {processing_stream: '>' for processing_stream in self._worker_settings.source_streams}
-            | {f'workers:{self._worker_settings.name}:stream': '>'}
-        )
+        self._streams = {processing_stream: '>' for processing_stream in self._worker_settings.source_streams}
 
     @abstractmethod
     async def get_kwargs(self) -> dict[str, Any]:
