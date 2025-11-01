@@ -5,6 +5,7 @@ import os
 import signal
 import time
 import typing
+from contextlib import suppress
 from multiprocessing import connection, Process
 
 from loguru import logger
@@ -169,8 +170,9 @@ def _run_worker_manager(
 ) -> None:
     logger_.reinstall()
 
-    with asyncio.Runner(loop_factory=new_event_loop) as runner:
-        runner.run(WorkerManager(redis_dsn, workers, pipe_connection).run())
+    with suppress(KeyboardInterrupt):
+        with asyncio.Runner(loop_factory=new_event_loop) as runner:
+            runner.run(WorkerManager(redis_dsn, workers, pipe_connection).run())
 
 
 class WorkerManagerRunner:
