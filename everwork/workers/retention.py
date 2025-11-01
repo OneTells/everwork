@@ -71,7 +71,7 @@ class BaseRetentionWorker(BaseWorker, ABC):
 
             results = await pipe.execute()
 
-        all_active_streams = set(
+        all_active_streams: set[str] = set(
             chain.from_iterable(
                 map(
                     lambda x: WorkerSettings.model_validate(x).source_streams,
