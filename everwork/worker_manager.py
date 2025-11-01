@@ -125,7 +125,7 @@ class WorkerManager:
                 finally:
                     self.__is_execute = False
             except (KeyboardInterrupt, asyncio.CancelledError):
-                logger.exception(f'({worker_name}) Задача обрабатывалась дольше максимально разрешенного времени')
+                logger.exception(f'({worker_name}) Задача обрабатывалась дольше максимально разрешенного времени и была отменена')
                 self.__answer_channel.send(False)
             except Exception as error:
                 logger.exception(f'({worker_name}) Не удалось обработать ивент. Ошибка: {error}')
