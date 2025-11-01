@@ -125,11 +125,12 @@ class ResourceSupervisor:
                 is_success = await self.__answer_channel.receive()
 
                 if not is_success:
-                    logger.debug(
-                        f'({self.__worker.settings.name}) Не удалось обработать сообщение из потока. '
-                        f'Поток: {self.__resource_handler.resources.stream}. '
-                        f'ID сообщения: {self.__resource_handler.resources.message_id}'
-                    )
+                    if self.__resource_handler.resources is not None:
+                        logger.debug(
+                            f'({self.__worker.settings.name}) Не удалось обработать сообщение из потока. '
+                            f'Поток: {self.__resource_handler.resources.stream}. '
+                            f'ID сообщения: {self.__resource_handler.resources.message_id}'
+                        )
                     await self.__handle_error()
                 else:
                     await self.__handle_success()
