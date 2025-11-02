@@ -11,7 +11,6 @@ from .utils import SingleValueChannel, wait_for_or_cancel
 
 
 class ResourceSupervisor:
-    __WORKER_POLL_INTERVAL_SECONDS = 60
 
     def __init__(
         self,
@@ -99,7 +98,7 @@ class ResourceSupervisor:
         while not self.__shutdown_event.is_set():
             if not (await self.__get_is_worker_on()):
                 try:
-                    await wait_for_or_cancel(asyncio.sleep(self.__WORKER_POLL_INTERVAL_SECONDS), self.__shutdown_event)
+                    await wait_for_or_cancel(asyncio.sleep(self.__worker.settings.worker_poll_interval), self.__shutdown_event)
                 except asyncio.CancelledError:
                     break
 

@@ -21,8 +21,10 @@ class WorkerSettings(BaseModel):
     source_streams: set[str] = Field(default_factory=set)
     mode: ExecutorMode | TriggerMode
 
-    execution_timeout: Annotated[float, Field(gt=0)] = 180
     event_publisher_settings: EventPublisherSettings = Field(default_factory=EventPublisherSettings)
+
+    execution_timeout: Annotated[float, Field(gt=0)] = 180
+    worker_poll_interval: Annotated[float, Field(gt=0)] = 60
 
     @model_validator(mode='after')
     def _configure_stream_sources(self) -> Self:
