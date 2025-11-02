@@ -5,7 +5,7 @@ from typing import Any
 from loguru import logger
 from redis.asyncio import Redis
 
-from .base_worker import BaseWorker
+from .base_worker import BaseWorker, Process
 from .resource_supervisor import ResourceSupervisor
 from .utils import SingleValueChannel
 
@@ -20,18 +20,18 @@ class ResourceManager:
     def __init__(
         self,
         redis_dsn: str,
-        workers: list[type[BaseWorker]],
+        process: Process,
         response_channel: SingleValueChannel[tuple[str, dict[str, Any]]],
         answer_channel: SingleValueChannel[bool],
         shutdown_event: asyncio.Event
     ) -> None:
         self.__redis_dsn = redis_dsn
-        self.__workers = workers
+        self.__process = process
         self.__response_channel = response_channel
         self.__answer_channel = answer_channel
         self.__shutdown_event = shutdown_event
 
-        self.__worker_names = ', '.join(worker.settings.name for worker in workers)
+        self.__worker_names = ', '.join(worker.settings.name for worker in process.workers)
 
     async def run(self) -> None:
         logger.debug(f'[{self.__worker_names}] Менеджер ресурсов запущен')
@@ -42,7 +42,7 @@ class ResourceManager:
 
         async with Redis.from_url(self.__redis_dsn, protocol=3, decode_responses=True) as redis:
             async with asyncio.TaskGroup() as tg:
-                for worker in self.__workers:
+                for worker in self.__process.workers:
                     tg.create_task(
                         ResourceSupervisor(
                             redis,
@@ -64,14 +64,14 @@ class ResourceManager:
 
 def _run_resource_manager(
     redis_dsn: str,
-    workers: list[type[BaseWorker]],
+    process: Process,
     response_channel: SingleValueChannel[tuple[str, dict[str, Any]]],
     answer_channel: SingleValueChannel[bool],
     shutdown_event: asyncio.Event,
     loop: asyncio.AbstractEventLoop
 ) -> None:
     with asyncio.Runner(loop_factory=lambda: loop) as runner:
-        runner.run(ResourceManager(redis_dsn, workers, response_channel, answer_channel, shutdown_event).run())
+        runner.run(ResourceManager(redis_dsn, process, response_channel, answer_channel, shutdown_event).run())
 
 
 class ResourceManagerRunner:
@@ -79,7 +79,7 @@ class ResourceManagerRunner:
     def __init__(
         self,
         redis_dsn: str,
-        workers: list[type[BaseWorker]],
+        process: Process,
         response_channel: SingleValueChannel[tuple[str, dict[str, Any]]],
         answer_channel: SingleValueChannel[bool]
     ) -> None:
@@ -90,7 +90,7 @@ class ResourceManagerRunner:
             target=_run_resource_manager,
             kwargs={
                 'redis_dsn': redis_dsn,
-                'workers': workers,
+                'process': process,
                 'response_channel': response_channel,
                 'answer_channel': answer_channel,
                 'shutdown_event': self.__shutdown_event,

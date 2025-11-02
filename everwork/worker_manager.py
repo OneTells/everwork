@@ -6,14 +6,14 @@ import signal
 import time
 import typing
 from contextlib import suppress
-from multiprocessing import connection, Process
+from multiprocessing import connection, Process as BaseProcess
 
 from loguru import logger
 from orjson import dumps
 from pydantic import validate_call
 from redis.asyncio import Redis
 
-from .base_worker import BaseWorker
+from .base_worker import BaseWorker, Process
 from .resource_manager import ResourceManagerRunner
 from .utils import SingleValueChannel
 
@@ -28,12 +28,12 @@ except ImportError:
 
 class WorkerManager:
 
-    def __init__(self, redis_dsn: str, workers: list[type[BaseWorker]], pipe_connection: connection.Connection) -> None:
+    def __init__(self, redis_dsn: str, process: Process, pipe_connection: connection.Connection) -> None:
         self.__redis_dsn = redis_dsn
-        self.__workers = workers
+        self.__process = process
         self.__pipe_connection = pipe_connection
 
-        self.__worker_names = ', '.join(worker.settings.name for worker in workers)
+        self.__worker_names = ', '.join(worker.settings.name for worker in process.workers)
 
         self.__is_shutdown = False
 
@@ -42,7 +42,7 @@ class WorkerManager:
 
         self.__resource_manager_runner = ResourceManagerRunner(
             self.__redis_dsn,
-            self.__workers,
+            self.__process,
             self.__response_channel,
             self.__answer_channel
         )
@@ -76,7 +76,7 @@ class WorkerManager:
         self.__pipe_connection.send_bytes(b'')
 
     async def __init_workers(self, redis: Redis) -> None:
-        for worker in self.__workers:
+        for worker in self.__process.workers:
             try:
                 worker_obj = worker()
             except Exception as error:
@@ -164,7 +164,7 @@ class WorkerManager:
 
 def _run_worker_manager(
     redis_dsn: str,
-    workers: list[type[BaseWorker]],
+    process: Process,
     pipe_connection: connection.Connection,
     logger_: Logger
 ) -> None:
@@ -172,76 +172,75 @@ def _run_worker_manager(
 
     with suppress(KeyboardInterrupt):
         with asyncio.Runner(loop_factory=new_event_loop) as runner:
-            runner.run(WorkerManager(redis_dsn, workers, pipe_connection).run())
+            runner.run(WorkerManager(redis_dsn, process, pipe_connection).run())
 
 
 class WorkerManagerRunner:
-    __SHUTDOWN_TIMEOUT_SECONDS = 20
 
-    def __init__(self, redis_dsn: str, workers: list[type[BaseWorker]]) -> None:
+    def __init__(self, redis_dsn: str, process: Process) -> None:
         self.__redis_dsn = redis_dsn
-        self.__workers = workers
+        self.__process = process
 
-        self.__worker_names = ', '.join(worker.settings.name for worker in workers)
+        self.__worker_names = ', '.join(worker.settings.name for worker in process.workers)
 
-        self.__process: Process | None = None
+        self.__base_process: BaseProcess | None = None
 
     def is_close(self) -> bool:
-        return self.__process is None
+        return self.__base_process is None
 
     def start(self, pipe_writer_connection: connection.Connection) -> None:
-        self.__process = Process(
+        self.__base_process = BaseProcess(
             target=_run_worker_manager,
             kwargs={
                 'redis_dsn': self.__redis_dsn,
-                'workers': self.__workers,
+                'process': self.__process,
                 'pipe_connection': pipe_writer_connection,
                 'logger_': logger
             }
         )
-        self.__process.start()
+        self.__base_process.start()
 
     def close(self) -> None:
-        if self.__process is None:
+        if self.__base_process is None:
             return
 
-        if self.__process.is_alive():
+        if self.__base_process.is_alive():
             logger.debug(f'[{self.__worker_names}] Подан сигнал о закрытии процесса')
-            os.kill(self.__process.pid, signal.SIGUSR1)
+            os.kill(self.__base_process.pid, signal.SIGUSR1)
 
-        end_time = time.time() + max(worker.settings.execution_timeout for worker in self.__workers)
+        end_time = time.time() + max(worker.settings.execution_timeout for worker in self.__process.workers)
 
         while True:
             if time.time() > end_time:
                 break
 
-            if not self.__process.is_alive():
+            if not self.__base_process.is_alive():
                 break
 
             time.sleep(0.01)
 
-        if self.__process.is_alive():
+        if self.__base_process.is_alive():
             logger.debug(f'[{self.__worker_names}] Подан сигнал о немедленном закрытии процесса')
-            os.kill(self.__process.pid, signal.SIGTERM)
+            os.kill(self.__base_process.pid, signal.SIGTERM)
 
-        end_time = time.time() + self.__SHUTDOWN_TIMEOUT_SECONDS
+        end_time = time.time() + self.__process.shutdown_timeout
 
         while True:
             if time.time() > end_time:
                 break
 
-            if not self.__process.is_alive():
+            if not self.__base_process.is_alive():
                 break
 
             time.sleep(0.01)
 
-        if self.__process.is_alive():
+        if self.__base_process.is_alive():
             logger.critical(
                 f'[{self.__worker_names}] Не удалось мягко завершить процесс, отправлен сигнал SIGKILL. '
                 f'Возможно зависание воркеров, необходимо перезапустить менеджер'
             )
-            os.kill(self.__process.pid, signal.SIGKILL)
+            os.kill(self.__base_process.pid, signal.SIGKILL)
 
-        self.__process.join()
-        self.__process.close()
-        self.__process = None
+        self.__base_process.join()
+        self.__base_process.close()
+        self.__base_process = None

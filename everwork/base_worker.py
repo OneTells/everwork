@@ -40,17 +40,23 @@ class BaseWorker(ABC):
         raise NotImplementedError
 
 
-class ProcessGroup(BaseModel):
+class Process(BaseModel):
     workers: list[type[BaseWorker]]
+
+    shutdown_timeout: Annotated[float, Field(gt=0)] = 20
+
+
+class ProcessGroup(BaseModel):
+    process: Process
     replicas: Annotated[int, Field(ge=1)] = 1
 
     @model_validator(mode='after')
     def validator(self) -> Self:
         if self.replicas > 1:
-            if len(self.workers) > 1:
+            if len(self.process.workers) > 1:
                 raise ValueError('Репликация не работает с несколькими worker')
 
-            if any(isinstance(worker.settings.mode, TriggerMode) for worker in self.workers):
+            if any(isinstance(worker.settings.mode, TriggerMode) for worker in self.process.workers):
                 raise ValueError('Репликация не работает с workers в режиме TriggerMode')
 
         return self

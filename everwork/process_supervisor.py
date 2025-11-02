@@ -7,7 +7,7 @@ from orjson import loads
 from pydantic import BaseModel
 from redis.asyncio import Redis
 
-from .base_worker import BaseWorker
+from .base_worker import Process
 from .worker_manager import WorkerManagerRunner
 
 
@@ -48,17 +48,17 @@ async def _wait_for_data(
 
 class ProcessSupervisor:
 
-    def __init__(self, redis_dsn: str, workers: list[type[BaseWorker]], shutdown_event: asyncio.Event) -> None:
+    def __init__(self, redis_dsn: str, process: Process, shutdown_event: asyncio.Event) -> None:
         self.__redis_dsn = redis_dsn
-        self.__workers = workers
+        self.__process = process
         self.__shutdown_event = shutdown_event
 
-        self.__worker_names = ', '.join(worker.settings.name for worker in workers)
+        self.__worker_names = ', '.join(worker.settings.name for worker in process.workers)
 
         self.__pipe_reader_connection: connection.Connection | None = None
         self.__pipe_writer_connection: connection.Connection | None = None
 
-        self.__worker_manager_runner = WorkerManagerRunner(self.__redis_dsn, self.__workers)
+        self.__worker_manager_runner = WorkerManagerRunner(self.__redis_dsn, self.__process)
 
     def __start_worker_manager(self) -> None:
         connections = Pipe(duplex=False)
@@ -79,7 +79,7 @@ class ProcessSupervisor:
     async def __check_for_hung_tasks(self):
         async with Redis.from_url(self.__redis_dsn, protocol=3, decode_responses=True) as redis:
             async with redis.pipeline() as pipe:
-                for worker in self.__workers:
+                for worker in self.__process.workers:
                     for stream in worker.settings.source_streams:
                         pending_info = await redis.xpending(stream, worker.settings.name)
 

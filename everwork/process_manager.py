@@ -12,21 +12,40 @@ from pydantic import validate_call, AfterValidator, RedisDsn
 from pydantic_core import to_jsonable_python
 from redis.asyncio import Redis
 
-from .base_worker import ProcessGroup, WorkerSettings
+from .base_worker import ProcessGroup, WorkerSettings, Process
 from .process_supervisor import ProcessSupervisor
 
 
-def _check_worker_names(process_groups: list[ProcessGroup]) -> list[ProcessGroup]:
+def _check_worker_names(processes: list[ProcessGroup | Process]) -> list[ProcessGroup | Process]:
     names = set()
 
-    for process_group in process_groups:
-        for worker in process_group.workers:
+    for process_or_group in processes:
+        if isinstance(process_or_group, ProcessGroup):
+            process = process_or_group.process
+        else:
+            process = process_or_group
+
+        for worker in process.workers:
             if worker.settings.name in names:
                 raise ValueError(f"{worker.settings.name} не уникально")
 
             names.add(worker.settings.name)
 
-    return process_groups
+    return processes
+
+
+def _expand_process_groups(processes: list[ProcessGroup | Process]) -> list[Process]:
+    result: list[Process] = []
+
+    for process_or_group in processes:
+        if isinstance(process_or_group, Process):
+            result.append(process_or_group)
+            continue
+
+        for _ in range(process_or_group.replicas):
+            result.append(process_or_group.process.model_copy(deep=True))
+
+    return result
 
 
 class ProcessManager:
@@ -36,11 +55,15 @@ class ProcessManager:
         self,
         uuid: Annotated[str, AfterValidator(lambda x: UUID(x) and x)],
         redis_dsn: RedisDsn,
-        process_groups: Annotated[list[ProcessGroup], AfterValidator(_check_worker_names)]
+        processes: Annotated[
+            list[ProcessGroup | Process],
+            AfterValidator(_check_worker_names),
+            AfterValidator(_expand_process_groups)
+        ]
     ) -> None:
         self.__uuid = uuid
         self.__redis_dsn = redis_dsn.encoded_string()
-        self.__process_groups = process_groups
+        self.__processes: list[Process] = processes
 
         self.__shutdown_event = asyncio.Event()
 
@@ -54,7 +77,7 @@ class ProcessManager:
         )
 
         new_workers_settings: dict[str, WorkerSettings] = {
-            w.settings.name: w.settings for g in self.__process_groups for w in g.workers
+            w.settings.name: w.settings for p in self.__processes for w in p.workers
         }
 
         async with redis.pipeline() as pipe:
@@ -76,17 +99,31 @@ class ProcessManager:
             await pipe.execute()
 
     async def __init_stream_groups(self, redis: Redis) -> None:
+        stream_groups = set()
+
+        for process in self.__processes:
+            for worker in process.workers:
+                for stream in worker.settings.source_streams:
+                    stream_groups.add((stream, worker.settings.name))
+
+        existing_groups: dict[str, set[str]] = {}
+
+        for stream, _ in stream_groups:
+            if stream in existing_groups:
+                continue
+
+            if not (await redis.exists(stream)):
+                continue
+
+            groups = await redis.xinfo_groups(stream)
+            existing_groups[stream] = {group['name'] for group in groups}
+
         async with redis.pipeline() as pipe:
-            for process_group in self.__process_groups:
-                for worker in process_group.workers:
-                    for stream in worker.settings.source_streams:
-                        if await redis.exists(stream):
-                            groups = await redis.xinfo_groups(stream)
+            for stream, group_name in stream_groups:
+                if group_name in existing_groups.get(stream, set()):
+                    continue
 
-                            if any(group['name'] == worker.settings.name for group in groups):
-                                continue
-
-                        await pipe.xgroup_create(stream, worker.settings.name, mkstream=True)
+                await pipe.xgroup_create(stream, group_name, mkstream=True)
 
             await pipe.execute()
 
@@ -111,9 +148,8 @@ class ProcessManager:
         logger.info('Компоненты инициализированы')
 
         async with asyncio.TaskGroup() as tg:
-            for process_group in self.__process_groups:
-                for _ in range(process_group.replicas):
-                    tg.create_task(ProcessSupervisor(self.__redis_dsn, process_group.workers, self.__shutdown_event).run())
+            for process in self.__processes:
+                tg.create_task(ProcessSupervisor(self.__redis_dsn, process, self.__shutdown_event).run())
 
             logger.info('Наблюдатели процессов запущены')
 
