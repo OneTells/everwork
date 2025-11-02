@@ -1,7 +1,7 @@
 import time
 from abc import ABC, abstractmethod
 from itertools import chain
-from typing import ClassVar
+from typing import ClassVar, Annotated
 
 from loguru import logger
 from orjson import loads
@@ -15,8 +15,9 @@ from ..utils import timer
 
 class RetentionWorkerConfig(BaseModel):
     redis_dns: RedisDsn
-    execution_interval: float = Field(timer(days=1), gt=0)
-    max_age_seconds: float = Field(timer(weeks=4), gt=0)
+
+    execution_interval: Annotated[float, Field(gt=0)] = timer(days=1)
+    max_age_seconds: Annotated[float, Field(gt=0)] = timer(weeks=4)
 
 
 class BaseRetentionWorker(BaseWorker, ABC):
