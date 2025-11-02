@@ -1,4 +1,4 @@
-from .base_worker import BaseWorker, ProcessGroup
+from .base_worker import BaseWorker, ProcessGroup, Process
 from .process_manager import ProcessManager
 from .schemas import (
     EventPublisherSettings,
@@ -22,4 +22,5 @@ __all__ = (
     'ExecutorMode',
     'TriggerMode',
     'timer',
+    'Process'
 )
