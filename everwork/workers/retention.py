@@ -21,10 +21,10 @@ class RetentionWorkerConfig(BaseModel):
 
 
 class BaseRetentionWorker(BaseWorker, ABC):
-    __config: ClassVar[RetentionWorkerConfig]
+    _config: ClassVar[RetentionWorkerConfig]
 
     def __init_subclass__(cls) -> None:
-        cls.__config = cls._get_config()
+        cls._config = cls._get_config()
         super().__init_subclass__()
 
     @staticmethod
@@ -37,7 +37,7 @@ class BaseRetentionWorker(BaseWorker, ABC):
         return WorkerSettings(
             name="base:retention",
             mode=TriggerMode(
-                execution_interval=cls.__config.execution_interval
+                execution_interval=cls._config.execution_interval
             )
         )
 
@@ -48,7 +48,7 @@ class BaseRetentionWorker(BaseWorker, ABC):
             logger.debug(f'({self.settings.name}) Нет стримов для очистки')
             return
 
-        threshold_id = int(time.time() - self.__config.max_age_seconds) * 1000
+        threshold_id = int(time.time() - self._config.max_age_seconds) * 1000
 
         async with redis.pipeline() as pipe:
             for stream in streams:
@@ -98,7 +98,7 @@ class BaseRetentionWorker(BaseWorker, ABC):
 
         start_time = time.perf_counter()
 
-        async with Redis.from_url(self.__config.redis_dns.encoded_string(), protocol=3, decode_responses=True) as redis:
+        async with Redis.from_url(self._config.redis_dns.encoded_string(), protocol=3, decode_responses=True) as redis:
             await self.__cleanup_streams(redis)
 
         logger.debug(
