@@ -20,12 +20,12 @@ class RetentionWorkerConfig(BaseModel):
     max_age_seconds: Annotated[float, Field(gt=0)] = timer(weeks=4)
 
 
-class BaseRetentionWorker(BaseWorker, ABC):
+class BaseRetentionWorker(BaseWorker, ABC, init_settings=False):
     _config: ClassVar[RetentionWorkerConfig]
 
-    def __init_subclass__(cls) -> None:
+    def __init_subclass__(cls, **kwargs) -> None:
         cls._config = cls._get_config()
-        super().__init_subclass__()
+        super().__init_subclass__(**kwargs)
 
     @staticmethod
     @abstractmethod

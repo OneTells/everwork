@@ -12,7 +12,12 @@ from .utils import EventPublisher
 class BaseWorker(ABC):
     settings: ClassVar[WorkerSettings]
 
-    def __init_subclass__(cls) -> None:
+    def __init_subclass__(cls, /, init_settings: bool = True, **kwargs) -> None:
+        super().__init_subclass__(**kwargs)
+
+        if not init_settings:
+            return
+
         cls.settings = cls._get_settings()
 
     def __init__(self) -> None:
