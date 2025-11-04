@@ -73,11 +73,13 @@ class BaseRetentionWorker(BaseWorker, ABC, init_settings=False):
             results = await pipe.execute()
 
         all_active_streams: set[str] = set(
-            chain.from_iterable(
-                map(
-                    lambda x: WorkerSettings.model_validate(x).source_streams,
-                    loads(data).values()
-                ) for data in results if data is not None
+            list(
+                chain.from_iterable(
+                    map(
+                        lambda x: WorkerSettings.model_validate(x).source_streams,
+                        loads(data).values()
+                    ) for data in results if data is not None
+                )
             )
         )
 
