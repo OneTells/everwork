@@ -41,6 +41,19 @@ class BaseRetentionWorker(BaseWorker, ABC, init_settings=False):
             )
         )
 
+    @staticmethod
+    async def __load_remove_streams_script(redis: Redis) -> str:
+        return await redis.script_load(
+            """
+            for _, stream_key in ipairs(KEYS) do
+                if redis.call('XLEN', stream_key) == 0 then
+                    redis.call('SREM', 'streams', stream_key)
+                    redis.call('DEL', stream_key)
+                end
+            end
+            """
+        )
+
     async def __cleanup_streams(self, redis: Redis) -> None:
         streams: set[str] = await redis.smembers('streams')
 
@@ -84,8 +97,8 @@ class BaseRetentionWorker(BaseWorker, ABC, init_settings=False):
             logger.debug(f'({self.settings.name}) Нет стримов для удаления')
             return
 
-        await redis.srem('streams', *streams_to_delete)
-        await redis.delete(*streams_to_delete)
+        remove_streams_script = await self.__load_remove_streams_script(redis)
+        await redis.evalsha(remove_streams_script, len(streams_to_delete), *streams_to_delete)
 
         logger.debug(
             f'({self.settings.name}) Удалены {len(streams_to_delete)} стримов. '
