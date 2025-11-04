@@ -80,7 +80,7 @@ class BaseRetentionWorker(BaseWorker, ABC, init_settings=False):
             )
         )
 
-        if not (streams_to_delete := list(set(empty_streams) - all_active_streams)):
+        if not (streams_to_delete := set(empty_streams) - all_active_streams):
             logger.debug(f'({self.settings.name}) Нет стримов для удаления')
             return
 
