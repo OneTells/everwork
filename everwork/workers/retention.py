@@ -85,6 +85,7 @@ class BaseRetentionWorker(BaseWorker, ABC, init_settings=False):
             return
 
         await redis.srem('streams', *streams_to_delete)
+        await redis.delete(*streams_to_delete)
 
         logger.debug(
             f'({self.settings.name}) Удалены {len(streams_to_delete)} стримов. '
