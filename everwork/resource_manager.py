@@ -5,7 +5,7 @@ from typing import Any
 from loguru import logger
 from redis.asyncio import Redis
 
-from .base_worker import BaseWorker, Process
+from .base_worker import Process
 from .resource_supervisor import ResourceSupervisor
 from .utils import SingleValueChannel
 

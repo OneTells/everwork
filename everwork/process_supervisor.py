@@ -6,6 +6,7 @@ from loguru import logger
 from orjson import loads
 from pydantic import BaseModel
 from redis.asyncio import Redis
+from redis.exceptions import RedisError
 
 from .base_worker import Process
 from .worker_manager import WorkerManagerRunner
@@ -77,35 +78,38 @@ class ProcessSupervisor:
         self.__pipe_writer_connection.close()
 
     async def __check_for_hung_tasks(self):
-        async with Redis.from_url(self.__redis_dsn, protocol=3, decode_responses=True) as redis:
-            async with redis.pipeline() as pipe:
-                for worker in self.__process.workers:
-                    for stream in worker.settings.source_streams:
-                        pending_info = await redis.xpending(stream, worker.settings.name)
+        try:
+            async with Redis.from_url(self.__redis_dsn, protocol=3, decode_responses=True) as redis:
+                async with redis.pipeline() as pipe:
+                    for worker in self.__process.workers:
+                        for stream in worker.settings.source_streams:
+                            pending_info = await redis.xpending(stream, worker.settings.name)
 
-                        if pending_info['pending'] == 0:
-                            continue
+                            if pending_info['pending'] == 0:
+                                continue
 
-                        pending_messages = await redis.xpending_range(
-                            name=stream,
-                            groupname=worker.settings.name,
-                            min=pending_info['min'],
-                            max=pending_info['max'],
-                            count=pending_info['pending']
-                        )
-
-                        await pipe.xack(stream, worker.settings.name, *map(lambda x: x['message_id'], pending_messages))
-
-                        for message in pending_messages:
-                            logger.warning(
-                                f'[{self.__worker_names}] Обнаружено зависшее сообщение. '
-                                f'Поток: {stream}. '
-                                f'Воркер (группа): {worker.settings.name}. '
-                                f'ID сообщения: {message["message_id"]}. '
-                                f'Время обработки (ms): {message["elapsed"]}'
+                            pending_messages = await redis.xpending_range(
+                                name=stream,
+                                groupname=worker.settings.name,
+                                min=pending_info['min'],
+                                max=pending_info['max'],
+                                count=pending_info['pending']
                             )
 
-                await pipe.execute()
+                            await pipe.xack(stream, worker.settings.name, *map(lambda x: x['message_id'], pending_messages))
+
+                            for message in pending_messages:
+                                logger.warning(
+                                    f'[{self.__worker_names}] Обнаружено зависшее сообщение. '
+                                    f'Поток: {stream}. '
+                                    f'Воркер (группа): {worker.settings.name}. '
+                                    f'ID сообщения: {message["message_id"]}. '
+                                    f'Время обработки (ms): {message["elapsed"]}'
+                                )
+
+                    await pipe.execute()
+        except RedisError as error:
+            logger.error(f'[{self.__worker_names}] Не удалось проверить зависшие сообщения: {error}')
 
     async def __run_monitoring(self):
         while not self.__shutdown_event.is_set():
@@ -150,7 +154,10 @@ class ProcessSupervisor:
         await self.__check_for_hung_tasks()
         await asyncio.to_thread(self.__start_worker_manager)
 
-        await self.__run_monitoring()
+        try:
+            await self.__run_monitoring()
+        except Exception as error:
+            logger.critical(f'[{self.__worker_names}] Наблюдатель процесса неожиданно завершился: {error}')
 
         logger.debug(f'[{self.__worker_names}] Наблюдатель процесса начал завершение')
 

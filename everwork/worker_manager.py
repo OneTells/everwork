@@ -150,8 +150,11 @@ class WorkerManager:
 
         self.__resource_manager_runner.start()
 
-        async with Redis.from_url(self.__redis_dsn, protocol=3, decode_responses=True) as redis:
-            await self.__run_worker_loop(redis)
+        try:
+            async with Redis.from_url(self.__redis_dsn, protocol=3, decode_responses=True) as redis:
+                await self.__run_worker_loop(redis)
+        except Exception as error:
+            logger.critical(f'[{self.__worker_names}] Менеджер воркеров неожиданно завершился: {error}')
 
         logger.debug(f'[{self.__worker_names}] Менеджер воркеров начал завершение')
 

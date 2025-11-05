@@ -3,7 +3,7 @@ from typing import Any
 
 from loguru import logger
 from redis.asyncio import Redis
-from redis.exceptions import NoScriptError
+from redis.exceptions import RedisError, NoScriptError
 
 from .base_worker import BaseWorker, TriggerMode
 from .resource_handler import TriggerResourceHandler, ExecutorResourceHandler
@@ -96,50 +96,76 @@ class ResourceSupervisor:
 
     async def __process_worker_messages(self) -> None:
         while not self.__shutdown_event.is_set():
-            if not (await self.__get_is_worker_on()):
+            try:
+                if not (await self.__get_is_worker_on()):
+                    try:
+                        await wait_for_or_cancel(
+                            asyncio.sleep(self.__worker.settings.worker_poll_interval),
+                            self.__shutdown_event
+                        )
+                    except asyncio.CancelledError:
+                        break
+
+                    continue
+
                 try:
-                    await wait_for_or_cancel(asyncio.sleep(self.__worker.settings.worker_poll_interval), self.__shutdown_event)
+                    kwargs = await self.__resource_handler.get_kwargs()
                 except asyncio.CancelledError:
+                    await self.__handle_cancel()
                     break
 
-                continue
-
-            try:
-                kwargs = await self.__resource_handler.get_kwargs()
-            except asyncio.CancelledError:
-                await self.__handle_cancel()
-                continue
-
-            if self.__shutdown_event.is_set() or not (await self.__get_is_worker_on()):
-                await self.__handle_cancel()
-                continue
-
-            async with self.__lock:
                 if self.__shutdown_event.is_set() or not (await self.__get_is_worker_on()):
                     await self.__handle_cancel()
                     continue
 
-                self.__response_channel.send((self.__worker.settings.name, kwargs))
+                async with self.__lock:
+                    if self.__shutdown_event.is_set() or not (await self.__get_is_worker_on()):
+                        await self.__handle_cancel()
+                        continue
 
-                is_success = await self.__answer_channel.receive()
+                    self.__response_channel.send((self.__worker.settings.name, kwargs))
 
-                if not is_success:
-                    if self.__resource_handler.resources is not None:
-                        logger.debug(
-                            f'({self.__worker.settings.name}) Не удалось обработать сообщение из потока. '
-                            f'Поток: {self.__resource_handler.resources.stream}. '
-                            f'ID сообщения: {self.__resource_handler.resources.message_id}'
-                        )
-                    await self.__handle_error()
-                else:
-                    await self.__handle_success()
+                    is_success = await self.__answer_channel.receive()
 
-                del kwargs
+                    if not is_success:
+                        if self.__resource_handler.resources is not None:
+                            logger.debug(
+                                f'({self.__worker.settings.name}) Не удалось обработать сообщение из потока. '
+                                f'Поток: {self.__resource_handler.resources.stream}. '
+                                f'ID сообщения: {self.__resource_handler.resources.message_id}'
+                            )
+                        await self.__handle_error()
+                    else:
+                        await self.__handle_success()
+
+                    del kwargs
+            except RedisError as error:
+                logger.exception(f'({self.__worker.settings.name}) Ошибка при работе с redis в наблюдателе воркера: {error}')
+
+                if self.__resource_handler.resources is not None:
+                    logger.error(
+                        f'({self.__worker.settings.name}) Не удалось правильно обработать сообщение. '
+                        f'Поток: {self.__resource_handler.resources.stream}. '
+                        f'ID сообщения: {self.__resource_handler.resources.message_id}'
+                    )
+
+                try:
+                    await wait_for_or_cancel(
+                        asyncio.sleep(self.__worker.settings.worker_recovery_interval),
+                        self.__shutdown_event
+                    )
+                except asyncio.CancelledError:
+                    break
 
     async def run(self) -> None:
         logger.debug(f'({self.__worker.settings.name}) Запушен наблюдатель воркера')
 
-        await self.__load_handle_cancel_script()
+        try:
+            await self.__load_handle_cancel_script()
+        except RedisError as error:
+            logger.critical(f'Ошибка при регистрации скрипта в мониторинге воркера: {error}')
+            return
+
         logger.debug(f'({self.__worker.settings.name}) Скрипты зарегистрированы')
 
         try:

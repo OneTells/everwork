@@ -11,6 +11,7 @@ from orjson import loads, dumps
 from pydantic import validate_call, AfterValidator, RedisDsn
 from pydantic_core import to_jsonable_python
 from redis.asyncio import Redis
+from redis.exceptions import RedisError
 
 from .base_worker import ProcessGroup, WorkerSettings, Process
 from .process_supervisor import ProcessSupervisor
@@ -141,9 +142,13 @@ class ProcessManager:
         signal.signal(signal.SIGINT, self.__handle_shutdown_signal)
         signal.signal(signal.SIGTERM, self.__handle_shutdown_signal)
 
-        async with Redis.from_url(self.__redis_dsn, protocol=3, decode_responses=True) as redis:
-            await self.__init_workers(redis)
-            await self.__init_stream_groups(redis)
+        try:
+            async with Redis.from_url(self.__redis_dsn, protocol=3, decode_responses=True) as redis:
+                await self.__init_workers(redis)
+                await self.__init_stream_groups(redis)
+        except RedisError as error:
+            logger.critical(f'Ошибка при работе с redis в наблюдателе процессов: {error}')
+            return
 
         logger.info('Компоненты инициализированы')
 
@@ -154,5 +159,3 @@ class ProcessManager:
             logger.info('Наблюдатели процессов запущены')
 
         logger.info('Менеджер процессов завершил работу')
-
-        await logger.complete()
