@@ -1,6 +1,6 @@
-from .retention import BaseRetentionWorker, RetentionWorkerConfig
+from .retention import AbstractRetentionWorker, RetentionWorkerConfig
 
 __all__ = (
-    'BaseRetentionWorker',
-    'RetentionWorkerConfig'
+    'AbstractRetentionWorker',
+    'RetentionWorkerConfig',
 )

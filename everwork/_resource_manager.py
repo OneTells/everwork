@@ -5,9 +5,10 @@ from typing import Any
 from loguru import logger
 from redis.asyncio import Redis
 
-from .base_worker import Process
-from .resource_supervisor import ResourceSupervisor
-from .utils import SingleValueChannel
+from ._redis_retry import _GracefulShutdownRetry
+from ._resource_supervisor import _ResourceSupervisor
+from ._utils import _SingleValueChannel
+from .worker import Process
 
 try:
     from uvloop import new_event_loop
@@ -15,14 +16,14 @@ except ImportError:
     from asyncio import new_event_loop
 
 
-class ResourceManager:
+class _ResourceManager:
 
     def __init__(
         self,
         redis_dsn: str,
         process: Process,
-        response_channel: SingleValueChannel[tuple[str, dict[str, Any]]],
-        answer_channel: SingleValueChannel[bool],
+        response_channel: _SingleValueChannel[tuple[str, dict[str, Any]]],
+        answer_channel: _SingleValueChannel[bool],
         shutdown_event: asyncio.Event
     ) -> None:
         self.__redis_dsn = redis_dsn
@@ -40,11 +41,16 @@ class ResourceManager:
 
         lock = asyncio.Lock()
 
-        async with Redis.from_url(self.__redis_dsn, protocol=3, decode_responses=True) as redis:
+        retry = _GracefulShutdownRetry(
+            self.__process.redis_backoff_strategy,
+            self.__shutdown_event
+        )
+
+        async with Redis.from_url(self.__redis_dsn, retry=retry, protocol=3, decode_responses=True) as redis:
             async with asyncio.TaskGroup() as tg:
                 for worker in self.__process.workers:
                     tg.create_task(
-                        ResourceSupervisor(
+                        _ResourceSupervisor(
                             redis,
                             worker,
                             self.__response_channel,
@@ -65,23 +71,23 @@ class ResourceManager:
 def _run_resource_manager(
     redis_dsn: str,
     process: Process,
-    response_channel: SingleValueChannel[tuple[str, dict[str, Any]]],
-    answer_channel: SingleValueChannel[bool],
+    response_channel: _SingleValueChannel[tuple[str, dict[str, Any]]],
+    answer_channel: _SingleValueChannel[bool],
     shutdown_event: asyncio.Event,
     loop: asyncio.AbstractEventLoop
 ) -> None:
     with asyncio.Runner(loop_factory=lambda: loop) as runner:
-        runner.run(ResourceManager(redis_dsn, process, response_channel, answer_channel, shutdown_event).run())
+        runner.run(_ResourceManager(redis_dsn, process, response_channel, answer_channel, shutdown_event).run())
 
 
-class ResourceManagerRunner:
+class _ResourceManagerRunner:
 
     def __init__(
         self,
         redis_dsn: str,
         process: Process,
-        response_channel: SingleValueChannel[tuple[str, dict[str, Any]]],
-        answer_channel: SingleValueChannel[bool]
+        response_channel: _SingleValueChannel[tuple[str, dict[str, Any]]],
+        answer_channel: _SingleValueChannel[bool]
     ) -> None:
         self.__shutdown_event = asyncio.Event()
         self.__loop = new_event_loop()

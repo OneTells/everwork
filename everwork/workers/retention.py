@@ -8,9 +8,9 @@ from orjson import loads
 from pydantic import BaseModel, RedisDsn, Field
 from redis.asyncio import Redis
 
-from ..base_worker import BaseWorker
+from .._utils import timer
 from ..schemas import WorkerSettings, TriggerMode
-from ..utils import timer
+from ..worker import AbstractWorker
 
 
 class RetentionWorkerConfig(BaseModel):
@@ -20,7 +20,7 @@ class RetentionWorkerConfig(BaseModel):
     max_age_seconds: Annotated[float, Field(gt=0)] = timer(weeks=4)
 
 
-class BaseRetentionWorker(BaseWorker, ABC, init_settings=False):
+class AbstractRetentionWorker(AbstractWorker, ABC, init_settings=False):
     _config: ClassVar[RetentionWorkerConfig]
 
     def __init_subclass__(cls, **kwargs) -> None:

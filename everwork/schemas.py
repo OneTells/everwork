@@ -24,8 +24,7 @@ class WorkerSettings(BaseModel):
     event_publisher_settings: EventPublisherSettings = Field(default_factory=EventPublisherSettings)
 
     execution_timeout: Annotated[float, Field(gt=0)] = 180
-    worker_poll_interval: Annotated[float, Field(gt=0)] = 60
-    worker_recovery_interval: Annotated[float, Field(gt=0)] = 60
+    poll_interval: Annotated[float, Field(gt=0)] = 60
 
     @model_validator(mode='after')
     def _configure_stream_sources(self) -> Self:

@@ -1,10 +1,9 @@
 import asyncio
-from asyncio import CancelledError
 from contextlib import suppress
 from typing import Self, Coroutine, Any
 
 from .schemas import EventPublisherSettings, WorkerEvent
-from .stream_client import StreamClient
+from .stream_client import AbstractStreamClient
 
 
 def timer(*, weeks: int = 0, days: int = 0, hours: int = 0, minutes: int = 0, seconds: int = 0, milliseconds: int = 0) -> float:
@@ -13,7 +12,7 @@ def timer(*, weeks: int = 0, days: int = 0, hours: int = 0, minutes: int = 0, se
 
 class EventPublisher:
 
-    def __init__(self, stream_client: StreamClient, settings: EventPublisherSettings) -> None:
+    def __init__(self, stream_client: AbstractStreamClient, settings: EventPublisherSettings) -> None:
         self.__stream_client = stream_client
         self.__settings = settings
 
@@ -42,7 +41,7 @@ class EventPublisher:
         self.__events.clear()
 
 
-class SingleValueChannel[T]:
+class _SingleValueChannel[T]:
 
     def __init__(self) -> None:
         self.__loop: asyncio.AbstractEventLoop | None = None
@@ -76,7 +75,7 @@ class SingleValueChannel[T]:
 
     async def receive(self) -> T:
         if self.__is_closed:
-            raise CancelledError()
+            raise asyncio.CancelledError()
 
         if (item := self.__pending_data) is not None:
             self.__pending_data = None
@@ -104,7 +103,7 @@ class SingleValueChannel[T]:
         self.__loop.call_soon_threadsafe(self.__cancel_waiter)
 
 
-async def wait_for_or_cancel[T](coroutine: Coroutine[Any, Any, T], event: asyncio.Event) -> T:
+async def _wait_for_or_cancel[T](coroutine: Coroutine[Any, Any, T], event: asyncio.Event) -> T:
     main_task = asyncio.create_task(coroutine)
     event_task = asyncio.create_task(event.wait())
 

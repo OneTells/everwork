@@ -2,14 +2,14 @@ from abc import ABC, abstractmethod
 from typing import Any, ClassVar, Annotated, Self
 
 from pydantic import BaseModel, Field, model_validator
-from redis.asyncio import Redis
+from redis.backoff import FullJitterBackoff, AbstractBackoff
 
+from ._utils import EventPublisher
 from .schemas import WorkerSettings, WorkerEvent, TriggerMode
 from .stream_client import StreamClient
-from .utils import EventPublisher
 
 
-class BaseWorker(ABC):
+class AbstractWorker(ABC):
     settings: ClassVar[WorkerSettings]
 
     def __init_subclass__(cls, /, init_settings: bool = True, **kwargs) -> None:
@@ -21,10 +21,17 @@ class BaseWorker(ABC):
         cls.settings = cls._get_settings()
 
     def __init__(self) -> None:
-        self.event_publisher: EventPublisher | None = None
+        self.__event_publisher: EventPublisher | None = None
 
-    def initialize(self, redis: Redis) -> None:
-        self.event_publisher = EventPublisher(StreamClient(redis), self.settings.event_publisher_settings)
+    def initialize(self, stream_client: StreamClient) -> None:
+        self.__event_publisher = EventPublisher(stream_client, self.settings.event_publisher_settings)
+
+    @property
+    def event_publisher(self) -> EventPublisher:
+        if self.__event_publisher is None:
+            raise ValueError('Не был вызван метод initialize')
+
+        return self.__event_publisher
 
     async def _add_event(self, event: WorkerEvent | list[WorkerEvent]) -> None:
         await self.event_publisher.add(event)
@@ -46,9 +53,10 @@ class BaseWorker(ABC):
 
 
 class Process(BaseModel):
-    workers: list[type[BaseWorker]]
+    workers: list[type[AbstractWorker]]
 
     shutdown_timeout: Annotated[float, Field(gt=0)] = 20
+    redis_backoff_strategy: AbstractBackoff = FullJitterBackoff(cap=30.0, base=1.0)
 
 
 class ProcessGroup(BaseModel):

@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from itertools import chain
 
 from orjson import dumps
@@ -8,15 +9,24 @@ from redis.exceptions import NoScriptError
 from .schemas import WorkerEvent
 
 
-class StreamClient:
+class AbstractStreamClient(ABC):
 
     def __init__(self, redis: Redis) -> None:
-        self.__redis = redis
+        self._redis = redis
 
-        self.__scripts: dict[str, str] = {}
+    @abstractmethod
+    async def push_event(self, event: WorkerEvent | list[WorkerEvent]) -> None:
+        raise NotImplementedError
 
-    async def __load_push_event_script(self) -> None:
-        self.__scripts['push_event'] = await self.__redis.script_load(
+
+class StreamClient(AbstractStreamClient):
+
+    def __init__(self, redis: Redis) -> None:
+        super().__init__(redis)
+        self._scripts: dict[str, str] = {}
+
+    async def _load_push_event_script(self) -> None:
+        self._scripts['push_event'] = await self._redis.script_load(
             """
             for i = 1, #ARGV, 2 do
                 local stream_key = ARGV[i]
@@ -32,13 +42,13 @@ class StreamClient:
         if not events:
             return
 
-        if 'push_event' not in self.__scripts:
-            await self.__load_push_event_script()
+        if 'push_event' not in self._scripts:
+            await self._load_push_event_script()
 
         args = list(chain.from_iterable((event.target_stream, dumps(to_jsonable_python(event.data))) for event in events))
 
         try:
-            await self.__redis.evalsha(self.__scripts['push_event'], 0, *args)
+            await self._redis.evalsha(self._scripts['push_event'], 0, *args)
         except NoScriptError:
-            await self.__load_push_event_script()
-            await self.__redis.evalsha(self.__scripts['push_event'], 0, *args)
+            await self._load_push_event_script()
+            await self._redis.evalsha(self._scripts['push_event'], 0, *args)

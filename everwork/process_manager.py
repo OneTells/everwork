@@ -13,8 +13,8 @@ from pydantic_core import to_jsonable_python
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
-from .base_worker import ProcessGroup, WorkerSettings, Process
-from .process_supervisor import ProcessSupervisor
+from ._process_supervisor import _ProcessSupervisor
+from .worker import ProcessGroup, WorkerSettings, Process
 
 
 def _check_worker_names(processes: list[ProcessGroup | Process]) -> list[ProcessGroup | Process]:
@@ -154,7 +154,7 @@ class ProcessManager:
 
         async with asyncio.TaskGroup() as tg:
             for process in self.__processes:
-                tg.create_task(ProcessSupervisor(self.__redis_dsn, process, self.__shutdown_event).run())
+                tg.create_task(_ProcessSupervisor(self.__redis_dsn, process, self.__shutdown_event).run())
 
             logger.info('Наблюдатели процессов запущены')
 

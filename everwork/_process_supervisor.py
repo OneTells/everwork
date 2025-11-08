@@ -8,8 +8,8 @@ from pydantic import BaseModel
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
-from .base_worker import Process
-from .worker_manager import WorkerManagerRunner
+from ._worker_manager import _WorkerManagerRunner
+from .worker import Process
 
 
 class _EventStartMessage(BaseModel):
@@ -47,7 +47,7 @@ async def _wait_for_data(
     return future.done()
 
 
-class ProcessSupervisor:
+class _ProcessSupervisor:
 
     def __init__(self, redis_dsn: str, process: Process, shutdown_event: asyncio.Event) -> None:
         self.__redis_dsn = redis_dsn
@@ -59,7 +59,7 @@ class ProcessSupervisor:
         self.__pipe_reader_connection: connection.Connection | None = None
         self.__pipe_writer_connection: connection.Connection | None = None
 
-        self.__worker_manager_runner = WorkerManagerRunner(self.__redis_dsn, self.__process)
+        self.__worker_manager_runner = _WorkerManagerRunner(self.__redis_dsn, self.__process)
 
     def __start_worker_manager(self) -> None:
         connections = Pipe(duplex=False)
