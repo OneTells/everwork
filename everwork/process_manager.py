@@ -82,13 +82,13 @@ class ProcessManager:
         }
 
         async with redis.pipeline() as pipe:
-            if old_worker_names := old_workers_settings.keys() - new_workers_settings.keys():
+            if old_worker_names := (old_workers_settings.keys() - new_workers_settings.keys()):
                 await pipe.delete(
                     *(f'workers:{worker_name}:is_worker_on' for worker_name in old_worker_names),
                     *(f'workers:{worker_name}:last_time' for worker_name in old_worker_names),
                 )
 
-            if new_worker_names := new_workers_settings.keys() - old_workers_settings.keys():
+            if new_worker_names := (new_workers_settings.keys() - old_workers_settings.keys()):
                 await pipe.mset({f'workers:{worker_name}:is_worker_on': 0 for worker_name in new_worker_names})
 
             await pipe.set(f'managers:{self.__uuid}', dumps(to_jsonable_python(new_workers_settings)))
