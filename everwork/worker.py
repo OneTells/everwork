@@ -56,7 +56,7 @@ class Process(BaseModel):
     workers: list[type[AbstractWorker]]
 
     shutdown_timeout: Annotated[float, Field(gt=0)] = 20
-    redis_backoff_strategy: AbstractBackoff = FullJitterBackoff(cap=30.0, base=1.0)
+    redis_backoff_strategy: AbstractBackoff = Field(default_factory=lambda: FullJitterBackoff(cap=30.0, base=1.0))
 
 
 class ProcessGroup(BaseModel):
