@@ -154,7 +154,6 @@ class _ProcessSupervisor:
 
             logger.warning(f'[{self.__worker_names}] Завершен перезапуск процесса')
 
-    @profile
     async def run(self) -> None:
         logger.debug(f'[{self.__worker_names}] Запущен наблюдатель процесса')
 
