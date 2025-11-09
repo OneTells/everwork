@@ -156,7 +156,6 @@ class _WorkerManager:
 
         await self.__shutdown_workers()
 
-    @profile
     async def run(self) -> None:
         logger.debug(f'[{self.__worker_names}] Менеджер воркеров запущен')
 
