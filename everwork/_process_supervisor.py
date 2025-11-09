@@ -3,6 +3,7 @@ import time
 from multiprocessing import Pipe, connection
 
 from loguru import logger
+from memory_profiler import profile
 from orjson import loads
 from pydantic import BaseModel
 from redis.asyncio import Redis
@@ -49,6 +50,7 @@ async def _wait_for_data(
 
 class _ProcessSupervisor:
 
+    @profile
     def __init__(self, redis_dsn: str, process: Process, shutdown_event: asyncio.Event) -> None:
         self.__redis_dsn = redis_dsn
         self.__process = process
@@ -61,6 +63,7 @@ class _ProcessSupervisor:
 
         self.__worker_manager_runner = _WorkerManagerRunner(self.__redis_dsn, self.__process)
 
+    @profile
     def __start_worker_manager(self) -> None:
         connections = Pipe(duplex=False)
         self.__pipe_reader_connection: connection.Connection = connections[0]
@@ -68,6 +71,7 @@ class _ProcessSupervisor:
 
         self.__worker_manager_runner.start(self.__pipe_writer_connection)
 
+    @profile
     def __close_worker_manager(self) -> None:
         if self.__worker_manager_runner.is_close():
             return
@@ -77,6 +81,7 @@ class _ProcessSupervisor:
         self.__pipe_reader_connection.close()
         self.__pipe_writer_connection.close()
 
+    @profile
     async def __check_for_hung_tasks(self):
         try:
             async with Redis.from_url(self.__redis_dsn, protocol=3, decode_responses=True) as redis:
@@ -111,6 +116,7 @@ class _ProcessSupervisor:
         except RedisError as error:
             logger.error(f'[{self.__worker_names}] Не удалось проверить зависшие сообщения: {error}')
 
+    @profile
     async def __run_monitoring(self):
         while not self.__shutdown_event.is_set():
             await _wait_for_data(
@@ -148,6 +154,7 @@ class _ProcessSupervisor:
 
             logger.warning(f'[{self.__worker_names}] Завершен перезапуск процесса')
 
+    @profile
     async def run(self) -> None:
         logger.debug(f'[{self.__worker_names}] Запущен наблюдатель процесса')
 

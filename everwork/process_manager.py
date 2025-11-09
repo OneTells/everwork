@@ -7,6 +7,7 @@ from typing import Annotated
 from uuid import UUID
 
 from loguru import logger
+from memory_profiler import profile
 from orjson import loads, dumps
 from pydantic import validate_call, AfterValidator, RedisDsn
 from pydantic_core import to_jsonable_python
@@ -51,6 +52,7 @@ def _expand_process_groups(processes: list[ProcessGroup | Process]) -> list[Proc
 
 class ProcessManager:
 
+    @profile
     @validate_call
     def __init__(
         self,
@@ -71,6 +73,7 @@ class ProcessManager:
     def __handle_shutdown_signal(self, *_) -> None:
         self.__shutdown_event.set()
 
+    @profile
     async def __init_workers(self, redis: Redis) -> None:
         managers_data = await redis.get(f'managers:{self.__uuid}')
         old_workers_settings: dict[str, WorkerSettings] = (
@@ -99,6 +102,7 @@ class ProcessManager:
 
             await pipe.execute()
 
+    @profile
     async def __init_stream_groups(self, redis: Redis) -> None:
         stream_groups = set()
 
@@ -128,6 +132,7 @@ class ProcessManager:
 
             await pipe.execute()
 
+    @profile
     async def run(self) -> None:
         if system() != 'Linux':
             logger.critical('Библиотека работает только на Linux')

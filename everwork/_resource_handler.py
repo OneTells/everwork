@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 from uuid import uuid4
 
+from memory_profiler import profile
 from orjson import loads
 from pydantic import BaseModel
 from redis.asyncio import Redis
@@ -36,7 +37,7 @@ class _AbstractResourceHandler(ABC):
 
 
 class _TriggerResourceHandler(_AbstractResourceHandler):
-
+    @profile
     async def get_kwargs(self) -> dict[str, Any]:
         last_time = await self._redis.get(f'workers:{self._worker_settings.name}:last_time')
 
