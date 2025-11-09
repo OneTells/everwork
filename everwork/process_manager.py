@@ -7,7 +7,6 @@ from typing import Annotated
 from uuid import UUID
 
 from loguru import logger
-from memory_profiler import profile
 from orjson import loads, dumps
 from pydantic import validate_call, AfterValidator, RedisDsn
 from pydantic_core import to_jsonable_python
@@ -129,7 +128,6 @@ class ProcessManager:
 
             await pipe.execute()
 
-    @profile
     async def run(self) -> None:
         if system() != 'Linux':
             logger.critical('Библиотека работает только на Linux')

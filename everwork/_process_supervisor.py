@@ -3,7 +3,6 @@ import time
 from multiprocessing import Pipe, connection
 
 from loguru import logger
-from memory_profiler import profile
 from orjson import loads
 from pydantic import BaseModel
 from redis.asyncio import Redis
@@ -69,7 +68,6 @@ class _ProcessSupervisor:
 
         self.__worker_manager_runner.start(self.__pipe_writer_connection)
 
-    @profile
     def __close_worker_manager(self) -> None:
         if self.__worker_manager_runner.is_close():
             return
@@ -113,7 +111,6 @@ class _ProcessSupervisor:
         except RedisError as error:
             logger.error(f'[{self.__worker_names}] Не удалось проверить зависшие сообщения: {error}')
 
-    @profile
     async def __run_monitoring(self):
         while not self.__shutdown_event.is_set():
             await _wait_for_data(

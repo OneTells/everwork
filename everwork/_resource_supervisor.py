@@ -2,7 +2,6 @@ import asyncio
 from typing import Any
 
 from loguru import logger
-from memory_profiler import profile
 from redis.asyncio import Redis
 from redis.exceptions import RedisError, NoScriptError
 
@@ -39,7 +38,6 @@ class _ResourceSupervisor:
 
         self.__scripts: dict[str, str] = {}
 
-    @profile
     async def __load_handle_cancel_script(self) -> None:
         self.__scripts['handle_cancel'] = await self.__redis.script_load(
             """
@@ -97,7 +95,6 @@ class _ResourceSupervisor:
         value = await self.__redis.get(f'workers:{self.__worker.settings.name}:is_worker_on')
         return value == '1'
 
-    @profile
     async def __process_worker_messages(self) -> None:
         while not self.__shutdown_event.is_set():
             if not (await self.__get_is_worker_on()):

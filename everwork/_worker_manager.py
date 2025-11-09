@@ -9,7 +9,6 @@ from contextlib import suppress
 from multiprocessing import connection, Process as BaseProcess
 
 from loguru import logger
-from memory_profiler import profile
 from orjson import dumps
 from pydantic import validate_call
 from redis.asyncio import Redis
@@ -53,12 +52,10 @@ class _WorkerManager:
         self.__worker_instances: dict[str, AbstractWorker] = {}
         self.__is_execute = False
 
-    @profile
     def __handle_shutdown_signal(self, *_) -> None:
         self.__shutdown_event.set()
         self.__resource_manager_runner.cancel()
 
-    @profile
     def __handle_terminate_signal(self, *_) -> None:
         if not self.__is_execute:
             return
@@ -95,7 +92,6 @@ class _WorkerManager:
 
             self.__worker_instances[worker_obj.settings.name] = worker_obj
 
-    @profile
     async def __startup_workers(self) -> None:
         for worker in self.__worker_instances.values():
             try:
@@ -103,7 +99,6 @@ class _WorkerManager:
             except Exception as error:
                 logger.exception(f'({worker.settings.name}) Не удалось выполнить startup: {error}')
 
-    @profile
     async def __shutdown_workers(self) -> None:
         for worker in self.__worker_instances.values():
             try:
@@ -111,7 +106,6 @@ class _WorkerManager:
             except Exception as error:
                 logger.exception(f'({worker.settings.name}) Не удалось выполнить shutdown: {error}')
 
-    @profile
     async def __run_worker_loop(self, redis: Redis) -> None:
         await self.__init_workers(redis)
         await self.__startup_workers()
@@ -183,7 +177,6 @@ class _WorkerManager:
         logger.debug(f'[{self.__worker_names}] Менеджер воркеров завершил работу')
 
 
-@profile
 def _run_worker_manager(
     redis_dsn: str,
     process: Process,
@@ -222,7 +215,6 @@ class _WorkerManagerRunner:
         )
         self.__base_process.start()
 
-    @profile
     def close(self) -> None:
         if self.__base_process is None:
             return

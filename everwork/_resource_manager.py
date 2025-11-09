@@ -3,7 +3,6 @@ from threading import Thread
 from typing import Any
 
 from loguru import logger
-from memory_profiler import profile
 from redis.asyncio import Redis
 
 from ._redis_retry import _GracefulShutdownRetry
@@ -68,7 +67,7 @@ class _ResourceManager:
 
         logger.debug(f'[{self.__worker_names}] Менеджер ресурсов завершил работу')
 
-@profile
+
 def _run_resource_manager(
     redis_dsn: str,
     process: Process,
@@ -108,11 +107,9 @@ class _ResourceManagerRunner:
     def start(self) -> None:
         self.__thread.start()
 
-    @profile
     def join(self) -> None:
         self.__thread.join()
 
-    @profile
     def cancel(self) -> None:
         # noinspection PyTypeChecker
         self.__loop.call_soon_threadsafe(self.__shutdown_event.set)
