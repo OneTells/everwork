@@ -147,7 +147,6 @@ class _ResourceSupervisor:
 
                 del kwargs
 
-    @profile
     async def run(self) -> None:
         logger.debug(f'({self.__worker.settings.name}) Запушен наблюдатель воркера')
 
