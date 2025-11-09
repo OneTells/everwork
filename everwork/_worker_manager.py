@@ -30,7 +30,7 @@ except ImportError:
 
 
 class _WorkerManager:
-    @profile
+
     def __init__(self, redis_dsn: str, process: Process, pipe_connection: connection.Connection) -> None:
         self.__redis_dsn = redis_dsn
         self.__process = process
@@ -65,7 +65,6 @@ class _WorkerManager:
 
         raise KeyboardInterrupt
 
-    @profile
     def __notify_worker_start(self, worker: AbstractWorker) -> None:
         if self.__shutdown_event.is_set():
             return
@@ -75,14 +74,12 @@ class _WorkerManager:
             'end_time': time.time() + worker.settings.execution_timeout
         }))
 
-    @profile
     def __notify_worker_end(self) -> None:
         if self.__shutdown_event.is_set():
             return
 
         self.__pipe_connection.send_bytes(b'')
 
-    @profile
     async def __init_workers(self, redis: Redis) -> None:
         stream_client = StreamClient(redis)
 

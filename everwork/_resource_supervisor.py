@@ -13,7 +13,7 @@ from .worker import AbstractWorker, TriggerMode
 
 
 class _ResourceSupervisor:
-    @profile
+
     def __init__(
         self,
         redis: Redis,
@@ -51,7 +51,6 @@ class _ResourceSupervisor:
             """
         )
 
-    @profile
     async def __handle_error(self) -> None:
         if self.__resource_handler.resources is None:
             return
@@ -64,7 +63,6 @@ class _ResourceSupervisor:
 
         self.__resource_handler.resources = None
 
-    @profile
     async def __handle_cancel(self) -> None:
         if self.__resource_handler.resources is None:
             return
@@ -83,7 +81,6 @@ class _ResourceSupervisor:
 
         self.__resource_handler.resources = None
 
-    @profile
     async def __handle_success(self) -> None:
         if self.__resource_handler.resources is None:
             return
@@ -96,7 +93,6 @@ class _ResourceSupervisor:
 
         self.__resource_handler.resources = None
 
-    @profile
     async def __get_is_worker_on(self) -> bool:
         value = await self.__redis.get(f'workers:{self.__worker.settings.name}:is_worker_on')
         return value == '1'
