@@ -82,7 +82,7 @@ def _run_resource_manager(
 
 
 class _ResourceManagerRunner:
-    @profile
+
     def __init__(
         self,
         redis_dsn: str,
@@ -105,7 +105,6 @@ class _ResourceManagerRunner:
             }
         )
 
-    @profile
     def start(self) -> None:
         self.__thread.start()
 

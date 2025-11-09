@@ -52,7 +52,6 @@ def _expand_process_groups(processes: list[ProcessGroup | Process]) -> list[Proc
 
 class ProcessManager:
 
-    @profile
     @validate_call
     def __init__(
         self,
@@ -73,7 +72,6 @@ class ProcessManager:
     def __handle_shutdown_signal(self, *_) -> None:
         self.__shutdown_event.set()
 
-    @profile
     async def __init_workers(self, redis: Redis) -> None:
         managers_data = await redis.get(f'managers:{self.__uuid}')
         old_workers_settings: dict[str, WorkerSettings] = (
@@ -102,7 +100,6 @@ class ProcessManager:
 
             await pipe.execute()
 
-    @profile
     async def __init_stream_groups(self, redis: Redis) -> None:
         stream_groups = set()
 

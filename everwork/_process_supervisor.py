@@ -50,7 +50,6 @@ async def _wait_for_data(
 
 class _ProcessSupervisor:
 
-    @profile
     def __init__(self, redis_dsn: str, process: Process, shutdown_event: asyncio.Event) -> None:
         self.__redis_dsn = redis_dsn
         self.__process = process
@@ -63,7 +62,6 @@ class _ProcessSupervisor:
 
         self.__worker_manager_runner = _WorkerManagerRunner(self.__redis_dsn, self.__process)
 
-    @profile
     def __start_worker_manager(self) -> None:
         connections = Pipe(duplex=False)
         self.__pipe_reader_connection: connection.Connection = connections[0]
@@ -81,7 +79,6 @@ class _ProcessSupervisor:
         self.__pipe_reader_connection.close()
         self.__pipe_writer_connection.close()
 
-    @profile
     async def __check_for_hung_tasks(self):
         try:
             async with Redis.from_url(self.__redis_dsn, protocol=3, decode_responses=True) as redis:

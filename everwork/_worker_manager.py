@@ -185,6 +185,7 @@ class _WorkerManager:
 
         logger.debug(f'[{self.__worker_names}] Менеджер воркеров завершил работу')
 
+
 @profile
 def _run_worker_manager(
     redis_dsn: str,
@@ -200,7 +201,7 @@ def _run_worker_manager(
 
 
 class _WorkerManagerRunner:
-    @profile
+
     def __init__(self, redis_dsn: str, process: Process) -> None:
         self.__redis_dsn = redis_dsn
         self.__process = process
@@ -209,11 +210,9 @@ class _WorkerManagerRunner:
 
         self.__base_process: BaseProcess | None = None
 
-    @profile
     def is_close(self) -> bool:
         return self.__base_process is None
 
-    @profile
     def start(self, pipe_writer_connection: connection.Connection) -> None:
         self.__base_process = BaseProcess(
             target=_run_worker_manager,
