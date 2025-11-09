@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, ClassVar, Annotated, Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, ConfigDict
 from redis.backoff import FullJitterBackoff, AbstractBackoff
 
 from ._utils import EventPublisher
@@ -53,6 +53,8 @@ class AbstractWorker(ABC):
 
 
 class Process(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     workers: list[type[AbstractWorker]]
 
     shutdown_timeout: Annotated[float, Field(gt=0)] = 20
