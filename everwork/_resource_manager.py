@@ -35,7 +35,6 @@ class _ResourceManager:
 
         self.__worker_names = ', '.join(worker.settings.name for worker in process.workers)
 
-    @profile
     async def run(self) -> None:
         logger.debug(f'[{self.__worker_names}] Менеджер ресурсов запущен')
 
