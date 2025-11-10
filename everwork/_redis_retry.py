@@ -21,6 +21,9 @@ class _GracefulShutdownRetry(Retry):
 
         logger.debug(f'{4, id(asyncio.get_running_loop()), id(self._shutdown_event)}')
 
+    def __copy__(self) -> Self:
+        return self
+
     def __deepcopy__(self, memo: dict[int, Any]) -> Self:
         return self
 
