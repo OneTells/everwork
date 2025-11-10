@@ -22,28 +22,33 @@ async def _wait_for_data(
     shutdown_event: asyncio.Event,
     timeout: float | None = None
 ) -> bool:
+    print(8)
     if timeout is not None and timeout <= 0:
         return pipe_connection.poll(0)
-
+    print(9)
     loop = asyncio.get_running_loop()
 
     future = loop.create_future()
     shutdown_task = asyncio.create_task(shutdown_event.wait())
-
+    print(10)
     def callback() -> None:
         if not future.done() and pipe_connection.poll(0):
             future.set_result(True)
 
     loop.add_reader(pipe_connection.fileno(), callback)  # type: ignore
 
+    print(11)
+
     try:
         await asyncio.wait((shutdown_task, future), timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
     finally:
+        print(12)
         loop.remove_reader(pipe_connection.fileno())
 
         if not shutdown_task.done():
             shutdown_task.cancel()
 
+    print(13)
     return future.done()
 
 
