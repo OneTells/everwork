@@ -97,9 +97,6 @@ class _ResourceManagerRunner:
         print(id(self.__shutdown_event))
         self.__loop = new_event_loop()
 
-        with self.__loop:
-            pass
-
         self.__thread = Thread(
             target=_run_resource_manager,
             kwargs={
