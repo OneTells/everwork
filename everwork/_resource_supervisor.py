@@ -143,6 +143,8 @@ class _ResourceSupervisor:
     async def run(self) -> None:
         logger.debug(f'({self.__worker.settings.name}) Запушен наблюдатель воркера')
 
+        print(3, id(self.__shutdown_event))
+
         try:
             await self.__load_handle_cancel_script()
         except RedisError as error:
