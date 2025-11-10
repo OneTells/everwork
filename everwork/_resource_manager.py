@@ -39,12 +39,12 @@ class _ResourceManager:
 
         self.__answer_channel.bind_to_event_loop(asyncio.get_running_loop())
 
-        lock = asyncio.Lock()
-
         retry = _GracefulShutdownRetry(
             self.__process.redis_backoff_strategy,
             self.__shutdown_event
         )
+
+        lock = asyncio.Lock()
 
         async with Redis.from_url(self.__redis_dsn, retry=retry, protocol=3, decode_responses=True) as redis:
             async with asyncio.TaskGroup() as tg:
@@ -110,6 +110,10 @@ class _ResourceManagerRunner:
     def join(self) -> None:
         self.__thread.join()
 
+    def f(self):
+        print(11)
+        self.__shutdown_event.set()
+        print(22)
+
     def cancel(self) -> None:
-        print(1)
-        self.__loop.call_soon_threadsafe(self.__shutdown_event.set) # type: ignore
+        self.__loop.call_soon_threadsafe(f)  # type: ignore
