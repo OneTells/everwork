@@ -141,11 +141,12 @@ class _ProcessSupervisor:
             await self.__check_for_hung_tasks()
 
             if self.__shutdown_event.is_set():
+                logger.warning(f'[{self.__worker_names}] Процесс завершен')
                 return
 
             await asyncio.to_thread(self.__start_worker_manager)
 
-            logger.warning(f'[{self.__worker_names}] Завершен перезапуск процесса')
+            logger.warning(f'[{self.__worker_names}] Процесс перезапущен')
 
     async def run(self) -> None:
         logger.debug(f'[{self.__worker_names}] Запущен наблюдатель процесса')
