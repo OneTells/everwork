@@ -69,6 +69,7 @@ class ProcessManager:
         self.__shutdown_event = asyncio.Event()
 
     def __handle_shutdown_signal(self, *_) -> None:
+        print(2)
         self.__shutdown_event.set()
 
     async def __init_workers(self, redis: Redis) -> None:
