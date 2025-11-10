@@ -37,6 +37,8 @@ class _ResourceManager:
     async def run(self) -> None:
         logger.debug(f'[{self.__worker_names}] Менеджер ресурсов запущен')
 
+        print(1, id(self.__shutdown_event))
+
         self.__answer_channel.bind_to_event_loop(asyncio.get_running_loop())
 
         retry = _GracefulShutdownRetry(
@@ -76,6 +78,8 @@ def _run_resource_manager(
     shutdown_event: asyncio.Event,
     loop: asyncio.AbstractEventLoop
 ) -> None:
+    print(1, id(shutdown_event))
+
     with asyncio.Runner(loop_factory=lambda: loop) as runner:
         runner.run(_ResourceManager(redis_dsn, process, response_channel, answer_channel, shutdown_event).run())
 
@@ -92,6 +96,9 @@ class _ResourceManagerRunner:
         self.__shutdown_event = asyncio.Event()
         print(id(self.__shutdown_event))
         self.__loop = new_event_loop()
+
+        with self.__loop:
+            pass
 
         self.__thread = Thread(
             target=_run_resource_manager,
