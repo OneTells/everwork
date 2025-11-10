@@ -32,6 +32,8 @@ class _GracefulShutdownRetry(Retry):
 
                 logger.warning(f'Redis не доступен или не отвечает. Попытка повторения {failures}. Ошибка: {error}')
 
+            logger.debug(f'Redis {self._shutdown_event.is_set()}')
+
             if self._shutdown_event.is_set():
                 raise _RetryShutdownException()
 
