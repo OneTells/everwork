@@ -90,6 +90,7 @@ class _ResourceManagerRunner:
         answer_channel: _SingleValueChannel[bool]
     ) -> None:
         self.__shutdown_event = asyncio.Event()
+        print(id(self.__shutdown_event))
         self.__loop = new_event_loop()
 
         self.__thread = Thread(
@@ -116,5 +117,4 @@ class _ResourceManagerRunner:
         print(22, self.__shutdown_event.is_set(), id(self.__shutdown_event))
 
     def cancel(self) -> None:
-        print(21)
         self.__loop.call_soon_threadsafe(self.f) # type: ignore
