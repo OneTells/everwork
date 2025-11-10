@@ -113,7 +113,7 @@ class _ResourceManagerRunner:
     def f(self):
         print(11)
         self.__shutdown_event.set()
-        print(22, self.__shutdown_event.is_set())
+        print(22, self.__shutdown_event.is_set(), id(self.__shutdown_event))
 
     def cancel(self) -> None:
         print(21)
