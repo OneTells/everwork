@@ -37,7 +37,7 @@ class _ResourceManager:
     async def run(self) -> None:
         logger.debug(f'[{self.__worker_names}] Менеджер ресурсов запущен')
 
-        print(2, id(self.__shutdown_event))
+        print(2, id(self.__shutdown_event), asyncio.get_running_loop())
 
         self.__answer_channel.bind_to_event_loop(asyncio.get_running_loop())
 
