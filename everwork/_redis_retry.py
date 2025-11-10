@@ -22,6 +22,8 @@ class _GracefulShutdownRetry(Retry):
         logger.debug(f'{4, id(asyncio.get_running_loop()), id(self._shutdown_event)}')
 
     async def call_with_retry[T](self, do: Callable[[], Awaitable[T]], fail: Callable[[RedisError], Any]) -> T:
+        logger.debug(f'{5, id(asyncio.get_running_loop()), id(self._shutdown_event)}')
+
         self._backoff.reset()
         failures = 0
 
