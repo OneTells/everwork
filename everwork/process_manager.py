@@ -8,14 +8,14 @@ from uuid import UUID
 
 from loguru import logger
 from orjson import loads, dumps
-from pydantic import validate_call, AfterValidator, RedisDsn
+from pydantic import validate_call, AfterValidator, RedisDsn, ConfigDict
 from pydantic_core import to_jsonable_python
 from redis.asyncio import Redis
 from redis.backoff import AbstractBackoff, FullJitterBackoff
 from redis.exceptions import RedisError
 
-from ._redis_retry import _GracefulShutdownRetry
 from ._process_supervisor import _ProcessSupervisor
+from ._redis_retry import _GracefulShutdownRetry
 from .worker import ProcessGroup, WorkerSettings, Process
 
 
@@ -53,7 +53,7 @@ def _expand_process_groups(processes: list[ProcessGroup | Process]) -> list[Proc
 
 class ProcessManager:
 
-    @validate_call
+    @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
     def __init__(
         self,
         uuid: Annotated[str, AfterValidator(lambda x: UUID(x) and x)],
