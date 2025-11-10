@@ -164,8 +164,6 @@ class _WorkerManager:
             self.__shutdown_event
         )
 
-        print(5, id(self.__shutdown_event))
-
         try:
             async with Redis.from_url(self.__redis_dsn, retry=retry, protocol=3, decode_responses=True) as redis:
                 await self.__run_worker_loop(redis)
