@@ -4,7 +4,7 @@ from typing import Awaitable, Callable, Any
 from loguru import logger
 from redis.asyncio.retry import Retry
 from redis.backoff import AbstractBackoff
-from redis.exceptions import ConnectionError, RedisError, TimeoutError
+from redis.exceptions import RedisError
 
 from ._utils import _wait_for_or_cancel
 
@@ -16,14 +16,7 @@ class _RetryShutdownException(BaseException):
 class _GracefulShutdownRetry(Retry):
 
     def __init__(self, backoff: AbstractBackoff, shutdown_event: asyncio.Event) -> None:
-        super().__init__(
-            backoff,
-            -1,
-            supported_errors=(
-                ConnectionError,
-                TimeoutError,
-            )
-        )
+        super().__init__(backoff, -1)
         self._shutdown_event = shutdown_event
 
     async def call_with_retry[T](self, do: Callable[[], Awaitable[T]], fail: Callable[[RedisError], Any]) -> T:
