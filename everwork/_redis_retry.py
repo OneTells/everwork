@@ -30,12 +30,10 @@ class _GracefulShutdownRetry(Retry):
         self._backoff.reset()
         failures = 0
 
-        print(1)
-
         while True:
             try:
                 return await do()
-            except self._supported_errors as error:
+            except (*self._supported_errors, OSError) as error:
                 failures += 1
                 await fail(error)
 
