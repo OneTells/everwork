@@ -113,6 +113,7 @@ class _ProcessSupervisor:
 
     async def __run_monitoring(self):
         while not self.__shutdown_event.is_set():
+            print(6)
             await _wait_for_data(
                 self.__pipe_reader_connection,
                 self.__shutdown_event
