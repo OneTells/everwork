@@ -234,7 +234,7 @@ class _WorkerManagerRunner:
             if not self.__base_process.is_alive():
                 break
 
-            time.sleep(0.01)
+            time.sleep(0.001)
 
         if self.__base_process.is_alive():
             logger.debug(f'[{self.__worker_names}] Подан сигнал о немедленном закрытии процесса')
@@ -249,7 +249,7 @@ class _WorkerManagerRunner:
             if not self.__base_process.is_alive():
                 break
 
-            time.sleep(0.01)
+            time.sleep(0.001)
 
         if self.__base_process.is_alive():
             logger.critical(
