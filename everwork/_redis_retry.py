@@ -1,5 +1,5 @@
 import asyncio
-from typing import Awaitable, Callable, Any
+from typing import Awaitable, Callable, Any, Self
 
 from loguru import logger
 from redis.asyncio.retry import Retry
@@ -21,11 +21,8 @@ class _GracefulShutdownRetry(Retry):
 
         logger.debug(f'{4, id(asyncio.get_running_loop()), id(self._shutdown_event)}')
 
-    def __eq__(self, other: Any) -> bool:
-        return False
-
-    def __hash__(self) -> int:
-        return hash((self._backoff, self._retries, frozenset(self._supported_errors), id(self._shutdown_event)))
+    def __deepcopy__(self, memo: dict[int, Any]) -> Self:
+        return self
 
     async def call_with_retry[T](self, do: Callable[[], Awaitable[T]], fail: Callable[[RedisError], Any]) -> T:
         logger.debug(f'{5, id(asyncio.get_running_loop()), id(self._shutdown_event)}')
