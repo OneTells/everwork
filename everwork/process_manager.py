@@ -139,8 +139,8 @@ class ProcessManager:
 
         logger.info('Менеджер процессов запушен')
 
-        # signal.signal(signal.SIGINT, self.__handle_shutdown_signal)
-        # signal.signal(signal.SIGTERM, self.__handle_shutdown_signal)
+        signal.signal(signal.SIGINT, self.__handle_shutdown_signal)
+        signal.signal(signal.SIGTERM, self.__handle_shutdown_signal)
 
         try:
             async with Redis.from_url(self.__redis_dsn, protocol=3, decode_responses=True) as redis:
