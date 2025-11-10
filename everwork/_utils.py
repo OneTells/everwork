@@ -70,8 +70,7 @@ class _SingleValueChannel[T]:
 
     def send(self, data: T) -> None:
         self.__pending_data = data
-        # noinspection PyTypeChecker
-        self.__loop.call_soon_threadsafe(self.__notify_waiter)
+        self.__loop.call_soon_threadsafe(self.__notify_waiter) # type: ignore
 
     async def receive(self) -> T:
         if self.__is_closed:
@@ -99,8 +98,7 @@ class _SingleValueChannel[T]:
             return
 
         self.__is_closed = True
-        # noinspection PyTypeChecker
-        self.__loop.call_soon_threadsafe(self.__cancel_waiter)
+        self.__loop.call_soon_threadsafe(self.__cancel_waiter) # type: ignore
 
 
 async def _wait_for_or_cancel[T](coroutine: Coroutine[Any, Any, T], event: asyncio.Event) -> T:

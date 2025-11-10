@@ -53,7 +53,9 @@ class _WorkerManager:
         self.__is_execute = False
 
     def __handle_shutdown_signal(self, *_) -> None:
-        self.__shutdown_event.set()
+        loop = asyncio.get_running_loop()
+        loop.call_soon_threadsafe(self.__shutdown_event.set)  # type: ignore
+
         self.__resource_manager_runner.cancel()
 
     def __handle_terminate_signal(self, *_) -> None:

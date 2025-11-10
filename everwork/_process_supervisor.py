@@ -22,33 +22,28 @@ async def _wait_for_data(
     shutdown_event: asyncio.Event,
     timeout: float | None = None
 ) -> bool:
-    print(8)
     if timeout is not None and timeout <= 0:
         return pipe_connection.poll(0)
-    print(9)
+
     loop = asyncio.get_running_loop()
 
     future = loop.create_future()
-    shutdown_task = asyncio.create_task(shutdown_event.wait())
-    print(10)
+    shutdown_task = loop.create_task(shutdown_event.wait())
+
     def callback() -> None:
         if not future.done() and pipe_connection.poll(0):
             future.set_result(True)
 
     loop.add_reader(pipe_connection.fileno(), callback)  # type: ignore
 
-    print(11)
-
     try:
         await asyncio.wait((shutdown_task, future), timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
     finally:
-        print(12)
         loop.remove_reader(pipe_connection.fileno())
 
         if not shutdown_task.done():
             shutdown_task.cancel()
 
-    print(13)
     return future.done()
 
 
@@ -118,17 +113,15 @@ class _ProcessSupervisor:
 
     async def __run_monitoring(self):
         while not self.__shutdown_event.is_set():
-            print(6)
             await _wait_for_data(
                 self.__pipe_reader_connection,
                 self.__shutdown_event
             )
 
-            print(2)
             if self.__shutdown_event.is_set():
-                print(6)
+
                 return
-            print(3)
+
             state = _EventStartMessage.model_validate(loads(self.__pipe_reader_connection.recv_bytes()))
 
             is_exist_message = await _wait_for_data(
@@ -136,11 +129,11 @@ class _ProcessSupervisor:
                 self.__shutdown_event,
                 state.end_time - time.time()
             )
-            print(4)
+
             if self.__shutdown_event.is_set():
-                print(7)
+
                 return
-            print(5)
+
             if is_exist_message:
                 self.__pipe_reader_connection.recv_bytes()
                 continue
