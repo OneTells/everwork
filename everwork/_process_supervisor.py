@@ -118,9 +118,11 @@ class _ProcessSupervisor:
                 self.__shutdown_event
             )
 
+            print(2)
             if self.__shutdown_event.is_set():
+                print(6)
                 return
-
+            print(3)
             state = _EventStartMessage.model_validate(loads(self.__pipe_reader_connection.recv_bytes()))
 
             is_exist_message = await _wait_for_data(
@@ -128,10 +130,11 @@ class _ProcessSupervisor:
                 self.__shutdown_event,
                 state.end_time - time.time()
             )
-
+            print(4)
             if self.__shutdown_event.is_set():
+                print(7)
                 return
-
+            print(5)
             if is_exist_message:
                 self.__pipe_reader_connection.recv_bytes()
                 continue
