@@ -6,7 +6,6 @@ from loguru import logger
 from orjson import loads
 from pydantic import BaseModel
 from redis.asyncio import Redis
-from redis.exceptions import RedisError
 
 from ._worker_manager import _WorkerManagerRunner
 from .worker import Process
@@ -108,7 +107,7 @@ class _ProcessSupervisor:
                                 )
 
                     await pipe.execute()
-        except RedisError as error:
+        except Exception as error:
             logger.error(f'[{self.__worker_names}] Не удалось проверить зависшие сообщения: {error}')
 
     async def __run_monitoring(self):

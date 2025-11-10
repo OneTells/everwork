@@ -141,12 +141,12 @@ class _ResourceSupervisor:
                 del kwargs
 
     async def run(self) -> None:
-        logger.debug(f'({self.__worker.settings.name}) Запушен наблюдатель воркера')
+        logger.debug(f'({self.__worker.settings.name}) Запушен наблюдатель ресурсов')
 
         try:
             await self.__load_handle_cancel_script()
         except RedisError as error:
-            logger.critical(f'Ошибка при регистрации скрипта в мониторинге воркера: {error}')
+            logger.critical(f'Ошибка при регистрации скрипта в мониторинге ресурсов: {error}')
             return
 
         logger.debug(f'({self.__worker.settings.name}) Скрипты зарегистрированы')
@@ -154,7 +154,7 @@ class _ResourceSupervisor:
         try:
             await self.__process_worker_messages()
         except _RetryShutdownException:
-            logger.exception(f'({self.__worker.settings.name}) Redis не доступен или не отвечает при мониторинге воркера')
+            logger.exception(f'({self.__worker.settings.name}) Redis не был доступен или не отвечал при мониторинге ресурсов')
 
             if self.__resource_handler.resources is not None:
                 logger.warning(
@@ -163,6 +163,6 @@ class _ResourceSupervisor:
                     f'ID сообщения: {self.__resource_handler.resources.message_id}'
                 )
         except Exception as error:
-            logger.exception(f'({self.__worker.settings.name}) Мониторинг воркера неожиданно завершился: {error}')
+            logger.exception(f'({self.__worker.settings.name}) Мониторинг ресурсов неожиданно завершился: {error}')
 
-        logger.debug(f'({self.__worker.settings.name}) Наблюдатель воркера завершил работ')
+        logger.debug(f'({self.__worker.settings.name}) Наблюдатель ресурсов завершил работ')

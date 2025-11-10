@@ -135,7 +135,7 @@ class _WorkerManager:
                 logger.exception(f'({worker_name}) Задача обрабатывалась дольше максимально разрешенного времени и была отменена')
                 self.__answer_channel.send(False)
             except _RetryShutdownException:
-                logger.exception(f'({worker_name}) Redis не доступен или не отвечает при сохранении ивентов')
+                logger.exception(f'({worker_name}) Redis не был доступен или не отвечал при сохранении ивентов')
                 self.__answer_channel.send(False)
             except Exception as error:
                 logger.exception(f'({worker_name}) Не удалось обработать ивент. Ошибка: {error}')
@@ -159,10 +159,7 @@ class _WorkerManager:
 
         self.__resource_manager_runner.start()
 
-        retry = _GracefulShutdownRetry(
-            self.__process.redis_backoff_strategy,
-            self.__shutdown_event
-        )
+        retry = _GracefulShutdownRetry(self.__process.redis_backoff_strategy, self.__shutdown_event)
 
         try:
             async with Redis.from_url(self.__redis_dsn, retry=retry, protocol=3, decode_responses=True) as redis:

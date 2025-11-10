@@ -11,8 +11,10 @@ from orjson import loads, dumps
 from pydantic import validate_call, AfterValidator, RedisDsn
 from pydantic_core import to_jsonable_python
 from redis.asyncio import Redis
+from redis.backoff import AbstractBackoff, FullJitterBackoff
 from redis.exceptions import RedisError
 
+from _redis_retry import _GracefulShutdownRetry
 from ._process_supervisor import _ProcessSupervisor
 from .worker import ProcessGroup, WorkerSettings, Process
 
@@ -60,11 +62,13 @@ class ProcessManager:
             list[ProcessGroup | Process],
             AfterValidator(_check_worker_names),
             AfterValidator(_expand_process_groups)
-        ]
+        ],
+        redis_backoff_strategy: AbstractBackoff = FullJitterBackoff(cap=30.0, base=1.0)
     ) -> None:
         self.__uuid = uuid
         self.__redis_dsn = redis_dsn.encoded_string()
         self.__processes: list[Process] = processes
+        self.__redis_backoff_strategy = redis_backoff_strategy
 
         self.__shutdown_event = asyncio.Event()
 
@@ -143,8 +147,10 @@ class ProcessManager:
         signal.signal(signal.SIGINT, self.__handle_shutdown_signal)
         signal.signal(signal.SIGTERM, self.__handle_shutdown_signal)
 
+        retry = _GracefulShutdownRetry(self.__redis_backoff_strategy, self.__shutdown_event)
+
         try:
-            async with Redis.from_url(self.__redis_dsn, protocol=3, decode_responses=True) as redis:
+            async with Redis.from_url(self.__redis_dsn, retry=retry, protocol=3, decode_responses=True) as redis:
                 await self.__init_workers(redis)
                 await self.__init_stream_groups(redis)
         except RedisError as error:
