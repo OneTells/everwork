@@ -69,7 +69,10 @@ class ProcessManager:
         self.__shutdown_event = asyncio.Event()
 
     def __handle_shutdown_signal(self, *_) -> None:
-        self.__shutdown_event.set()
+        loop = asyncio.get_running_loop()
+        # noinspection PyTypeChecker
+        loop.call_soon_threadsafe(self.__shutdown_event.set)
+        # self.__shutdown_event.set()
 
     async def __init_workers(self, redis: Redis) -> None:
         managers_data = await redis.get(f'managers:{self.__uuid}')
