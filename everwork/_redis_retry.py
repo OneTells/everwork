@@ -32,6 +32,7 @@ class _GracefulShutdownRetry(Retry):
 
                 logger.warning(f'Redis не доступен или не отвечает. Попытка повторения {failures}. Ошибка: {error}')
 
+            await asyncio.sleep(0)
             logger.debug(f'Redis {self._shutdown_event.is_set()}')
 
             if self._shutdown_event.is_set():

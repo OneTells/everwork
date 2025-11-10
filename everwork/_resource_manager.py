@@ -111,4 +111,5 @@ class _ResourceManagerRunner:
         self.__thread.join()
 
     def cancel(self) -> None:
+        print(1)
         self.__loop.call_soon_threadsafe(self.__shutdown_event.set) # type: ignore
