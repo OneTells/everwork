@@ -1,12 +1,12 @@
 import asyncio
-from typing import Awaitable, Callable, Any, Self
+from typing import Awaitable, Callable, Any
 
 from loguru import logger
 from redis.asyncio.retry import Retry
 from redis.backoff import AbstractBackoff
 from redis.exceptions import RedisError
 
-from ._utils import _wait_for_or_cancel
+from ._utils import _wait_for_or_cancel, _IdentityEvent
 
 
 class _RetryShutdownException(BaseException):
@@ -15,21 +15,11 @@ class _RetryShutdownException(BaseException):
 
 class _GracefulShutdownRetry(Retry):
 
-    def __init__(self, backoff: AbstractBackoff, shutdown_event: asyncio.Event) -> None:
+    def __init__(self, backoff: AbstractBackoff, shutdown_event: _IdentityEvent) -> None:
         super().__init__(backoff, -1)
         self._shutdown_event = shutdown_event
 
-        logger.debug(f'{4, id(asyncio.get_running_loop()), id(self._shutdown_event)}')
-
-    def __copy__(self) -> Self:
-        return self
-
-    def __deepcopy__(self, memo: dict[int, Any]) -> Self:
-        return self
-
     async def call_with_retry[T](self, do: Callable[[], Awaitable[T]], fail: Callable[[RedisError], Any]) -> T:
-        logger.debug(f'{5, id(asyncio.get_running_loop()), id(self._shutdown_event)}')
-
         self._backoff.reset()
         failures = 0
 

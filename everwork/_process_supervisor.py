@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
+from _utils import _IdentityEvent
 from ._worker_manager import _WorkerManagerRunner
 from .worker import Process
 
@@ -49,7 +50,7 @@ async def _wait_for_data(
 
 class _ProcessSupervisor:
 
-    def __init__(self, redis_dsn: str, process: Process, shutdown_event: asyncio.Event) -> None:
+    def __init__(self, redis_dsn: str, process: Process, shutdown_event: _IdentityEvent) -> None:
         self.__redis_dsn = redis_dsn
         self.__process = process
         self.__shutdown_event = shutdown_event

@@ -13,6 +13,7 @@ from pydantic_core import to_jsonable_python
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
+from _utils import _IdentityEvent
 from ._process_supervisor import _ProcessSupervisor
 from .worker import ProcessGroup, WorkerSettings, Process
 
@@ -66,7 +67,7 @@ class ProcessManager:
         self.__redis_dsn = redis_dsn.encoded_string()
         self.__processes: list[Process] = processes
 
-        self.__shutdown_event = asyncio.Event()
+        self.__shutdown_event = _IdentityEvent()
 
     def __handle_shutdown_signal(self, *_) -> None:
         loop = asyncio.get_running_loop()

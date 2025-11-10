@@ -70,7 +70,7 @@ class _SingleValueChannel[T]:
 
     def send(self, data: T) -> None:
         self.__pending_data = data
-        self.__loop.call_soon_threadsafe(self.__notify_waiter) # type: ignore
+        self.__loop.call_soon_threadsafe(self.__notify_waiter)  # type: ignore
 
     async def receive(self) -> T:
         if self.__is_closed:
@@ -98,7 +98,7 @@ class _SingleValueChannel[T]:
             return
 
         self.__is_closed = True
-        self.__loop.call_soon_threadsafe(self.__cancel_waiter) # type: ignore
+        self.__loop.call_soon_threadsafe(self.__cancel_waiter)  # type: ignore
 
 
 async def _wait_for_or_cancel[T](coroutine: Coroutine[Any, Any, T], event: asyncio.Event) -> T:
@@ -125,3 +125,12 @@ async def _wait_for_or_cancel[T](coroutine: Coroutine[Any, Any, T], event: async
                 task.cancel()
 
         await asyncio.shield(asyncio.gather(*tasks, return_exceptions=True))
+
+
+class _IdentityEvent(asyncio.Event):
+
+    def __copy__(self) -> Self:
+        return self
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> Self:
+        return self
