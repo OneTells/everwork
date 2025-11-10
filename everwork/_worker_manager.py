@@ -15,7 +15,7 @@ from redis.asyncio import Redis
 
 from ._redis_retry import _GracefulShutdownRetry, _RetryShutdownException
 from ._resource_manager import _ResourceManagerRunner
-from ._utils import _SingleValueChannel, _IdentityEvent
+from ._utils import _SingleValueChannel
 from .stream_client import StreamClient
 from .worker import AbstractWorker, Process
 
@@ -37,7 +37,7 @@ class _WorkerManager:
 
         self.__worker_names = ', '.join(worker.settings.name for worker in process.workers)
 
-        self.__shutdown_event = _IdentityEvent()
+        self.__shutdown_event = asyncio.Event()
 
         self.__response_channel = _SingleValueChannel[tuple[str, dict[str, typing.Any]]]()
         self.__answer_channel = _SingleValueChannel[bool]()

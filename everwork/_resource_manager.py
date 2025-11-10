@@ -7,7 +7,7 @@ from redis.asyncio import Redis
 
 from ._redis_retry import _GracefulShutdownRetry
 from ._resource_supervisor import _ResourceSupervisor
-from ._utils import _SingleValueChannel, _IdentityEvent
+from ._utils import _SingleValueChannel
 from .worker import Process
 
 try:
@@ -24,7 +24,7 @@ class _ResourceManager:
         process: Process,
         response_channel: _SingleValueChannel[tuple[str, dict[str, Any]]],
         answer_channel: _SingleValueChannel[bool],
-        shutdown_event: _IdentityEvent
+        shutdown_event: asyncio.Event
     ) -> None:
         self.__redis_dsn = redis_dsn
         self.__process = process
@@ -73,7 +73,7 @@ def _run_resource_manager(
     process: Process,
     response_channel: _SingleValueChannel[tuple[str, dict[str, Any]]],
     answer_channel: _SingleValueChannel[bool],
-    shutdown_event: _IdentityEvent,
+    shutdown_event: asyncio.Event,
     loop: asyncio.AbstractEventLoop
 ) -> None:
     with asyncio.Runner(loop_factory=lambda: loop) as runner:
@@ -89,7 +89,7 @@ class _ResourceManagerRunner:
         response_channel: _SingleValueChannel[tuple[str, dict[str, Any]]],
         answer_channel: _SingleValueChannel[bool]
     ) -> None:
-        self.__shutdown_event = _IdentityEvent()
+        self.__shutdown_event = asyncio.Event()
         self.__loop = new_event_loop()
 
         self.__thread = Thread(

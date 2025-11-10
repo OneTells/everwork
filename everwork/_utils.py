@@ -125,12 +125,3 @@ async def _wait_for_or_cancel[T](coroutine: Coroutine[Any, Any, T], event: async
                 task.cancel()
 
         await asyncio.shield(asyncio.gather(*tasks, return_exceptions=True))
-
-
-class _IdentityEvent(asyncio.Event):
-
-    def __copy__(self) -> Self:
-        return self
-
-    def __deepcopy__(self, memo: dict[int, Any]) -> Self:
-        return self
