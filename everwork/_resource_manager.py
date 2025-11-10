@@ -116,4 +116,5 @@ class _ResourceManagerRunner:
         print(22)
 
     def cancel(self) -> None:
+        print(21)
         self.__loop.call_soon_threadsafe(f)  # type: ignore
