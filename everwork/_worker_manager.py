@@ -64,6 +64,10 @@ class _WorkerManager:
 
         raise KeyboardInterrupt
 
+    def __register_signals(self) -> None:
+        signal.signal(signal.SIGUSR1, self.__handle_shutdown_signal)
+        signal.signal(signal.SIGTERM, self.__handle_terminate_signal)
+
     def __notify_worker_start(self, worker: AbstractWorker) -> None:
         if self.__shutdown_event.is_set():
             return
@@ -108,52 +112,56 @@ class _WorkerManager:
             except Exception as error:
                 logger.exception(f'({worker.settings.name}) Не удалось выполнить shutdown: {error}')
 
+    async def __process_next_event(self) -> bool:
+        try:
+            worker_name, kwargs = await self.__response_channel.receive()
+        except asyncio.CancelledError:
+            logger.debug(f'[{self.__worker_names}] Чтение канала было отменено')
+            return False
+
+        worker = self.__worker_instances[worker_name]
+
+        self.__notify_worker_start(worker)
+
+        try:
+            self.__is_execute = True
+
+            try:
+                async with worker.event_publisher:
+                    await worker.__call__(**kwargs)
+            finally:
+                self.__is_execute = False
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            logger.exception(f'({worker_name}) Задача обрабатывалась дольше максимально разрешенного времени и была отменена')
+            self.__answer_channel.send(False)
+        except _RetryShutdownException:
+            logger.exception(f'({worker_name}) Redis не был доступен или не отвечал при сохранении ивентов')
+            self.__answer_channel.send(False)
+        except Exception as error:
+            logger.exception(f'({worker_name}) Не удалось обработать ивент. Ошибка: {error}')
+            self.__answer_channel.send(False)
+        else:
+            self.__answer_channel.send(True)
+        finally:
+            self.__notify_worker_end()
+            del kwargs, worker_name, worker
+
+        return True
+
     async def __run_worker_loop(self, redis: Redis) -> None:
         await self.__init_workers(redis)
         await self.__startup_workers()
 
-        while True:
-            try:
-                worker_name, kwargs = await self.__response_channel.receive()
-            except asyncio.CancelledError:
-                logger.debug(f'[{self.__worker_names}] Чтение канала было отменено')
-                break
-
-            worker = self.__worker_instances[worker_name]
-
-            self.__notify_worker_start(worker)
-
-            try:
-                self.__is_execute = True
-
-                try:
-                    async with worker.event_publisher:
-                        await worker.__call__(**kwargs)
-                finally:
-                    self.__is_execute = False
-            except (KeyboardInterrupt, asyncio.CancelledError):
-                logger.exception(f'({worker_name}) Задача обрабатывалась дольше максимально разрешенного времени и была отменена')
-                self.__answer_channel.send(False)
-            except _RetryShutdownException:
-                logger.exception(f'({worker_name}) Redis не был доступен или не отвечал при сохранении ивентов')
-                self.__answer_channel.send(False)
-            except Exception as error:
-                logger.exception(f'({worker_name}) Не удалось обработать ивент. Ошибка: {error}')
-                self.__answer_channel.send(False)
-            else:
-                self.__answer_channel.send(True)
-            finally:
-                del worker_name, kwargs, worker
-
-            self.__notify_worker_end()
-
-        await self.__shutdown_workers()
+        try:
+            while await self.__process_next_event():
+                pass
+        finally:
+            await self.__shutdown_workers()
 
     async def run(self) -> None:
         logger.debug(f'[{self.__worker_names}] Менеджер воркеров запущен')
 
-        signal.signal(signal.SIGUSR1, self.__handle_shutdown_signal)
-        signal.signal(signal.SIGTERM, self.__handle_terminate_signal)
+        self.__register_signals()
 
         self.__response_channel.bind_to_event_loop(asyncio.get_running_loop())
 

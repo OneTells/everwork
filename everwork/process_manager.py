@@ -19,6 +19,18 @@ from ._redis_retry import _GracefulShutdownRetry
 from .worker import ProcessGroup, WorkerSettings, Process
 
 
+def _check_environment_compatibility() -> bool:
+    if system() != 'Linux':
+        logger.critical('Библиотека работает только на Linux')
+        return False
+
+    if get_start_method() not in ('spawn', 'forkserver'):
+        logger.critical('Библиотека работает только с spawn или forkserver методом запуска процессов')
+        return False
+
+    return True
+
+
 def _check_worker_names(processes: list[ProcessGroup | Process]) -> list[ProcessGroup | Process]:
     names = set()
 
@@ -76,41 +88,48 @@ class ProcessManager:
         loop = asyncio.get_running_loop()
         loop.call_soon_threadsafe(self.__shutdown_event.set)  # type: ignore
 
+    def __register_shutdown_handlers(self) -> None:
+        signal.signal(signal.SIGINT, self.__handle_shutdown_signal)
+        signal.signal(signal.SIGTERM, self.__handle_shutdown_signal)
+
     async def __init_workers(self, redis: Redis) -> None:
         managers_data = await redis.get(f'managers:{self.__uuid}')
         old_workers_settings: dict[str, WorkerSettings] = (
             {} if managers_data is None else {k: WorkerSettings.model_validate(v) for k, v in loads(managers_data).items()}
         )
 
-        new_workers_settings: dict[str, WorkerSettings] = {
-            w.settings.name: w.settings for p in self.__processes for w in p.workers
+        workers_settings: dict[str, WorkerSettings] = {
+            worker.settings.name: worker.settings
+            for process in self.__processes
+            for worker in process.workers
         }
 
         async with redis.pipeline() as pipe:
-            if old_worker_names := (old_workers_settings.keys() - new_workers_settings.keys()):
+            if old_worker_names := (old_workers_settings.keys() - workers_settings.keys()):
                 await pipe.delete(
                     *(f'workers:{worker_name}:is_worker_on' for worker_name in old_worker_names),
                     *(f'workers:{worker_name}:last_time' for worker_name in old_worker_names),
                 )
 
-            if new_worker_names := (new_workers_settings.keys() - old_workers_settings.keys()):
+            if new_worker_names := (workers_settings.keys() - old_workers_settings.keys()):
                 await pipe.mset({f'workers:{worker_name}:is_worker_on': 0 for worker_name in new_worker_names})
 
-            await pipe.set(f'managers:{self.__uuid}', dumps(to_jsonable_python(new_workers_settings)))
+            await pipe.set(f'managers:{self.__uuid}', dumps(to_jsonable_python(workers_settings)))
             await pipe.sadd('managers', self.__uuid)
 
-            if new_workers_settings:
-                await pipe.sadd('streams', *chain.from_iterable(map(lambda x: x.source_streams, new_workers_settings.values())))
+            if workers_settings:
+                await pipe.sadd('streams',
+                                *chain.from_iterable(settings.source_streams for settings in workers_settings.values()))
 
             await pipe.execute()
 
     async def __init_stream_groups(self, redis: Redis) -> None:
-        stream_groups = set()
-
-        for process in self.__processes:
-            for worker in process.workers:
-                for stream in worker.settings.source_streams:
-                    stream_groups.add((stream, worker.settings.name))
+        stream_groups = {
+            (stream, worker.settings.name)
+            for process in self.__processes
+            for worker in process.workers
+            for stream in worker.settings.source_streams
+        }
 
         existing_groups: dict[str, set[str]] = {}
 
@@ -142,30 +161,26 @@ class ProcessManager:
                 await self.__init_stream_groups(redis)
         except RedisError as error:
             logger.critical(f'Ошибка при работе с redis в наблюдателе процессов: {error}')
-            return
+
+    async def __run_process_supervisors(self) -> None:
+        async with asyncio.TaskGroup() as task_group:
+            for process in self.__processes:
+                task_group.create_task(
+                    _ProcessSupervisor(self.__redis_dsn, process, self.__shutdown_event).run()
+                )
+
+            logger.info('Наблюдатели процессов запущены')
 
     async def run(self) -> None:
-        if system() != 'Linux':
-            logger.critical('Библиотека работает только на Linux')
-            return
-
-        if get_start_method() not in ('spawn', 'forkserver'):
-            logger.critical('Библиотека работает только с spawn или forkserver методом запуска процессов')
+        if not _check_environment_compatibility():
             return
 
         logger.info('Менеджер процессов запушен')
 
-        signal.signal(signal.SIGINT, self.__handle_shutdown_signal)
-        signal.signal(signal.SIGTERM, self.__handle_shutdown_signal)
+        self.__register_shutdown_handlers()
 
         await self.__initialize_components()
-
         logger.info('Компоненты инициализированы')
 
-        async with asyncio.TaskGroup() as tg:
-            for process in self.__processes:
-                tg.create_task(_ProcessSupervisor(self.__redis_dsn, process, self.__shutdown_event).run())
-
-            logger.info('Наблюдатели процессов запущены')
-
+        await self.__run_process_supervisors()
         logger.info('Менеджер процессов завершил работу')

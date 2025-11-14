@@ -43,9 +43,9 @@ class _ResourceManager:
         lock = asyncio.Lock()
 
         async with Redis.from_url(self.__redis_dsn, retry=retry, protocol=3, decode_responses=True) as redis:
-            async with asyncio.TaskGroup() as tg:
+            async with asyncio.TaskGroup() as task_group:
                 for worker in self.__process.workers:
-                    tg.create_task(
+                    task_group.create_task(
                         _ResourceSupervisor(
                             redis,
                             worker,

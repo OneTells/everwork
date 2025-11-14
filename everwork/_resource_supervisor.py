@@ -6,7 +6,7 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError, NoScriptError
 
 from ._redis_retry import _RetryShutdownException
-from ._resource_handler import _TriggerResourceHandler, _ExecutorResourceHandler
+from ._resource_handler import _TriggerResourceHandler, _ExecutorResourceHandler, _AbstractResourceHandler
 from ._utils import _SingleValueChannel, _wait_for_or_cancel
 from .worker import AbstractWorker, TriggerMode
 
@@ -29,14 +29,17 @@ class _ResourceSupervisor:
         self.__lock = lock
         self.__shutdown_event = shutdown_event
 
-        if isinstance(worker.settings.mode, TriggerMode):
-            resource_handler = _TriggerResourceHandler
-        else:
-            resource_handler = _ExecutorResourceHandler
-
-        self.__resource_handler = resource_handler(self.__redis, self.__worker.settings, self.__shutdown_event)
+        self.__resource_handler = self.__create_resource_handler()
 
         self.__scripts: dict[str, str] = {}
+
+    def __create_resource_handler(self) -> _AbstractResourceHandler:
+        if isinstance(self.__worker.settings.mode, TriggerMode):
+            handler_cls = _TriggerResourceHandler
+        else:
+            handler_cls = _ExecutorResourceHandler
+
+        return handler_cls(self.__redis, self.__worker.settings, self.__shutdown_event)
 
     async def __load_handle_cancel_script(self) -> None:
         self.__scripts['handle_cancel'] = await self.__redis.script_load(
@@ -95,17 +98,23 @@ class _ResourceSupervisor:
         value = await self.__redis.get(f'workers:{self.__worker.settings.name}:is_worker_on')
         return value == '1'
 
+    async def __wait_until_worker_on(self) -> bool:
+        if await self.__get_is_worker_on():
+            return True
+
+        try:
+            await _wait_for_or_cancel(
+                asyncio.sleep(self.__worker.settings.poll_interval),
+                self.__shutdown_event
+            )
+        except asyncio.CancelledError:
+            return False
+
+        return False
+
     async def __process_worker_messages(self) -> None:
         while not self.__shutdown_event.is_set():
-            if not (await self.__get_is_worker_on()):
-                try:
-                    await _wait_for_or_cancel(
-                        asyncio.sleep(self.__worker.settings.poll_interval),
-                        self.__shutdown_event
-                    )
-                except asyncio.CancelledError:
-                    break
-
+            if not await self.__wait_until_worker_on():
                 continue
 
             try:
@@ -126,21 +135,20 @@ class _ResourceSupervisor:
                     continue
 
                 self.__response_channel.send((self.__worker.settings.name, kwargs))
-
-                is_success = await self.__answer_channel.receive()
-
-                if not is_success:
-                    if self.__resource_handler.resources is not None:
-                        logger.warning(
-                            f'({self.__worker.settings.name}) Не удалось обработать сообщение из потока. '
-                            f'Поток: {self.__resource_handler.resources.stream}. '
-                            f'ID сообщения: {self.__resource_handler.resources.message_id}'
-                        )
-                    await self.__handle_error()
-                else:
-                    await self.__handle_success()
-
                 del kwargs
+
+                if await self.__answer_channel.receive():
+                    await self.__handle_success()
+                    continue
+
+                if self.__resource_handler.resources is not None:
+                    logger.warning(
+                        f'({self.__worker.settings.name}) Не удалось обработать сообщение из потока. '
+                        f'Поток: {self.__resource_handler.resources.stream}. '
+                        f'ID сообщения: {self.__resource_handler.resources.message_id}'
+                    )
+
+                await self.__handle_error()
 
     async def run(self) -> None:
         logger.debug(f'({self.__worker.settings.name}) Запушен наблюдатель ресурсов')

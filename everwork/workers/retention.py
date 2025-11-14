@@ -1,6 +1,5 @@
 import time
 from abc import ABC, abstractmethod
-from itertools import chain
 from typing import ClassVar, Annotated
 
 from loguru import logger
@@ -36,10 +35,44 @@ class AbstractRetentionWorker(AbstractWorker, ABC, init_settings=False):
     def _get_settings(cls) -> WorkerSettings:
         return WorkerSettings(
             name="base:retention",
-            mode=TriggerMode(
-                execution_interval=cls._config.execution_interval
-            )
+            mode=TriggerMode(execution_interval=cls._config.execution_interval)
         )
+
+    async def __trim_streams(self, redis: Redis, streams: set[str]) -> dict[str, int]:
+        threshold_id = int(time.time() - self._config.max_age_seconds) * 1000
+
+        async with redis.pipeline() as pipe:
+            for stream in streams:
+                await pipe.xtrim(stream, minid=threshold_id)
+                await pipe.xlen(stream)
+
+            results = await pipe.execute()
+
+        return dict(zip(streams, results[1::2]))
+
+    @staticmethod
+    async def __collect_active_streams(redis: Redis) -> set[str]:
+        managers: set[str] = await redis.smembers('managers')
+
+        if not managers:
+            return set()
+
+        async with redis.pipeline(transaction=False) as pipe:
+            for manager_id in managers:
+                await pipe.get(f'managers:{manager_id}')
+
+            manager_settings = await pipe.execute()
+
+        active_streams: set[str] = set()
+
+        for data in manager_settings:
+            if data is None:
+                continue
+
+            for worker_settings in loads(data).values():
+                active_streams.update(WorkerSettings.model_validate(worker_settings).source_streams)
+
+        return active_streams
 
     @staticmethod
     async def __load_remove_streams_script(redis: Redis) -> str:
@@ -61,39 +94,17 @@ class AbstractRetentionWorker(AbstractWorker, ABC, init_settings=False):
             logger.debug(f'({self.settings.name}) Нет стримов для очистки')
             return
 
-        threshold_id = int(time.time() - self._config.max_age_seconds) * 1000
-
-        async with redis.pipeline() as pipe:
-            for stream in streams:
-                await pipe.xtrim(stream, minid=threshold_id)
-                await pipe.xlen(stream)
-
-            results = await pipe.execute()
-
-        stream_lengths = dict(zip(streams, results[1::2]))
-        empty_streams = [s for s in streams if stream_lengths[s] == 0]
+        stream_lengths = await self.__trim_streams(redis, streams)
+        empty_streams = [stream for stream, length in stream_lengths.items() if length == 0]
 
         if not empty_streams:
             logger.debug(f'({self.settings.name}) Нет пустых стримов для удаления')
             return
 
-        managers: set[str] = await redis.smembers('managers')
+        active_streams = await self.__collect_active_streams(redis)
+        streams_to_delete = set(empty_streams) - active_streams
 
-        async with redis.pipeline(transaction=False) as pipe:
-            for manager_id in managers:
-                await pipe.get(f'managers:{manager_id}')
-
-            results = await pipe.execute()
-
-        all_active_streams: set[str] = set(
-            chain.from_iterable(
-                WorkerSettings.model_validate(x).source_streams
-                for data in results if data is not None
-                for x in loads(data).values()
-            )
-        )
-
-        if not (streams_to_delete := (set(empty_streams) - all_active_streams)):
+        if not streams_to_delete:
             logger.debug(f'({self.settings.name}) Нет стримов для удаления')
             return
 

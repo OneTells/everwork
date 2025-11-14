@@ -61,9 +61,9 @@ class _ProcessSupervisor:
         self.__worker_manager_runner = _WorkerManagerRunner(self.__redis_dsn, self.__process)
 
     def __start_worker_manager(self) -> None:
-        connections = Pipe(duplex=False)
-        self.__pipe_reader_connection: connection.Connection = connections[0]
-        self.__pipe_writer_connection: connection.Connection = connections[1]
+        reader, writer = Pipe(duplex=False)
+        self.__pipe_reader_connection = reader
+        self.__pipe_writer_connection = writer
 
         self.__worker_manager_runner.start(self.__pipe_writer_connection)
 
@@ -75,6 +75,9 @@ class _ProcessSupervisor:
 
         self.__pipe_reader_connection.close()
         self.__pipe_writer_connection.close()
+
+        self.__pipe_reader_connection = None
+        self.__pipe_writer_connection = None
 
     async def __check_for_hung_tasks(self):
         try:
@@ -110,12 +113,23 @@ class _ProcessSupervisor:
         except Exception as error:
             logger.error(f'[{self.__worker_names}] Не удалось проверить зависшие сообщения: {error}')
 
-    async def __run_monitoring(self):
+    async def __handle_hung_worker(self, state: _EventStartMessage) -> None:
+        logger.warning(f'[{self.__worker_names}] Воркер {state.worker_name} завис. Начат перезапуск процесса')
+
+        await asyncio.to_thread(self.__close_worker_manager)
+        await self.__check_for_hung_tasks()
+
+        if self.__shutdown_event.is_set():
+            logger.warning(f'[{self.__worker_names}] Процесс завершен')
+            return
+
+        await asyncio.to_thread(self.__start_worker_manager)
+
+        logger.warning(f'[{self.__worker_names}] Процесс перезапущен')
+
+    async def __run_monitoring(self) -> None:
         while not self.__shutdown_event.is_set():
-            await _wait_for_data(
-                self.__pipe_reader_connection,
-                self.__shutdown_event
-            )
+            await _wait_for_data(self.__pipe_reader_connection, self.__shutdown_event)
 
             if self.__shutdown_event.is_set():
                 return
@@ -135,18 +149,7 @@ class _ProcessSupervisor:
                 self.__pipe_reader_connection.recv_bytes()
                 continue
 
-            logger.warning(f'[{self.__worker_names}] Воркер {state.worker_name} завис. Начат перезапуск процесса')
-
-            await asyncio.to_thread(self.__close_worker_manager)
-            await self.__check_for_hung_tasks()
-
-            if self.__shutdown_event.is_set():
-                logger.warning(f'[{self.__worker_names}] Процесс завершен')
-                return
-
-            await asyncio.to_thread(self.__start_worker_manager)
-
-            logger.warning(f'[{self.__worker_names}] Процесс перезапущен')
+            await self.__handle_hung_worker(state)
 
     async def run(self) -> None:
         logger.debug(f'[{self.__worker_names}] Запущен наблюдатель процесса')
