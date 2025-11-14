@@ -116,11 +116,13 @@ class _ResourceSupervisor:
 
             if self.__shutdown_event.is_set() or not (await self.__get_is_worker_on()):
                 await self.__handle_cancel()
+                del kwargs
                 continue
 
             async with self.__lock:
                 if self.__shutdown_event.is_set() or not (await self.__get_is_worker_on()):
                     await self.__handle_cancel()
+                    del kwargs
                     continue
 
                 self.__response_channel.send((self.__worker.settings.name, kwargs))

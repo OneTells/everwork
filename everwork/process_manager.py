@@ -133,6 +133,17 @@ class ProcessManager:
 
             await pipe.execute()
 
+    async def __initialize_components(self) -> None:
+        retry = _GracefulShutdownRetry(self.__redis_backoff_strategy, self.__shutdown_event)
+
+        try:
+            async with Redis.from_url(self.__redis_dsn, retry=retry, protocol=3, decode_responses=True) as redis:
+                await self.__init_workers(redis)
+                await self.__init_stream_groups(redis)
+        except RedisError as error:
+            logger.critical(f'Ошибка при работе с redis в наблюдателе процессов: {error}')
+            return
+
     async def run(self) -> None:
         if system() != 'Linux':
             logger.critical('Библиотека работает только на Linux')
@@ -147,15 +158,7 @@ class ProcessManager:
         signal.signal(signal.SIGINT, self.__handle_shutdown_signal)
         signal.signal(signal.SIGTERM, self.__handle_shutdown_signal)
 
-        retry = _GracefulShutdownRetry(self.__redis_backoff_strategy, self.__shutdown_event)
-
-        try:
-            async with Redis.from_url(self.__redis_dsn, retry=retry, protocol=3, decode_responses=True) as redis:
-                await self.__init_workers(redis)
-                await self.__init_stream_groups(redis)
-        except RedisError as error:
-            logger.critical(f'Ошибка при работе с redis в наблюдателе процессов: {error}')
-            return
+        await self.__initialize_components()
 
         logger.info('Компоненты инициализированы')
 

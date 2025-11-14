@@ -1,4 +1,3 @@
-from abc import ABC, abstractmethod
 from itertools import chain
 
 from orjson import dumps
@@ -9,20 +8,10 @@ from redis.exceptions import NoScriptError
 from .schemas import WorkerEvent
 
 
-class AbstractStreamClient(ABC):
+class StreamClient:
 
     def __init__(self, redis: Redis) -> None:
         self._redis = redis
-
-    @abstractmethod
-    async def push_event(self, event: WorkerEvent | list[WorkerEvent]) -> None:
-        raise NotImplementedError
-
-
-class StreamClient(AbstractStreamClient):
-
-    def __init__(self, redis: Redis) -> None:
-        super().__init__(redis)
         self._scripts: dict[str, str] = {}
 
     async def _load_push_event_script(self) -> None:
