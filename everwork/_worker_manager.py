@@ -7,6 +7,7 @@ import time
 import typing
 from contextlib import suppress
 from multiprocessing import connection, Process as BaseProcess
+from types import FrameType
 
 from loguru import logger
 from orjson import dumps
@@ -58,11 +59,11 @@ class _WorkerManager:
 
         self.__resource_manager_runner.cancel()
 
-    def __handle_terminate_signal(self, *_) -> None:
+    def __handle_terminate_signal(self, signal_num: int, frame: FrameType | None) -> None:
         if not self.__is_execute:
             return
 
-        signal.raise_signal(signal.SIGINT)
+        signal.default_int_handler(signal_num, frame)
 
     def __register_signals(self) -> None:
         signal.signal(signal.SIGUSR1, self.__handle_shutdown_signal)
