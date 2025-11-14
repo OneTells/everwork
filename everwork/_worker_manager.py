@@ -199,7 +199,7 @@ def _run_worker_manager(
             with asyncio.Runner(loop_factory=new_event_loop) as runner:
                 runner.run(_WorkerManager(redis_dsn, process, pipe_connection).run())
         except BaseException as error:
-            logger.info(f'{error}')
+            logger.info(f'{type(error)} {error}')
 
     logger.remove()
 
