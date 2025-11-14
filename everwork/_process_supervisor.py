@@ -116,7 +116,7 @@ class _ProcessSupervisor:
         while not self.__shutdown_event.is_set():
             process = psutil.Process(os.getpid())
 
-            logger.debug(
+            logger.info(
                 f"Main Process. RSS память: {process.memory_full_info().rss / 1024 / 1024:.8f} MB. "
                 f"USS память: {process.memory_full_info().uss / 1024 / 1024:.8f} MB."
             )
