@@ -1,7 +1,9 @@
 import asyncio
+import os
 import time
 from multiprocessing import Pipe, connection
 
+import psutil
 from loguru import logger
 from orjson import loads
 from pydantic import BaseModel
@@ -112,6 +114,13 @@ class _ProcessSupervisor:
 
     async def __run_monitoring(self):
         while not self.__shutdown_event.is_set():
+            process = psutil.Process(os.getpid())
+
+            logger.debug(
+                f"Main Process. RSS память: {process.memory_full_info().rss / 1024 / 1024:.8f} MB. "
+                f"USS память: {process.memory_full_info().uss / 1024 / 1024:.8f} MB."
+            )
+
             await _wait_for_data(
                 self.__pipe_reader_connection,
                 self.__shutdown_event
