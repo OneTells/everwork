@@ -62,7 +62,7 @@ class _WorkerManager:
         if not self.__is_execute:
             return
 
-        raise KeyboardInterrupt
+        signal.raise_signal(signal.SIGINT)
 
     def __register_signals(self) -> None:
         signal.signal(signal.SIGUSR1, self.__handle_shutdown_signal)
