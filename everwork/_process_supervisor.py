@@ -1,9 +1,7 @@
 import asyncio
-import os
 import time
 from multiprocessing import Pipe, connection
 
-import psutil
 from loguru import logger
 from orjson import loads
 from pydantic import BaseModel
