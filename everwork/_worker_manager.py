@@ -195,8 +195,11 @@ def _run_worker_manager(
     logger_.reinstall()
 
     with suppress(KeyboardInterrupt):
-        with asyncio.Runner(loop_factory=new_event_loop) as runner:
-            runner.run(_WorkerManager(redis_dsn, process, pipe_connection).run())
+        try:
+            with asyncio.Runner(loop_factory=new_event_loop) as runner:
+                runner.run(_WorkerManager(redis_dsn, process, pipe_connection).run())
+        except BaseException as error:
+            logger.info(f'{error}')
 
     logger.remove()
 
