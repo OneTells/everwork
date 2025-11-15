@@ -1,20 +1,24 @@
-from typing import Annotated, Any, Self
+from typing import Annotated, Any, Self, final
 
 from pydantic import BaseModel, Field, model_validator
 
 
+@final
 class ExecutorMode(BaseModel):
     pass
 
 
+@final
 class TriggerMode(BaseModel):
     execution_interval: Annotated[float, Field(gt=0)]
 
 
+@final
 class EventPublisherSettings(BaseModel):
     max_batch_size: Annotated[int, Field(ge=1)] = 500
 
 
+@final
 class WorkerSettings(BaseModel):
     name: Annotated[str, Field(min_length=1)]
 
@@ -32,6 +36,7 @@ class WorkerSettings(BaseModel):
         return self
 
 
+@final
 class WorkerEvent(BaseModel):
     target_stream: Annotated[str, Field(min_length=1)]
     data: dict[str, Any] = Field(default_factory=dict)

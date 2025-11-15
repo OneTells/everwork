@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, ClassVar, Annotated, Self
+from typing import Any, ClassVar, Annotated, Self, final
 
 from pydantic import BaseModel, Field, model_validator, ConfigDict
 from redis.backoff import FullJitterBackoff, AbstractBackoff
@@ -23,9 +23,11 @@ class AbstractWorker(ABC):
     def __init__(self) -> None:
         self.__event_publisher: EventPublisher | None = None
 
+    @final
     def initialize(self, stream_client: StreamClient) -> None:
         self.__event_publisher = EventPublisher(stream_client, self.settings.event_publisher_settings)
 
+    @final
     @property
     def event_publisher(self) -> EventPublisher:
         if self.__event_publisher is None:
@@ -33,6 +35,7 @@ class AbstractWorker(ABC):
 
         return self.__event_publisher
 
+    @final
     async def _add_event(self, event: WorkerEvent | list[WorkerEvent]) -> None:
         await self.event_publisher.add(event)
 
@@ -52,6 +55,7 @@ class AbstractWorker(ABC):
         raise NotImplementedError
 
 
+@final
 class Process(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -61,6 +65,7 @@ class Process(BaseModel):
     redis_backoff_strategy: AbstractBackoff = Field(default_factory=lambda: FullJitterBackoff(cap=30.0, base=1.0))
 
 
+@final
 class ProcessGroup(BaseModel):
     process: Process
     replicas: Annotated[int, Field(ge=1)] = 1

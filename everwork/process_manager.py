@@ -3,7 +3,7 @@ import signal
 from itertools import chain
 from multiprocessing import get_start_method
 from platform import system
-from typing import Annotated
+from typing import Annotated, final
 from uuid import UUID
 
 from loguru import logger
@@ -63,6 +63,7 @@ def _expand_process_groups(processes: list[ProcessGroup | Process]) -> list[Proc
     return result
 
 
+@final
 class ProcessManager:
 
     @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
