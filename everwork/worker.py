@@ -18,20 +18,31 @@ class AbstractWorker(ABC):
         if not init_settings:
             return
 
-        cls.settings = cls._get_settings()
+        if not hasattr(cls, '_get_settings') or not callable(cls._get_settings):
+            raise TypeError(f"{cls.__name__} должен реализовать метод _get_settings()")
+
+        settings = cls._get_settings()
+
+        if not isinstance(settings, WorkerSettings):
+            raise TypeError(f"_get_settings() должен возвращать WorkerSettings, получено: {type(settings)}")
+
+        cls.settings = settings
 
     def __init__(self) -> None:
         self.__event_publisher: EventPublisher | None = None
 
     @final
     def initialize(self, stream_client: StreamClient) -> None:
+        if self.__event_publisher is not None:
+            return
+
         self.__event_publisher = EventPublisher(stream_client, self.settings.event_publisher_settings)
 
     @final
     @property
     def event_publisher(self) -> EventPublisher:
         if self.__event_publisher is None:
-            raise ValueError('Не был вызван метод initialize')
+            raise RuntimeError('Worker не инициализирован. Вызовите .initialize()')
 
         return self.__event_publisher
 
@@ -59,7 +70,7 @@ class AbstractWorker(ABC):
 class Process(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    workers: list[type[AbstractWorker]]
+    workers: Annotated[list[type[AbstractWorker]], Field(min_length=1)]
 
     shutdown_timeout: Annotated[float, Field(gt=0)] = 20
     redis_backoff_strategy: AbstractBackoff = Field(default_factory=lambda: FullJitterBackoff(cap=30.0, base=1.0))
@@ -71,12 +82,12 @@ class ProcessGroup(BaseModel):
     replicas: Annotated[int, Field(ge=1)] = 1
 
     @model_validator(mode='after')
-    def validator(self) -> Self:
+    def _validate_replication_compatibility(self) -> Self:
         if self.replicas > 1:
             if len(self.process.workers) > 1:
-                raise ValueError('Репликация не работает с несколькими worker')
+                raise ValueError('Репликация поддерживается только для одного воркера')
 
             if any(isinstance(worker.settings.mode, TriggerMode) for worker in self.process.workers):
-                raise ValueError('Репликация не работает с workers в режиме TriggerMode')
+                raise ValueError('Репликация не поддерживается для воркеров с TriggerMode')
 
         return self

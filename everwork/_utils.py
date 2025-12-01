@@ -41,6 +41,10 @@ class EventPublisher:
         self.__events.clear()
 
 
+class ChannelClosed(Exception):
+    pass
+
+
 class _SingleValueChannel[T]:
 
     def __init__(self) -> None:
@@ -74,7 +78,7 @@ class _SingleValueChannel[T]:
 
     async def receive(self) -> T:
         if self.__is_closed:
-            raise asyncio.CancelledError()
+            raise ChannelClosed
 
         if (item := self.__pending_data) is not None:
             self.__pending_data = None
@@ -87,7 +91,7 @@ class _SingleValueChannel[T]:
             await future
         except asyncio.CancelledError:
             self.__waiter = None
-            raise
+            raise ChannelClosed
 
         item = self.__pending_data
         self.__pending_data = None
@@ -99,6 +103,10 @@ class _SingleValueChannel[T]:
 
         self.__is_closed = True
         self.__loop.call_soon_threadsafe(self.__cancel_waiter)  # type: ignore
+
+
+class OperationCancelled(Exception):
+    pass
 
 
 async def _wait_for_or_cancel[T](coroutine: Coroutine[Any, Any, T], event: asyncio.Event) -> T:
@@ -116,7 +124,7 @@ async def _wait_for_or_cancel[T](coroutine: Coroutine[Any, Any, T], event: async
             with suppress(asyncio.CancelledError):
                 await main_task
 
-            raise asyncio.CancelledError()
+            raise OperationCancelled
 
         return await main_task
     finally:

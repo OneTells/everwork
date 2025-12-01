@@ -8,6 +8,7 @@ import typing
 from contextlib import suppress
 from multiprocessing import connection, Process as BaseProcess
 from types import FrameType
+from typing import Any
 
 from loguru import logger
 from orjson import dumps
@@ -16,7 +17,7 @@ from redis.asyncio import Redis
 
 from ._redis_retry import _GracefulShutdownRetry, _RetryShutdownException
 from ._resource_manager import _ResourceManagerRunner
-from ._utils import _SingleValueChannel
+from ._utils import _SingleValueChannel, ChannelClosed
 from .stream_client import StreamClient
 from .worker import AbstractWorker, Process
 
@@ -39,8 +40,9 @@ class _WorkerManager:
         self.__worker_names = ', '.join(worker.settings.name for worker in process.workers)
 
         self.__shutdown_event = asyncio.Event()
+        self.__is_execute = False
 
-        self.__response_channel = _SingleValueChannel[tuple[str, dict[str, typing.Any]]]()
+        self.__response_channel = _SingleValueChannel[tuple[str, dict[str, Any]]]()
         self.__answer_channel = _SingleValueChannel[bool]()
 
         self.__resource_manager_runner = _ResourceManagerRunner(
@@ -51,9 +53,8 @@ class _WorkerManager:
         )
 
         self.__worker_instances: dict[str, AbstractWorker] = {}
-        self.__is_execute = False
 
-    def __handle_shutdown_signal(self, *_) -> None:
+    def __handle_shutdown_signal(self, *_: Any) -> None:
         loop = asyncio.get_running_loop()
         loop.call_soon_threadsafe(self.__shutdown_event.set)  # type: ignore
 
@@ -73,10 +74,12 @@ class _WorkerManager:
         if self.__shutdown_event.is_set():
             return
 
-        self.__pipe_connection.send_bytes(dumps({
+        data = {
             'worker_name': worker.settings.name,
             'end_time': time.time() + worker.settings.execution_timeout
-        }))
+        }
+
+        self.__pipe_connection.send_bytes(dumps(data))
 
     def __notify_worker_end(self) -> None:
         if self.__shutdown_event.is_set():
@@ -87,37 +90,37 @@ class _WorkerManager:
     async def __init_workers(self, redis: Redis) -> None:
         stream_client = StreamClient(redis)
 
-        for worker in self.__process.workers:
+        for worker_cls in self.__process.workers:
             try:
-                worker_obj = worker()
+                worker = worker_cls()
             except Exception as error:
-                logger.exception(f'({worker.settings.name}) Не удалось выполнить __init__: {error}')
+                logger.exception(f'({worker_cls.settings.name}) Ошибка при инициализации: {error}')
                 continue
 
-            worker_obj.initialize(stream_client)
-            worker_obj.__call__ = validate_call(worker_obj.__call__)
+            worker.initialize(stream_client)
+            worker.__call__ = validate_call(worker.__call__)
 
-            self.__worker_instances[worker_obj.settings.name] = worker_obj
+            self.__worker_instances[worker.settings.name] = worker
 
     async def __startup_workers(self) -> None:
         for worker in self.__worker_instances.values():
             try:
                 await worker.startup()
             except Exception as error:
-                logger.exception(f'({worker.settings.name}) Не удалось выполнить startup: {error}')
+                logger.exception(f'({worker.settings.name}) Ошибка при startup: {error}')
 
     async def __shutdown_workers(self) -> None:
         for worker in self.__worker_instances.values():
             try:
                 await worker.shutdown()
             except Exception as error:
-                logger.exception(f'({worker.settings.name}) Не удалось выполнить shutdown: {error}')
+                logger.exception(f'({worker.settings.name}) Ошибка при shutdown: {error}')
 
     async def __process_next_event(self) -> bool:
         try:
             worker_name, kwargs = await self.__response_channel.receive()
-        except asyncio.CancelledError:
-            logger.debug(f'[{self.__worker_names}] Чтение канала было отменено')
+        except ChannelClosed:
+            logger.debug(f'[{self.__worker_names}] Канал закрыт')
             return False
 
         worker = self.__worker_instances[worker_name]
@@ -133,19 +136,18 @@ class _WorkerManager:
             finally:
                 self.__is_execute = False
         except (KeyboardInterrupt, asyncio.CancelledError):
-            logger.exception(f'({worker_name}) Задача обрабатывалась дольше максимально разрешенного времени и была отменена')
+            logger.exception(f'({worker_name}) Выполнение прервано по таймауту')
             self.__answer_channel.send(False)
         except _RetryShutdownException:
-            logger.exception(f'({worker_name}) Redis не был доступен или не отвечал при сохранении ивентов')
+            logger.exception(f'({worker_name}) Ошибка Redis при сохранении ивентов')
             self.__answer_channel.send(False)
         except Exception as error:
-            logger.exception(f'({worker_name}) Не удалось обработать ивент. Ошибка: {error}')
+            logger.exception(f'({worker_name}) Ошибка при обработке события: {error}')
             self.__answer_channel.send(False)
         else:
             self.__answer_channel.send(True)
         finally:
             self.__notify_worker_end()
-            del kwargs, worker_name, worker
 
         return True
 
@@ -163,9 +165,7 @@ class _WorkerManager:
         logger.debug(f'[{self.__worker_names}] Менеджер воркеров запущен')
 
         self.__register_signals()
-
         self.__response_channel.bind_to_event_loop(asyncio.get_running_loop())
-
         self.__resource_manager_runner.start()
 
         retry = _GracefulShutdownRetry(self.__process.redis_backoff_strategy, self.__shutdown_event)
@@ -174,12 +174,11 @@ class _WorkerManager:
             async with Redis.from_url(self.__redis_dsn, retry=retry, protocol=3, decode_responses=True) as redis:
                 await self.__run_worker_loop(redis)
         except Exception as error:
-            logger.critical(f'[{self.__worker_names}] Менеджер воркеров неожиданно завершился: {error}')
+            logger.critical(f'[{self.__worker_names}] Менеджер воркеров завершился с ошибкой: {error}')
 
         logger.debug(f'[{self.__worker_names}] Менеджер воркеров начал завершение')
 
         self.__resource_manager_runner.join()
-
         self.__pipe_connection.close()
 
         logger.debug(f'[{self.__worker_names}] Менеджер воркеров завершил работу')

@@ -20,12 +20,15 @@ from .worker import ProcessGroup, WorkerSettings, Process
 
 
 def _check_environment_compatibility() -> bool:
-    if system() != 'Linux':
-        logger.critical('Библиотека работает только на Linux')
+    current_system = system()
+    start_method = get_start_method()
+
+    if current_system != "Linux":
+        logger.critical(f"Библиотека работает только на Linux. Текущая система: {current_system}")
         return False
 
-    if get_start_method() not in ('spawn', 'forkserver'):
-        logger.critical('Библиотека работает только с spawn или forkserver методом запуска процессов')
+    if start_method not in ("spawn", "forkserver"):
+        logger.critical(f"Поддерживаемые методы запуска процессов: spawn, forkserver. Текущий метод: {start_method}")
         return False
 
     return True
@@ -42,7 +45,7 @@ def _check_worker_names(processes: list[ProcessGroup | Process]) -> list[Process
 
         for worker in process.workers:
             if worker.settings.name in names:
-                raise ValueError(f"{worker.settings.name} не уникально")
+                raise ValueError(f"Имя воркера {worker.settings.name} не уникально")
 
             names.add(worker.settings.name)
 
@@ -96,7 +99,9 @@ class ProcessManager:
     async def __init_workers(self, redis: Redis) -> None:
         managers_data = await redis.get(f'managers:{self.__uuid}')
         old_workers_settings: dict[str, WorkerSettings] = (
-            {} if managers_data is None else {k: WorkerSettings.model_validate(v) for k, v in loads(managers_data).items()}
+            {} if managers_data is None else {
+                k: WorkerSettings.model_validate(v) for k, v in loads(managers_data).items()
+            }
         )
 
         workers_settings: dict[str, WorkerSettings] = {
@@ -119,8 +124,10 @@ class ProcessManager:
             await pipe.sadd('managers', self.__uuid)
 
             if workers_settings:
-                await pipe.sadd('streams',
-                                *chain.from_iterable(settings.source_streams for settings in workers_settings.values()))
+                await pipe.sadd(
+                    'streams',
+                    *chain.from_iterable(settings.source_streams for settings in workers_settings.values())
+                )
 
             await pipe.execute()
 

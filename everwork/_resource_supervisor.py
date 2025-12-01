@@ -7,7 +7,7 @@ from redis.exceptions import RedisError, NoScriptError
 
 from ._redis_retry import _RetryShutdownException
 from ._resource_handler import _TriggerResourceHandler, _ExecutorResourceHandler, _AbstractResourceHandler
-from ._utils import _SingleValueChannel, _wait_for_or_cancel
+from ._utils import _SingleValueChannel, _wait_for_or_cancel, OperationCancelled
 from .worker import AbstractWorker, TriggerMode
 
 
@@ -53,26 +53,21 @@ class _ResourceSupervisor:
         )
 
     async def __handle_error(self) -> None:
-        if self.__resource_handler.resources is None:
+        resources = self.__resource_handler.resources
+
+        if resources is None:
             return
 
-        await self.__redis.xack(
-            self.__resource_handler.resources.stream,
-            self.__worker.settings.name,
-            self.__resource_handler.resources.message_id
-        )
-
+        await self.__redis.xack(resources.stream, self.__worker.settings.name, resources.message_id)
         self.__resource_handler.resources = None
 
     async def __handle_cancel(self) -> None:
-        if self.__resource_handler.resources is None:
+        resources = self.__resource_handler.resources
+
+        if resources is None:
             return
 
-        keys = [
-            self.__resource_handler.resources.stream,
-            self.__worker.settings.name,
-            self.__resource_handler.resources.message_id
-        ]
+        keys = [resources.stream, self.__worker.settings.name, resources.message_id]
 
         try:
             await self.__redis.evalsha(self.__scripts['handle_cancel'], 3, *keys)
@@ -83,15 +78,12 @@ class _ResourceSupervisor:
         self.__resource_handler.resources = None
 
     async def __handle_success(self) -> None:
-        if self.__resource_handler.resources is None:
+        resources = self.__resource_handler.resources
+
+        if resources is None:
             return
 
-        await self.__redis.xack(
-            self.__resource_handler.resources.stream,
-            self.__worker.settings.name,
-            self.__resource_handler.resources.message_id
-        )
-
+        await self.__redis.xack(resources.stream, self.__worker.settings.name, resources.message_id)
         self.__resource_handler.resources = None
 
     async def __get_is_worker_on(self) -> bool:
@@ -107,7 +99,7 @@ class _ResourceSupervisor:
                 asyncio.sleep(self.__worker.settings.poll_interval),
                 self.__shutdown_event
             )
-        except asyncio.CancelledError:
+        except OperationCancelled:
             return False
 
         return False
@@ -119,7 +111,7 @@ class _ResourceSupervisor:
 
             try:
                 kwargs = await self.__resource_handler.get_kwargs()
-            except asyncio.CancelledError:
+            except OperationCancelled:
                 await self.__handle_cancel()
                 break
 
@@ -156,7 +148,7 @@ class _ResourceSupervisor:
         try:
             await self.__load_handle_cancel_script()
         except RedisError as error:
-            logger.critical(f'Ошибка при регистрации скрипта в мониторинге ресурсов: {error}')
+            logger.critical(f'Ошибка при регистрации скрипта: {error}')
             return
 
         logger.debug(f'({self.__worker.settings.name}) Скрипты зарегистрированы')
@@ -164,15 +156,15 @@ class _ResourceSupervisor:
         try:
             await self.__process_worker_messages()
         except _RetryShutdownException:
-            logger.exception(f'({self.__worker.settings.name}) Redis не был доступен или не отвечал при мониторинге ресурсов')
+            logger.exception(f'({self.__worker.settings.name}) Redis недоступен при мониторинге ресурсов')
 
             if self.__resource_handler.resources is not None:
                 logger.warning(
-                    f'({self.__worker.settings.name}) Не удалось правильно обработать сообщение. '
+                    f'({self.__worker.settings.name}) Не удалось обработать сообщение. '
                     f'Поток: {self.__resource_handler.resources.stream}. '
                     f'ID сообщения: {self.__resource_handler.resources.message_id}'
                 )
         except Exception as error:
-            logger.exception(f'({self.__worker.settings.name}) Мониторинг ресурсов неожиданно завершился: {error}')
+            logger.exception(f'({self.__worker.settings.name}) Мониторинг ресурсов завершился с ошибкой: {error}')
 
         logger.debug(f'({self.__worker.settings.name}) Наблюдатель ресурсов завершил работ')

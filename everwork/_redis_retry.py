@@ -7,7 +7,7 @@ from redis.asyncio.retry import Retry
 from redis.backoff import AbstractBackoff
 from redis.exceptions import RedisError
 
-from ._utils import _wait_for_or_cancel
+from ._utils import _wait_for_or_cancel, OperationCancelled
 
 
 class _RetryShutdownException(BaseException):
@@ -17,14 +17,15 @@ class _RetryShutdownException(BaseException):
 class _GracefulShutdownRetry(Retry):
 
     def __init__(self, backoff: AbstractBackoff, shutdown_event: asyncio.Event) -> None:
-        super().__init__(backoff, -1)
+        super().__init__(backoff, 0)
         self._shutdown_event = shutdown_event
 
     def __copy__(self) -> Self:
         return type(self)(self._backoff, self._shutdown_event)
 
     def __deepcopy__(self, memo: dict[int, Any]) -> Self:
-        memo[id(self)] = new_instance = type(self)(copy.deepcopy(self._backoff, memo), self._shutdown_event)
+        new_instance = type(self)(copy.deepcopy(self._backoff, memo), self._shutdown_event)
+        memo[id(self)] = new_instance
         return new_instance
 
     async def call_with_retry[T](self, do: Callable[[], Awaitable[T]], fail: Callable[[RedisError], Any]) -> T:
@@ -38,7 +39,7 @@ class _GracefulShutdownRetry(Retry):
                 failures += 1
                 await fail(error)
 
-                logger.warning(f'Redis не доступен или не отвечает. Попытка повторения {failures}. Ошибка: {error}')
+                logger.warning(f'Redis недоступен или не отвечает. Попытка {failures}. Ошибка: {error}')
 
             if self._shutdown_event.is_set():
                 raise _RetryShutdownException()
@@ -47,5 +48,5 @@ class _GracefulShutdownRetry(Retry):
 
             try:
                 await _wait_for_or_cancel(asyncio.sleep(backoff), self._shutdown_event)
-            except asyncio.CancelledError:
+            except OperationCancelled:
                 continue

@@ -61,16 +61,19 @@ class AbstractRetentionWorker(AbstractWorker, ABC, init_settings=False):
             for manager_id in managers:
                 await pipe.get(f'managers:{manager_id}')
 
-            manager_settings = await pipe.execute()
+            raw_settings = await pipe.execute()
 
         active_streams: set[str] = set()
 
-        for data in manager_settings:
-            if data is None:
+        for raw_data in raw_settings:
+            if raw_data is None:
                 continue
 
-            for worker_settings in loads(data).values():
-                active_streams.update(WorkerSettings.model_validate(worker_settings).source_streams)
+            data = loads(raw_data)
+
+            for settings_data in data.values():
+                worker_settings = WorkerSettings.model_validate(settings_data)
+                active_streams.update(worker_settings.source_streams)
 
         return active_streams
 
@@ -88,13 +91,13 @@ class AbstractRetentionWorker(AbstractWorker, ABC, init_settings=False):
         )
 
     async def __cleanup_streams(self, redis: Redis) -> None:
-        streams: set[str] = await redis.smembers('streams')
+        all_streams: set[str] = await redis.smembers('streams')
 
-        if not streams:
+        if not all_streams:
             logger.debug(f'({self.settings.name}) Нет стримов для очистки')
             return
 
-        stream_lengths = await self.__trim_streams(redis, streams)
+        stream_lengths = await self.__trim_streams(redis, all_streams)
         empty_streams = [stream for stream, length in stream_lengths.items() if length == 0]
 
         if not empty_streams:
@@ -105,16 +108,16 @@ class AbstractRetentionWorker(AbstractWorker, ABC, init_settings=False):
         streams_to_delete = set(empty_streams) - active_streams
 
         if not streams_to_delete:
-            logger.debug(f'({self.settings.name}) Нет стримов для удаления')
+            logger.debug(f'({self.settings.name}) Нет неактивных пустых стримов для удаления')
             return
 
-        remove_streams_script = await self.__load_remove_streams_script(redis)
-        await redis.evalsha(remove_streams_script, len(streams_to_delete), *streams_to_delete)
+        script_sha = await self.__load_remove_streams_script(redis)
+        await redis.evalsha(script_sha, len(streams_to_delete), *streams_to_delete)
 
-        logger.debug(
-            f'({self.settings.name}) Удалены {len(streams_to_delete)} стримов. '
-            f'Всего обработано: {len(streams)}. '
-            f'Удалены следующие стримы: {streams_to_delete}'
+        logger.info(
+            f'({self.settings.name}) Удалено {len(streams_to_delete)} неактивных пустых стримов. '
+            f'Всего обработано: {len(all_streams)}. '
+            f'Удалены: {sorted(streams_to_delete)}'
         )
 
     async def __call__(self) -> None:
@@ -125,7 +128,7 @@ class AbstractRetentionWorker(AbstractWorker, ABC, init_settings=False):
         async with Redis.from_url(self._config.redis_dns.encoded_string(), protocol=3, decode_responses=True) as redis:
             await self.__cleanup_streams(redis)
 
-        logger.debug(
-            f'({self.settings.name}) Стримы успешно очищены. '
-            f'Время выполнения: {time.perf_counter() - start_time:.6f} секунд'
+        logger.info(
+            f'({self.settings.name}) Очистка стримов завершена. '
+            f'Время выполнения: {time.perf_counter() - start_time:.4f} сек'
         )

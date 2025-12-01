@@ -16,7 +16,7 @@ class _EventStartMessage(BaseModel):
     end_time: float
 
 
-async def _wait_for_data(
+async def _wait_for_pipe_data(
     pipe_connection: connection.Connection,
     shutdown_event: asyncio.Event,
     timeout: float | None = None
@@ -25,7 +25,6 @@ async def _wait_for_data(
         return pipe_connection.poll(0)
 
     loop = asyncio.get_running_loop()
-
     future = loop.create_future()
     shutdown_task = loop.create_task(shutdown_event.wait())
 
@@ -124,19 +123,19 @@ class _ProcessSupervisor:
             return
 
         await asyncio.to_thread(self.__start_worker_manager)
-
         logger.warning(f'[{self.__worker_names}] Процесс перезапущен')
 
     async def __run_monitoring(self) -> None:
         while not self.__shutdown_event.is_set():
-            await _wait_for_data(self.__pipe_reader_connection, self.__shutdown_event)
+            await _wait_for_pipe_data(self.__pipe_reader_connection, self.__shutdown_event)
 
             if self.__shutdown_event.is_set():
                 return
 
-            state = _EventStartMessage.model_validate(loads(self.__pipe_reader_connection.recv_bytes()))
+            raw_data = self.__pipe_reader_connection.recv_bytes()
+            state = _EventStartMessage.model_validate(loads(raw_data))
 
-            is_exist_message = await _wait_for_data(
+            is_exist_message = await _wait_for_pipe_data(
                 self.__pipe_reader_connection,
                 self.__shutdown_event,
                 state.end_time - time.time()
@@ -160,9 +159,9 @@ class _ProcessSupervisor:
         try:
             await self.__run_monitoring()
         except Exception as error:
-            logger.critical(f'[{self.__worker_names}] Наблюдатель процесса неожиданно завершился: {error}')
+            logger.critical(f'[{self.__worker_names}] Наблюдатель процесса завершился с ошибкой: {error}')
 
-        logger.debug(f'[{self.__worker_names}] Наблюдатель процесса начал завершение')
+        logger.debug(f'[{self.__worker_names}] Начато завершение наблюдателя процесса')
 
         await asyncio.to_thread(self.__close_worker_manager)
         await self.__check_for_hung_tasks()

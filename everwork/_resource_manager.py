@@ -56,7 +56,7 @@ class _ResourceManager:
                         ).run()
                     )
 
-                logger.debug('Наблюдатели ресурсов запущены')
+                logger.debug(f'[{self.__worker_names}] Наблюдатели ресурсов запущены')
 
         self.__response_channel.close()
         self.__answer_channel.close()
