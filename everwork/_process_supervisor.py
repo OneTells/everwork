@@ -1,6 +1,6 @@
 import asyncio
 import time
-from multiprocessing import Pipe, connection
+from multiprocessing import connection, Pipe
 
 from loguru import logger
 from orjson import loads
@@ -21,9 +21,6 @@ async def _wait_for_pipe_data(
     shutdown_event: asyncio.Event,
     timeout: float | None = None
 ) -> bool:
-    if timeout is not None and timeout <= 0:
-        return pipe_connection.poll(0)
-
     loop = asyncio.get_running_loop()
     future = loop.create_future()
     shutdown_task = loop.create_task(shutdown_event.wait())
@@ -32,12 +29,17 @@ async def _wait_for_pipe_data(
         if not future.done() and pipe_connection.poll(0):
             future.set_result(True)
 
-    loop.add_reader(pipe_connection.fileno(), callback)  # type: ignore
+    fd = pipe_connection.fileno()
+    loop.add_reader(fd, callback)  # type: ignore
 
     try:
-        await asyncio.wait((shutdown_task, future), timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+        await asyncio.wait(
+            (shutdown_task, future),
+            timeout=timeout,
+            return_when=asyncio.FIRST_COMPLETED
+        )
     finally:
-        loop.remove_reader(pipe_connection.fileno())
+        loop.remove_reader(fd)
 
         if not shutdown_task.done():
             shutdown_task.cancel()

@@ -214,6 +214,9 @@ class _WorkerManagerRunner:
         return self.__base_process is None
 
     def start(self, pipe_writer_connection: connection.Connection) -> None:
+        if self.__base_process is not None:
+            raise ValueError('Нельзя запустить менеджер воркеров повторно, пока он запущен')
+
         self.__base_process = BaseProcess(
             target=_run_worker_manager,
             kwargs={

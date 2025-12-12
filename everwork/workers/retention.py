@@ -1,14 +1,14 @@
 import time
 from abc import ABC, abstractmethod
-from typing import ClassVar, Annotated
+from typing import Annotated, ClassVar
 
 from loguru import logger
 from orjson import loads
-from pydantic import BaseModel, RedisDsn, Field
+from pydantic import BaseModel, Field, RedisDsn
 from redis.asyncio import Redis
 
 from .._utils import timer
-from ..schemas import WorkerSettings, TriggerMode
+from ..schemas import TriggerMode, WorkerSettings
 from ..worker import AbstractWorker
 
 

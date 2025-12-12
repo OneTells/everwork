@@ -7,8 +7,8 @@ from typing import Annotated, final
 from uuid import UUID
 
 from loguru import logger
-from orjson import loads, dumps
-from pydantic import validate_call, AfterValidator, RedisDsn, ConfigDict
+from orjson import dumps, loads
+from pydantic import AfterValidator, ConfigDict, RedisDsn, validate_call
 from pydantic_core import to_jsonable_python
 from redis.asyncio import Redis
 from redis.backoff import AbstractBackoff, FullJitterBackoff
@@ -16,7 +16,7 @@ from redis.exceptions import RedisError
 
 from ._process_supervisor import _ProcessSupervisor
 from ._redis_retry import _GracefulShutdownRetry
-from .worker import ProcessGroup, WorkerSettings, Process
+from .worker import Process, ProcessGroup, WorkerSettings
 
 
 def _check_environment_compatibility() -> bool:

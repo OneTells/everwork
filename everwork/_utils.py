@@ -1,6 +1,6 @@
 import asyncio
 from contextlib import suppress
-from typing import Self, Coroutine, Any
+from typing import Any, Coroutine, Self
 
 from .schemas import EventPublisherSettings, WorkerEvent
 from .stream_client import StreamClient

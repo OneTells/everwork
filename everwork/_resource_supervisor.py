@@ -3,10 +3,10 @@ from typing import Any
 
 from loguru import logger
 from redis.asyncio import Redis
-from redis.exceptions import RedisError, NoScriptError
+from redis.exceptions import NoScriptError, RedisError
 
 from ._redis_retry import _RetryShutdownException
-from ._resource_handler import _TriggerResourceHandler, _ExecutorResourceHandler, _AbstractResourceHandler
+from ._resource_handler import _AbstractResourceHandler, _ExecutorResourceHandler, _TriggerResourceHandler
 from ._utils import _SingleValueChannel, _wait_for_or_cancel, OperationCancelled
 from .worker import AbstractWorker, TriggerMode
 
@@ -86,17 +86,20 @@ class _ResourceSupervisor:
         await self.__redis.xack(resources.stream, self.__worker.settings.name, resources.message_id)
         self.__resource_handler.resources = None
 
-    async def __get_is_worker_on(self) -> bool:
+    async def __is_worker_on(self) -> bool:
         value = await self.__redis.get(f'workers:{self.__worker.settings.name}:is_worker_on')
         return value == '1'
 
+    async def __is_shutdown_or_worker_off(self) -> bool:
+        return self.__shutdown_event.is_set() or not (await self.__is_worker_on())
+
     async def __wait_until_worker_on(self) -> bool:
-        if await self.__get_is_worker_on():
+        if await self.__is_worker_on():
             return True
 
         try:
             await _wait_for_or_cancel(
-                asyncio.sleep(self.__worker.settings.poll_interval),
+                asyncio.sleep(self.__worker.settings.worker_status_check_interval),
                 self.__shutdown_event
             )
         except OperationCancelled:
@@ -113,15 +116,15 @@ class _ResourceSupervisor:
                 kwargs = await self.__resource_handler.get_kwargs()
             except OperationCancelled:
                 await self.__handle_cancel()
-                break
+                continue
 
-            if self.__shutdown_event.is_set() or not (await self.__get_is_worker_on()):
+            if await self.__is_shutdown_or_worker_off():
                 await self.__handle_cancel()
                 del kwargs
                 continue
 
             async with self.__lock:
-                if self.__shutdown_event.is_set() or not (await self.__get_is_worker_on()):
+                if await self.__is_shutdown_or_worker_off():
                     await self.__handle_cancel()
                     del kwargs
                     continue

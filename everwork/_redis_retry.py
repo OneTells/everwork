@@ -1,6 +1,6 @@
 import asyncio
 import copy
-from typing import Awaitable, Callable, Any, Self
+from typing import Any, Awaitable, Callable, Self
 
 from loguru import logger
 from redis.asyncio.retry import Retry
