@@ -1,54 +1,31 @@
 from abc import ABC, abstractmethod
-from typing import Any, ClassVar, Annotated, Self, final
+from inspect import isabstract
+from typing import Any, ClassVar
 
-from pydantic import BaseModel, Field, model_validator, ConfigDict
-from redis.backoff import FullJitterBackoff, AbstractBackoff
+from pydantic import validate_call
 
-from ._utils import EventPublisher
-from .schemas import WorkerSettings, WorkerEvent, TriggerMode
-from .stream_client import StreamClient
+from .schemas.worker import WorkerSettings
 
 
 class AbstractWorker(ABC):
     settings: ClassVar[WorkerSettings]
 
-    def __init_subclass__(cls, /, init_settings: bool = True, **kwargs) -> None:
+    def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
 
-        if not init_settings:
+        if isabstract(cls) or hasattr(cls, "settings"):
             return
-
-        if not hasattr(cls, '_get_settings') or not callable(cls._get_settings):
-            raise TypeError(f"{cls.__name__} должен реализовать метод _get_settings()")
 
         settings = cls._get_settings()
 
-        if not isinstance(settings, WorkerSettings):
-            raise TypeError(f"_get_settings() должен возвращать WorkerSettings, получено: {type(settings)}")
+        if not isinstance(cls.settings, WorkerSettings):
+            raise TypeError(
+                f"Метод _get_settings() должен возвращать экземпляр WorkerSettings. "
+                f"Получено: {type(cls.settings)}"
+            )
 
         cls.settings = settings
-
-    def __init__(self) -> None:
-        self.__event_publisher: EventPublisher | None = None
-
-    @final
-    def initialize(self, stream_client: StreamClient) -> None:
-        if self.__event_publisher is not None:
-            return
-
-        self.__event_publisher = EventPublisher(stream_client, self.settings.event_publisher_settings)
-
-    @final
-    @property
-    def event_publisher(self) -> EventPublisher:
-        if self.__event_publisher is None:
-            raise RuntimeError('Worker не инициализирован. Вызовите .initialize()')
-
-        return self.__event_publisher
-
-    @final
-    async def _add_event(self, event: WorkerEvent | list[WorkerEvent]) -> None:
-        await self.event_publisher.add(event)
+        cls.__call__ = validate_call(cls.__call__)
 
     @classmethod
     @abstractmethod
@@ -64,30 +41,3 @@ class AbstractWorker(ABC):
     @abstractmethod
     async def __call__(self, **kwargs: Any) -> None:
         raise NotImplementedError
-
-
-@final
-class Process(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    workers: Annotated[list[type[AbstractWorker]], Field(min_length=1)]
-
-    shutdown_timeout: Annotated[float, Field(gt=0)] = 20
-    redis_backoff_strategy: AbstractBackoff = Field(default_factory=lambda: FullJitterBackoff(cap=30.0, base=1.0))
-
-
-@final
-class ProcessGroup(BaseModel):
-    process: Process
-    replicas: Annotated[int, Field(ge=1)] = 1
-
-    @model_validator(mode='after')
-    def _validate_replication_compatibility(self) -> Self:
-        if self.replicas > 1:
-            if len(self.process.workers) > 1:
-                raise ValueError('Репликация поддерживается только для одного воркера')
-
-            if any(isinstance(worker.settings.mode, TriggerMode) for worker in self.process.workers):
-                raise ValueError('Репликация не поддерживается для воркеров с TriggerMode')
-
-        return self
