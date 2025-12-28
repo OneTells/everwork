@@ -2,11 +2,11 @@ from abc import ABC, abstractmethod
 from asyncio import AbstractEventLoop, get_running_loop, Queue
 from concurrent.futures import ThreadPoolExecutor
 from tempfile import TemporaryFile
-from typing import Any, AsyncIterator, Iterable, Self
+from typing import Any, AsyncIterator, final, Iterable, Self
 
 from orjson import dumps, loads
 
-from .schemas.worker import WorkerEvent
+from schemas import WorkerEvent
 
 
 class AbstractEventStorage(ABC):
@@ -17,6 +17,9 @@ class AbstractEventStorage(ABC):
 
     @abstractmethod
     async def read_all(self) -> AsyncIterator[WorkerEvent]:
+        if False:
+            yield
+
         raise NotImplementedError
 
     @abstractmethod
@@ -34,6 +37,7 @@ class AbstractEventStorage(ABC):
         await self.close()
 
 
+@final
 class MemoryEventStorage(AbstractEventStorage):
 
     def __init__(self) -> None:
@@ -56,6 +60,7 @@ class MemoryEventStorage(AbstractEventStorage):
         await self.clear()
 
 
+@final
 class FileEventStorage(AbstractEventStorage):
 
     def __init__(self, *, loop: AbstractEventLoop | None = None, queue_maxsize: int = 1024) -> None:
@@ -70,14 +75,6 @@ class FileEventStorage(AbstractEventStorage):
 
         self._file.write(data)
         self._file.flush()
-
-    def _clear_sync(self) -> None:
-        self._file.seek(0)
-        self._file.truncate(0)
-        self._file.flush()
-
-    def _close_sync(self) -> None:
-        self._file.close()
 
     def _reader_sync(self, queue: Queue[WorkerEvent | None]) -> None:
         self._file.seek(0)
@@ -94,6 +91,14 @@ class FileEventStorage(AbstractEventStorage):
             self._loop.call_soon_threadsafe(queue.put, event)
 
         self._loop.call_soon_threadsafe(queue.put, None)
+
+    def _clear_sync(self) -> None:
+        self._file.seek(0)
+        self._file.truncate(0)
+        self._file.flush()
+
+    def _close_sync(self) -> None:
+        self._file.close()
 
     async def write(self, event: WorkerEvent | Iterable[WorkerEvent]) -> None:
         events = [event] if isinstance(event, WorkerEvent) else event
@@ -124,16 +129,17 @@ class FileEventStorage(AbstractEventStorage):
         self._thread_pool.shutdown(wait=False)
 
 
+@final
 class HybridEventStorage(AbstractEventStorage):
 
     def __init__(self, max_events_in_memory: int = 1024) -> None:
-        self._limit = max_events_in_memory
+        self.max_events_in_memory = max_events_in_memory
 
         self._storage: MemoryEventStorage | FileEventStorage = MemoryEventStorage()
         self._count = 0
 
     async def _switch_to_file_storage(self) -> None:
-        file_storage = FileEventStorage(queue_maxsize=self._limit)
+        file_storage = FileEventStorage(queue_maxsize=self.max_events_in_memory)
 
         async for event in self._storage.read_all():
             await file_storage.write(event)
@@ -150,7 +156,7 @@ class HybridEventStorage(AbstractEventStorage):
         await self._storage.write(events)
         self._count += len(events)
 
-        if self._count >= self._limit and isinstance(self._storage, MemoryEventStorage):
+        if self._count >= self.max_events_in_memory and isinstance(self._storage, MemoryEventStorage):
             await self._switch_to_file_storage()
 
     async def read_all(self) -> AsyncIterator[WorkerEvent]:
@@ -167,12 +173,3 @@ class HybridEventStorage(AbstractEventStorage):
 
     async def close(self) -> None:
         await self._storage.close()
-
-
-class EventCollector:
-
-    def __init__(self, storage: AbstractEventStorage) -> None:
-        self._storage = storage
-
-    async def add(self, event: WorkerEvent | list[WorkerEvent]) -> None:
-        await self._storage.write(event)

@@ -7,14 +7,14 @@ from redis.asyncio.retry import Retry
 from redis.backoff import AbstractBackoff
 from redis.exceptions import RedisError
 
-from ._utils import _wait_for_or_cancel, OperationCancelled
+from .task_utils import OperationCancelled, wait_for_or_cancel
 
 
-class _RetryShutdownException(BaseException):
+class RetryShutdownException(BaseException):
     pass
 
 
-class _GracefulShutdownRetry(Retry):
+class GracefulShutdownRetry(Retry):
 
     def __init__(self, backoff: AbstractBackoff, shutdown_event: asyncio.Event) -> None:
         super().__init__(backoff, 0)
@@ -42,11 +42,11 @@ class _GracefulShutdownRetry(Retry):
                 logger.warning(f'Redis недоступен или не отвечает. Попытка {failures}. Ошибка: {error}')
 
             if self._shutdown_event.is_set():
-                raise _RetryShutdownException()
+                raise RetryShutdownException()
 
             backoff = self._backoff.compute(failures)
 
             try:
-                await _wait_for_or_cancel(asyncio.sleep(backoff), self._shutdown_event)
+                await wait_for_or_cancel(asyncio.sleep(backoff), self._shutdown_event)
             except OperationCancelled:
                 continue

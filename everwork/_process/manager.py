@@ -14,9 +14,10 @@ from redis.asyncio import Redis
 from redis.backoff import AbstractBackoff, FullJitterBackoff
 from redis.exceptions import RedisError
 
-from ._process_supervisor import _ProcessSupervisor
-from ._redis_retry import _GracefulShutdownRetry
-from .worker import Process, ProcessGroup, WorkerSettings
+from _process.supervisor import ProcessSupervisor
+from _utils.redis_retry import GracefulShutdownRetry
+from schemas import Process, ProcessGroup
+from worker import WorkerSettings
 
 
 def _check_environment_compatibility() -> bool:
@@ -161,7 +162,7 @@ class ProcessManager:
             await pipe.execute()
 
     async def __initialize_components(self) -> None:
-        retry = _GracefulShutdownRetry(self.__redis_backoff_strategy, self.__shutdown_event)
+        retry = GracefulShutdownRetry(self.__redis_backoff_strategy, self.__shutdown_event)
 
         try:
             async with Redis.from_url(self.__redis_dsn, retry=retry, protocol=3, decode_responses=True) as redis:
@@ -174,7 +175,7 @@ class ProcessManager:
         async with asyncio.TaskGroup() as task_group:
             for process in self.__processes:
                 task_group.create_task(
-                    _ProcessSupervisor(self.__redis_dsn, process, self.__shutdown_event).run()
+                    ProcessSupervisor(self.__redis_dsn, process, self.__shutdown_event).run()
                 )
 
             logger.info('Наблюдатели процессов запущены')

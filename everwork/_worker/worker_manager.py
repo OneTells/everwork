@@ -6,20 +6,21 @@ import signal
 import time
 import typing
 from contextlib import suppress
+from inspect import signature
 from multiprocessing import connection, Process as BaseProcess
 from types import FrameType
 from typing import Any
 
 from loguru import logger
 from orjson import dumps
-from pydantic import validate_call
 from redis.asyncio import Redis
 
-from ._redis_retry import _GracefulShutdownRetry, _RetryShutdownException
-from ._resource_manager import _ResourceManagerRunner
-from ._utils import _SingleValueChannel, ChannelClosed
-from .stream_client import StreamClient
-from .worker import AbstractWorker, Process
+from _resources.manager import ResourceManagerRunner
+from _utils.single_value_channel import ChannelClosed, SingleValueChannel
+from _utils.redis_retry import GracefulShutdownRetry, RetryShutdownException
+from events import EventCollector, EventPublisher, HybridEventStorage, StreamClient
+from schemas.process import Process
+from worker import AbstractWorker
 
 if typing.TYPE_CHECKING:
     from loguru import Logger
@@ -42,10 +43,10 @@ class _WorkerManager:
         self.__shutdown_event = asyncio.Event()
         self.__is_execute = False
 
-        self.__response_channel = _SingleValueChannel[tuple[str, dict[str, Any]]]()
-        self.__answer_channel = _SingleValueChannel[bool]()
+        self.__response_channel = SingleValueChannel[tuple[str, dict[str, Any]]]()
+        self.__answer_channel = SingleValueChannel[bool]()
 
-        self.__resource_manager_runner = _ResourceManagerRunner(
+        self.__resource_manager_runner = ResourceManagerRunner(
             self.__redis_dsn,
             self.__process,
             self.__response_channel,
@@ -53,6 +54,7 @@ class _WorkerManager:
         )
 
         self.__worker_instances: dict[str, AbstractWorker] = {}
+        self.__worker_parameters: dict[str, list[str]] = {}
 
     def __handle_shutdown_signal(self, *_: Any) -> None:
         loop = asyncio.get_running_loop()
@@ -87,9 +89,7 @@ class _WorkerManager:
 
         self.__pipe_connection.send_bytes(b'')
 
-    async def __init_workers(self, redis: Redis) -> None:
-        stream_client = StreamClient(redis)
-
+    async def __init_workers(self) -> None:
         for worker_cls in self.__process.workers:
             try:
                 worker = worker_cls()
@@ -97,10 +97,8 @@ class _WorkerManager:
                 logger.exception(f'({worker_cls.settings.name}) Ошибка при инициализации: {error}')
                 continue
 
-            worker.initialize(stream_client)
-            worker.__call__ = validate_call(worker.__call__)
-
             self.__worker_instances[worker.settings.name] = worker
+            self.__worker_parameters[worker.settings.name] = list(signature(worker.__call__).parameters.keys())
 
     async def __startup_workers(self) -> None:
         for worker in self.__worker_instances.values():
@@ -116,14 +114,30 @@ class _WorkerManager:
             except Exception as error:
                 logger.exception(f'({worker.settings.name}) Ошибка при shutdown: {error}')
 
-    async def __process_next_event(self) -> bool:
+    async def __process_next_event(
+        self,
+        storage: HybridEventStorage,
+        collector: EventCollector,
+        publisher: EventPublisher
+    ) -> bool:
         try:
-            worker_name, kwargs = await self.__response_channel.receive()
+            worker_name, kwargs_raw = await self.__response_channel.receive()
         except ChannelClosed:
             logger.debug(f'[{self.__worker_names}] Канал закрыт')
             return False
 
         worker = self.__worker_instances[worker_name]
+        worker_params = self.__worker_parameters[worker_name]
+
+        kwargs = {
+            key: value
+            for key, value in kwargs_raw.items()
+            if key in worker_params
+        }
+
+        if 'collector' in worker_params:
+            storage.max_events_in_memory = worker.settings.event_storage.max_events_in_memory
+            kwargs['collector'] = collector
 
         self.__notify_worker_start(worker)
 
@@ -131,33 +145,46 @@ class _WorkerManager:
             self.__is_execute = True
 
             try:
-                async with worker.event_publisher:
-                    await worker.__call__(**kwargs)
+                await worker.__call__(**kwargs)
             finally:
                 self.__is_execute = False
         except (KeyboardInterrupt, asyncio.CancelledError):
             logger.exception(f'({worker_name}) Выполнение прервано по таймауту')
-            self.__answer_channel.send(False)
-        except _RetryShutdownException:
-            logger.exception(f'({worker_name}) Ошибка Redis при сохранении ивентов')
-            self.__answer_channel.send(False)
+            answer = False
         except Exception as error:
             logger.exception(f'({worker_name}) Ошибка при обработке события: {error}')
-            self.__answer_channel.send(False)
+            answer = False
         else:
-            self.__answer_channel.send(True)
+            answer = True
         finally:
             self.__notify_worker_end()
 
+        if answer:
+            try:
+                await publisher.publish(worker.settings.event_publisher.max_batch_size)
+            except RetryShutdownException:
+                logger.exception(f'({worker_name}) Ошибка Redis при сохранении ивентов')
+                answer = False
+
+        self.__answer_channel.send(answer)
         return True
 
-    async def __run_worker_loop(self, redis: Redis) -> None:
-        await self.__init_workers(redis)
+    async def __run_worker_loop(self) -> None:
+        await self.__init_workers()
         await self.__startup_workers()
 
+        retry = GracefulShutdownRetry(self.__process.redis_backoff_strategy, self.__shutdown_event)
+
         try:
-            while await self.__process_next_event():
-                pass
+            async with Redis.from_url(self.__redis_dsn, retry=retry, protocol=3, decode_responses=True) as redis:
+                async with HybridEventStorage() as storage:
+                    collector = EventCollector(storage)
+
+                    stream_client = StreamClient(redis)
+                    publisher = EventPublisher(stream_client, storage)
+
+                    while await self.__process_next_event(storage, collector, publisher):
+                        await storage.clear()
         finally:
             await self.__shutdown_workers()
 
@@ -168,11 +195,8 @@ class _WorkerManager:
         self.__response_channel.bind_to_event_loop(asyncio.get_running_loop())
         self.__resource_manager_runner.start()
 
-        retry = _GracefulShutdownRetry(self.__process.redis_backoff_strategy, self.__shutdown_event)
-
         try:
-            async with Redis.from_url(self.__redis_dsn, retry=retry, protocol=3, decode_responses=True) as redis:
-                await self.__run_worker_loop(redis)
+            await self.__run_worker_loop()
         except Exception as error:
             logger.critical(f'[{self.__worker_names}] Менеджер воркеров завершился с ошибкой: {error}')
 
@@ -200,7 +224,7 @@ def _run_worker_manager(
     logger.remove()
 
 
-class _WorkerManagerRunner:
+class WorkerManagerRunner:
 
     def __init__(self, redis_dsn: str, process: Process) -> None:
         self.__redis_dsn = redis_dsn

@@ -1,15 +1,15 @@
 import time
 from abc import ABC, abstractmethod
-from typing import Annotated, ClassVar
+from typing import Annotated, Any, ClassVar
 
 from loguru import logger
 from orjson import loads
 from pydantic import BaseModel, Field, RedisDsn
 from redis.asyncio import Redis
 
-from .._utils import timer
-from ..schemas import TriggerMode, WorkerSettings
-from ..worker import AbstractWorker
+from schemas import TriggerMode, WorkerSettings
+from utils import timer
+from worker import AbstractWorker
 
 
 class RetentionWorkerConfig(BaseModel):
@@ -19,10 +19,10 @@ class RetentionWorkerConfig(BaseModel):
     max_age_seconds: Annotated[float, Field(gt=0)] = timer(weeks=4)
 
 
-class AbstractRetentionWorker(AbstractWorker, ABC, init_settings=False):
+class AbstractRetentionWorker(AbstractWorker, ABC):
     _config: ClassVar[RetentionWorkerConfig]
 
-    def __init_subclass__(cls, **kwargs) -> None:
+    def __init_subclass__(cls, **kwargs: Any) -> None:
         cls._config = cls._get_config()
         super().__init_subclass__(**kwargs)
 

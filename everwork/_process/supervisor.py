@@ -7,8 +7,8 @@ from orjson import loads
 from pydantic import BaseModel
 from redis.asyncio import Redis
 
-from ._worker_manager import _WorkerManagerRunner
-from .worker import Process
+from _worker.worker_manager import WorkerManagerRunner
+from schemas import Process
 
 
 class _EventStartMessage(BaseModel):
@@ -47,7 +47,7 @@ async def _wait_for_pipe_data(
     return future.done()
 
 
-class _ProcessSupervisor:
+class ProcessSupervisor:
 
     def __init__(self, redis_dsn: str, process: Process, shutdown_event: asyncio.Event) -> None:
         self.__redis_dsn = redis_dsn
@@ -59,7 +59,7 @@ class _ProcessSupervisor:
         self.__pipe_reader_connection: connection.Connection | None = None
         self.__pipe_writer_connection: connection.Connection | None = None
 
-        self.__worker_manager_runner = _WorkerManagerRunner(self.__redis_dsn, self.__process)
+        self.__worker_manager_runner = WorkerManagerRunner(self.__redis_dsn, self.__process)
 
     def __start_worker_manager(self) -> None:
         reader, writer = Pipe(duplex=False)

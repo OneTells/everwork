@@ -3,7 +3,7 @@ from typing import Annotated, final, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from redis.backoff import AbstractBackoff, FullJitterBackoff
 
-from ..schemas.worker import TriggerMode
+from .worker import TriggerMode
 from ..worker import AbstractWorker
 
 

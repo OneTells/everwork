@@ -1,13 +1,15 @@
 from itertools import chain
+from typing import final
 
 from orjson import dumps
 from pydantic_core import to_jsonable_python
 from redis.asyncio import Redis
 from redis.exceptions import NoScriptError
 
-from .schemas import WorkerEvent
+from schemas import WorkerEvent
 
 
+@final
 class StreamClient:
 
     def __init__(self, redis: Redis) -> None:

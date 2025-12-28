@@ -8,16 +8,16 @@ from orjson import loads
 from pydantic import BaseModel
 from redis.asyncio import Redis
 
-from ._utils import _wait_for_or_cancel
-from .schemas import WorkerSettings
+from _utils.task_utils import wait_for_or_cancel
+from schemas import WorkerSettings
 
 
-class _Resources(BaseModel):
+class Resources(BaseModel):
     stream: str
     message_id: str
 
 
-class _AbstractResourceHandler(ABC):
+class AbstractResourceHandler(ABC):
 
     def __init__(self, redis: Redis, worker_settings: WorkerSettings, shutdown_event: asyncio.Event) -> None:
         self._redis = redis
@@ -25,7 +25,7 @@ class _AbstractResourceHandler(ABC):
         self._shutdown_event = shutdown_event
 
         self._uuid = str(uuid4())
-        self.resources: _Resources | None = None
+        self.resources: Resources | None = None
 
         self._streams = {processing_stream: '>' for processing_stream in self._worker_settings.source_streams}
 
@@ -34,7 +34,7 @@ class _AbstractResourceHandler(ABC):
         raise NotImplementedError
 
 
-class _TriggerResourceHandler(_AbstractResourceHandler):
+class TriggerResourceHandler(AbstractResourceHandler):
 
     async def get_kwargs(self) -> dict[str, Any]:
         last_time: str = await self._redis.get(f'workers:{self._worker_settings.name}:last_time')
@@ -43,47 +43,45 @@ class _TriggerResourceHandler(_AbstractResourceHandler):
         timeout = self._worker_settings.mode.execution_interval - (start_time - float(last_time or 0))
 
         if int(timeout * 1000) > 0:
-            data: dict[str, list[tuple[str, dict[str, Any]]]] = await _wait_for_or_cancel(
+            data: dict[str, list[tuple[str, dict[str, Any]]]] = await wait_for_or_cancel(
                 self._redis.xreadgroup(
                     groupname=self._worker_settings.name,
                     consumername=self._uuid,
                     streams=self._streams,
                     count=1,
                     block=int(timeout * 1000)
-                ),
-                self._shutdown_event
+                ), self._shutdown_event
             )
 
             if data:
                 stream, messages = list(data.items())[0]
                 message_id, kwargs = messages[0]
 
-                self.resources = _Resources(stream=stream, message_id=message_id)
+                self.resources = Resources(stream=stream, message_id=message_id)
                 return loads(kwargs['data'])
 
         timeout = max(timeout - (time.time() - start_time), 0)
-        await _wait_for_or_cancel(asyncio.sleep(timeout), self._shutdown_event)
+        await wait_for_or_cancel(asyncio.sleep(timeout), self._shutdown_event)
 
         await self._redis.set(f'workers:{self._worker_settings.name}:last_time', time.time())
         return {}
 
 
-class _ExecutorResourceHandler(_AbstractResourceHandler):
+class ExecutorResourceHandler(AbstractResourceHandler):
 
     async def get_kwargs(self) -> dict[str, Any]:
-        data: dict[str, list[tuple[str, dict[str, Any]]]] = await _wait_for_or_cancel(
+        data: dict[str, list[tuple[str, dict[str, Any]]]] = await wait_for_or_cancel(
             self._redis.xreadgroup(
                 groupname=self._worker_settings.name,
                 consumername=self._uuid,
                 streams=self._streams,
                 count=1,
                 block=0
-            ),
-            self._shutdown_event
+            ), self._shutdown_event
         )
 
         stream, messages = list(data.items())[0]
         message_id, kwargs = messages[0]
 
-        self.resources = _Resources(stream=stream, message_id=message_id)
+        self.resources = Resources(stream=stream, message_id=message_id)
         return loads(kwargs['data'])
