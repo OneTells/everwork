@@ -1,4 +1,5 @@
-from ._process.manager import ProcessManager
+from ._internal.process_manager import ProcessManager
+from .events import EventCollector
 from .schemas import (
     EventPublisherSettings,
     EventStorageSettings,
@@ -9,7 +10,8 @@ from .schemas import (
     WorkerEvent,
     WorkerSettings
 )
-from .worker import AbstractWorker
+from .trigger_utils import timer
+from .workers.base import AbstractWorker
 
 __all__ = (
     'ProcessManager',
@@ -20,6 +22,8 @@ __all__ = (
     'ExecutorMode',
     'TriggerMode',
     'WorkerEvent',
+    'EventCollector',
     'EventStorageSettings',
-    'EventPublisherSettings'
+    'EventPublisherSettings',
+    'timer'
 )

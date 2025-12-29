@@ -17,6 +17,7 @@ class AbstractEventStorage(ABC):
 
     @abstractmethod
     async def read_all(self) -> AsyncIterator[WorkerEvent]:
+        # noinspection PyUnreachableCode
         if False:
             yield
 

@@ -8,8 +8,8 @@ from pydantic import BaseModel, Field, RedisDsn
 from redis.asyncio import Redis
 
 from schemas import TriggerMode, WorkerSettings
-from utils import timer
-from worker import AbstractWorker
+from trigger_utils import timer
+from workers.base import AbstractWorker
 
 
 class RetentionWorkerConfig(BaseModel):

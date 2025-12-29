@@ -2,8 +2,6 @@ from typing import Annotated, Any, final, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .events import EventPublisherSettings, EventStorageSettings
-
 type _StreamName = Annotated[str, Field(min_length=1, max_length=300, pattern=r'^[a-zA-Z0-9_\-:]+$')]
 
 
@@ -17,6 +15,20 @@ class TriggerMode(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     execution_interval: Annotated[float, Field(gt=0)]
+
+
+@final
+class EventStorageSettings(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    max_events_in_memory: Annotated[int, Field(ge=1, le=10000)] = 5000
+
+
+@final
+class EventPublisherSettings(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    max_batch_size: Annotated[int, Field(ge=1, le=10000)] = 500
 
 
 @final

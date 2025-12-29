@@ -5,12 +5,12 @@ from loguru import logger
 from redis.asyncio import Redis
 from redis.exceptions import NoScriptError, RedisError
 
-from _resources.handler import AbstractResourceHandler, ExecutorResourceHandler, TriggerResourceHandler
+from _internal.resource_handler import AbstractResourceHandler, ExecutorResourceHandler, TriggerResourceHandler
 from _utils.redis_retry import RetryShutdownException
 from _utils.single_value_channel import SingleValueChannel
 from _utils.task_utils import OperationCancelled, wait_for_or_cancel
 from schemas import TriggerMode
-from worker import AbstractWorker
+from workers.base import AbstractWorker
 
 
 class ResourceSupervisor:

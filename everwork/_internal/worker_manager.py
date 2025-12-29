@@ -15,12 +15,12 @@ from loguru import logger
 from orjson import dumps
 from redis.asyncio import Redis
 
-from _resources.manager import ResourceManagerRunner
-from _utils.single_value_channel import ChannelClosed, SingleValueChannel
+from _internal.resource_manager import ResourceManagerRunner
 from _utils.redis_retry import GracefulShutdownRetry, RetryShutdownException
-from events import EventCollector, EventPublisher, HybridEventStorage, StreamClient
+from _utils.single_value_channel import ChannelClosed, SingleValueChannel
+from events import EventCollector, EventPublisher, HybridEventStorage
 from schemas.process import Process
-from worker import AbstractWorker
+from workers.base import AbstractWorker
 
 if typing.TYPE_CHECKING:
     from loguru import Logger
@@ -161,7 +161,10 @@ class _WorkerManager:
 
         if answer:
             try:
-                await publisher.publish(worker.settings.event_publisher.max_batch_size)
+                await publisher.push_events_from_async_iterator(
+                    storage.read_all(),
+                    worker.settings.event_publisher.max_batch_size
+                )
             except RetryShutdownException:
                 logger.exception(f'({worker_name}) Ошибка Redis при сохранении ивентов')
                 answer = False
@@ -179,9 +182,7 @@ class _WorkerManager:
             async with Redis.from_url(self.__redis_dsn, retry=retry, protocol=3, decode_responses=True) as redis:
                 async with HybridEventStorage() as storage:
                     collector = EventCollector(storage)
-
-                    stream_client = StreamClient(redis)
-                    publisher = EventPublisher(stream_client, storage)
+                    publisher = EventPublisher(redis)
 
                     while await self.__process_next_event(storage, collector, publisher):
                         await storage.clear()

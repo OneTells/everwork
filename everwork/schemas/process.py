@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from redis.backoff import AbstractBackoff, FullJitterBackoff
 
 from .worker import TriggerMode
-from ..worker import AbstractWorker
+from workers.base import AbstractWorker
 
 
 @final

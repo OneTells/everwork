@@ -5,7 +5,7 @@ from typing import Any
 from loguru import logger
 from redis.asyncio import Redis
 
-from _resources.supervisor import ResourceSupervisor
+from _internal.resource_supervisor import ResourceSupervisor
 from _utils.redis_retry import GracefulShutdownRetry
 from _utils.single_value_channel import SingleValueChannel
 from schemas import Process

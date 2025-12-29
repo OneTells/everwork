@@ -14,10 +14,10 @@ from redis.asyncio import Redis
 from redis.backoff import AbstractBackoff, FullJitterBackoff
 from redis.exceptions import RedisError
 
-from _process.supervisor import ProcessSupervisor
+from _internal.process_supervisor import ProcessSupervisor
 from _utils.redis_retry import GracefulShutdownRetry
 from schemas import Process, ProcessGroup
-from worker import WorkerSettings
+from workers.base import WorkerSettings
 
 
 def _check_environment_compatibility() -> bool:
