@@ -4,7 +4,7 @@ from typing import Annotated, Any, ClassVar
 
 from loguru import logger
 from orjson import loads
-from pydantic import BaseModel, Field, RedisDsn
+from pydantic import BaseModel, ConfigDict, Field, RedisDsn
 from redis.asyncio import Redis
 
 from everwork.schemas import TriggerMode, WorkerSettings
@@ -13,6 +13,8 @@ from .base import AbstractWorker
 
 
 class RetentionWorkerConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     redis_dns: RedisDsn
 
     execution_interval: Annotated[float, Field(gt=0)] = timer(days=1)
