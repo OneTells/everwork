@@ -14,7 +14,7 @@ from redis.asyncio import Redis
 from redis.backoff import AbstractBackoff, FullJitterBackoff
 from redis.exceptions import RedisError
 
-from _internal.process_supervisor import ProcessSupervisor
+from .process_supervisor import ProcessSupervisor
 from _utils.redis_retry import GracefulShutdownRetry
 from schemas import Process, ProcessGroup
 from workers.base import WorkerSettings
