@@ -33,7 +33,7 @@ class EventPublisherSettings(BaseModel):
 
 @final
 class WorkerSettings(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict()
 
     name: _StreamName
     source_streams: set[_StreamName] = Field(default_factory=set, max_length=100)
