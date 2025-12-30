@@ -18,7 +18,7 @@ class AbstractWorker(ABC):
 
         settings = cls._get_settings()
 
-        if not isinstance(cls.settings, WorkerSettings):
+        if not isinstance(settings, WorkerSettings):
             raise TypeError(
                 f"Метод _get_settings() должен возвращать экземпляр WorkerSettings. "
                 f"Получено: {type(cls.settings)}"
