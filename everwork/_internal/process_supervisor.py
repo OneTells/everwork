@@ -7,8 +7,8 @@ from orjson import loads
 from pydantic import BaseModel
 from redis.asyncio import Redis
 
-from _internal.worker_manager import WorkerManagerRunner
 from schemas import Process
+from .worker_manager import WorkerManagerRunner
 
 
 class _EventStartMessage(BaseModel):

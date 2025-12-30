@@ -15,12 +15,12 @@ from loguru import logger
 from orjson import dumps
 from redis.asyncio import Redis
 
-from _internal.resource_manager import ResourceManagerRunner
 from _utils.redis_retry import GracefulShutdownRetry, RetryShutdownException
 from _utils.single_value_channel import ChannelClosed, SingleValueChannel
 from events import EventCollector, EventPublisher, HybridEventStorage
 from schemas.process import Process
 from workers.base import AbstractWorker
+from .resource_manager import ResourceManagerRunner
 
 if typing.TYPE_CHECKING:
     from loguru import Logger

@@ -5,10 +5,10 @@ from typing import Any
 from loguru import logger
 from redis.asyncio import Redis
 
-from _internal.resource_supervisor import ResourceSupervisor
 from _utils.redis_retry import GracefulShutdownRetry
 from _utils.single_value_channel import SingleValueChannel
 from schemas import Process
+from .resource_supervisor import ResourceSupervisor
 
 try:
     from uvloop import new_event_loop
