@@ -6,7 +6,7 @@ from pydantic_core import to_jsonable_python
 from redis.asyncio import Redis
 from redis.exceptions import NoScriptError
 
-from schemas import WorkerEvent
+from everwork.schemas import WorkerEvent
 
 
 @final

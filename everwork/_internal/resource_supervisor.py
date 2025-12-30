@@ -5,11 +5,11 @@ from loguru import logger
 from redis.asyncio import Redis
 from redis.exceptions import NoScriptError, RedisError
 
-from _utils.redis_retry import RetryShutdownException
-from _utils.single_value_channel import SingleValueChannel
-from _utils.task_utils import OperationCancelled, wait_for_or_cancel
-from schemas import TriggerMode
-from workers.base import AbstractWorker
+from everwork.schemas import TriggerMode
+from everwork.workers.base import AbstractWorker
+from .utils.redis_retry import RetryShutdownException
+from .utils.single_value_channel import SingleValueChannel
+from .utils.task_utils import OperationCancelled, wait_for_or_cancel
 from .resource_handler import AbstractResourceHandler, ExecutorResourceHandler, TriggerResourceHandler
 
 

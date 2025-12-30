@@ -6,7 +6,7 @@ from typing import Any, AsyncIterator, final, Iterable, Self
 
 from orjson import dumps, loads
 
-from schemas import WorkerEvent
+from everwork.schemas import WorkerEvent
 
 
 class AbstractEventStorage(ABC):

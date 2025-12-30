@@ -3,8 +3,8 @@ from typing import Annotated, final, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from redis.backoff import AbstractBackoff, FullJitterBackoff
 
+from everwork.workers.base import AbstractWorker
 from .worker import TriggerMode
-from workers.base import AbstractWorker
 
 
 @final

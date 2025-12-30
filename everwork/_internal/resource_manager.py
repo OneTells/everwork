@@ -5,9 +5,9 @@ from typing import Any
 from loguru import logger
 from redis.asyncio import Redis
 
-from _utils.redis_retry import GracefulShutdownRetry
-from _utils.single_value_channel import SingleValueChannel
-from schemas import Process
+from everwork.schemas import Process
+from .utils.redis_retry import GracefulShutdownRetry
+from .utils.single_value_channel import SingleValueChannel
 from .resource_supervisor import ResourceSupervisor
 
 try:

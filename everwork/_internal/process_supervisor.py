@@ -7,7 +7,7 @@ from orjson import loads
 from pydantic import BaseModel
 from redis.asyncio import Redis
 
-from schemas import Process
+from everwork.schemas import Process
 from .worker_manager import WorkerManagerRunner
 
 

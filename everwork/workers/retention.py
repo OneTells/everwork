@@ -7,9 +7,9 @@ from orjson import loads
 from pydantic import BaseModel, Field, RedisDsn
 from redis.asyncio import Redis
 
-from schemas import TriggerMode, WorkerSettings
-from trigger_utils import timer
-from workers.base import AbstractWorker
+from everwork.schemas import TriggerMode, WorkerSettings
+from everwork.trigger_utils import timer
+from .base import AbstractWorker
 
 
 class RetentionWorkerConfig(BaseModel):

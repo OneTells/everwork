@@ -1,6 +1,6 @@
 from typing import final
 
-from schemas.worker import WorkerEvent
+from everwork.schemas import WorkerEvent
 from .storage import AbstractEventStorage
 
 

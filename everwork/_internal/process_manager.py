@@ -14,10 +14,10 @@ from redis.asyncio import Redis
 from redis.backoff import AbstractBackoff, FullJitterBackoff
 from redis.exceptions import RedisError
 
+from everwork.schemas import Process, ProcessGroup
+from everwork.workers.base import WorkerSettings
 from .process_supervisor import ProcessSupervisor
-from _utils.redis_retry import GracefulShutdownRetry
-from schemas import Process, ProcessGroup
-from workers.base import WorkerSettings
+from .utils.redis_retry import GracefulShutdownRetry
 
 
 def _check_environment_compatibility() -> bool:

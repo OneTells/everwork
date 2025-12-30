@@ -4,7 +4,7 @@ from typing import Any, ClassVar
 
 from pydantic import validate_call
 
-from schemas.worker import WorkerSettings
+from everwork.schemas.worker import WorkerSettings
 
 
 class AbstractWorker(ABC):
