@@ -40,7 +40,7 @@ class AbstractRetentionWorker(AbstractWorker, ABC):
             mode=TriggerMode(execution_interval=cls._config.execution_interval)
         )
 
-    async def __trim_streams(self, redis: Redis, streams: set[str]) -> dict[str, int]:
+    async def _trim_streams(self, redis: Redis, streams: set[str]) -> dict[str, int]:
         threshold_id = int(time.time() - self._config.max_age_seconds) * 1000
 
         async with redis.pipeline() as pipe:
@@ -53,7 +53,7 @@ class AbstractRetentionWorker(AbstractWorker, ABC):
         return dict(zip(streams, results[1::2]))
 
     @staticmethod
-    async def __collect_active_streams(redis: Redis) -> set[str]:
+    async def _collect_active_streams(redis: Redis) -> set[str]:
         managers: set[str] = await redis.smembers('managers')
 
         if not managers:
@@ -80,7 +80,7 @@ class AbstractRetentionWorker(AbstractWorker, ABC):
         return active_streams
 
     @staticmethod
-    async def __load_remove_streams_script(redis: Redis) -> str:
+    async def _load_remove_streams_script(redis: Redis) -> str:
         return await redis.script_load(
             """
             for _, stream_key in ipairs(KEYS) do
@@ -92,28 +92,28 @@ class AbstractRetentionWorker(AbstractWorker, ABC):
             """
         )
 
-    async def __cleanup_streams(self, redis: Redis) -> None:
+    async def _cleanup_streams(self, redis: Redis) -> None:
         all_streams: set[str] = await redis.smembers('streams')
 
         if not all_streams:
             logger.debug(f'({self.settings.name}) Нет стримов для очистки')
             return
 
-        stream_lengths = await self.__trim_streams(redis, all_streams)
+        stream_lengths = await self._trim_streams(redis, all_streams)
         empty_streams = [stream for stream, length in stream_lengths.items() if length == 0]
 
         if not empty_streams:
             logger.debug(f'({self.settings.name}) Нет пустых стримов для удаления')
             return
 
-        active_streams = await self.__collect_active_streams(redis)
+        active_streams = await self._collect_active_streams(redis)
         streams_to_delete = set(empty_streams) - active_streams
 
         if not streams_to_delete:
             logger.debug(f'({self.settings.name}) Нет неактивных пустых стримов для удаления')
             return
 
-        script_sha = await self.__load_remove_streams_script(redis)
+        script_sha = await self._load_remove_streams_script(redis)
         await redis.evalsha(script_sha, len(streams_to_delete), *streams_to_delete)
 
         logger.info(
@@ -128,7 +128,7 @@ class AbstractRetentionWorker(AbstractWorker, ABC):
         start_time = time.perf_counter()
 
         async with Redis.from_url(self._config.redis_dns.encoded_string(), protocol=3, decode_responses=True) as redis:
-            await self.__cleanup_streams(redis)
+            await self._cleanup_streams(redis)
 
         logger.info(
             f'({self.settings.name}) Очистка стримов завершена. '

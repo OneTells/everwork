@@ -1,5 +1,5 @@
-from ._internal.process_manager import ProcessManager
 from .events import EventCollector
+from .process_manager import ProcessManager
 from .schemas import (
     EventPublisherSettings,
     EventStorageSettings,
