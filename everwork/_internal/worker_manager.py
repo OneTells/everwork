@@ -7,7 +7,7 @@ import time
 import typing
 from contextlib import suppress
 from inspect import signature
-from multiprocessing import connection, Process as BaseProcess
+from multiprocessing import connection, Pipe, Process as BaseProcess
 from types import FrameType
 from typing import Any
 
@@ -18,9 +18,10 @@ from redis.asyncio import Redis
 from everwork.events import EventCollector, EventPublisher, HybridEventStorage
 from everwork.schemas import Process
 from everwork.workers.base import AbstractWorker
+from .process_supervisor.redis_task_checker import RedisTaskChecker
+from .resource_manager import ResourceManagerRunner
 from .utils.redis_retry import GracefulShutdownRetry, RetryShutdownException
 from .utils.single_value_channel import ChannelClosed, SingleValueChannel
-from .resource_manager import ResourceManagerRunner
 
 if typing.TYPE_CHECKING:
     from loguru import Logger
@@ -225,75 +226,92 @@ def _run_worker_manager(
     logger.remove()
 
 
-class WorkerManagerRunner:
+class WorkerProcess:
 
     def __init__(self, redis_dsn: str, process: Process) -> None:
-        self.__redis_dsn = redis_dsn
-        self.__process = process
+        self._redis_dsn = redis_dsn
+        self._process = process
 
-        self.__worker_names = ', '.join(worker.settings.name for worker in process.workers)
+        self._worker_names = ', '.join(worker.settings.name for worker in process.workers)
 
-        self.__base_process: BaseProcess | None = None
+        self._base_process: BaseProcess | None = None
+        self._pipe_reader: connection.Connection | None = None
+        self._pipe_writer: connection.Connection | None = None
 
-    def is_close(self) -> bool:
-        return self.__base_process is None
+        self._redis_task_checker = RedisTaskChecker(self._redis_dsn, self._process)
 
-    def start(self, pipe_writer_connection: connection.Connection) -> None:
-        if self.__base_process is not None:
+    @property
+    def pipe_reader(self) -> connection.Connection:
+        return self._pipe_reader
+
+    async def start(self) -> None:
+        if self._base_process is not None:
             raise ValueError('Нельзя запустить менеджер воркеров повторно, пока он запущен')
 
-        self.__base_process = BaseProcess(
+        await self._redis_task_checker.check_for_hung_tasks()
+
+        self._pipe_reader, self._pipe_writer = Pipe(duplex=False)
+
+        self._base_process = BaseProcess(
             target=_run_worker_manager,
             kwargs={
-                'redis_dsn': self.__redis_dsn,
-                'process': self.__process,
-                'pipe_connection': pipe_writer_connection,
+                'redis_dsn': self._redis_dsn,
+                'process': self._process,
+                'pipe_connection': self._pipe_writer,
                 'logger_': logger
             }
         )
-        self.__base_process.start()
+        self._base_process.start()
 
-    def close(self) -> None:
-        if self.__base_process is None:
+    async def close(self) -> None:
+        if self._base_process is None:
             return
 
-        if self.__base_process.is_alive():
-            logger.debug(f'[{self.__worker_names}] Подан сигнал о закрытии процесса')
-            os.kill(self.__base_process.pid, signal.SIGUSR1)
+        if self._base_process.is_alive():
+            logger.debug(f'[{self._worker_names}] Подан сигнал о закрытии процесса')
+            os.kill(self._base_process.pid, signal.SIGUSR1)
 
-        end_time = time.time() + max(worker.settings.execution_timeout for worker in self.__process.workers)
-
-        while True:
-            if time.time() > end_time:
-                break
-
-            if not self.__base_process.is_alive():
-                break
-
-            time.sleep(0.001)
-
-        if self.__base_process.is_alive():
-            logger.debug(f'[{self.__worker_names}] Подан сигнал о немедленном закрытии процесса')
-            os.kill(self.__base_process.pid, signal.SIGTERM)
-
-        end_time = time.time() + self.__process.shutdown_timeout
+        end_time = time.time() + max(worker.settings.execution_timeout for worker in self._process.workers)
 
         while True:
             if time.time() > end_time:
                 break
 
-            if not self.__base_process.is_alive():
+            if not self._base_process.is_alive():
                 break
 
-            time.sleep(0.001)
+            await asyncio.sleep(0.001)
 
-        if self.__base_process.is_alive():
+        if self._base_process.is_alive():
+            logger.debug(f'[{self._worker_names}] Подан сигнал о немедленном закрытии процесса')
+            os.kill(self._base_process.pid, signal.SIGTERM)
+
+        end_time = time.time() + self._process.shutdown_timeout
+
+        while True:
+            if time.time() > end_time:
+                break
+
+            if not self._base_process.is_alive():
+                break
+
+            await asyncio.sleep(0.001)
+
+        if self._base_process.is_alive():
             logger.critical(
-                f'[{self.__worker_names}] Не удалось мягко завершить процесс, отправлен сигнал SIGKILL. '
+                f'[{self._worker_names}] Не удалось мягко завершить процесс, отправлен сигнал SIGKILL. '
                 f'Возможно зависание воркеров, необходимо перезапустить менеджер'
             )
-            os.kill(self.__base_process.pid, signal.SIGKILL)
+            os.kill(self._base_process.pid, signal.SIGKILL)
 
-        self.__base_process.join()
-        self.__base_process.close()
-        self.__base_process = None
+        self._base_process.join()
+        self._base_process.close()
+        self._base_process = None
+
+        self._pipe_reader.close()
+        self._pipe_writer.close()
+
+        self._pipe_reader = None
+        self._pipe_writer = None
+
+        await self._redis_task_checker.check_for_hung_tasks()
