@@ -6,7 +6,7 @@ from orjson import loads
 from pydantic import BaseModel
 
 from everwork._internal.process_supervisor.utils import wait_for_pipe_data
-from everwork._internal.worker_manager import WorkerProcess
+from everwork._internal.worker_executor.worker_executor import WorkerProcess
 from everwork.schemas import Process
 
 
