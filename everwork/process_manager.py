@@ -7,10 +7,10 @@ from pydantic import AfterValidator, ConfigDict, RedisDsn, validate_call
 from redis.backoff import AbstractBackoff, FullJitterBackoff
 
 from everwork.schemas import Process, ProcessGroup
-from ._internal.process.redis_initializer import RedisInitializer
-from ._internal.process.signal_handler import SignalHandler
-from ._internal.process.utils import check_environment, expand_groups, validate_worker_names
-from ._internal.process_supervisor import ProcessSupervisor
+from ._internal.process_manager.redis_initializer import RedisInitializer
+from ._internal.process_manager.signal_handler import SignalHandler
+from ._internal.process_manager.utils import check_environment, expand_groups, validate_worker_names
+from ._internal.process_supervisor.process_supervisor import ProcessSupervisor
 
 
 @final
