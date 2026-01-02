@@ -1,4 +1,6 @@
 import asyncio
+from asyncio import get_running_loop
+from threading import Lock
 
 
 class ChannelClosed(Exception):
@@ -8,58 +10,54 @@ class ChannelClosed(Exception):
 class SingleValueChannel[T]:
 
     def __init__(self) -> None:
-        self.__loop: asyncio.AbstractEventLoop | None = None
-        self.__pending_data: T | None = None
-        self.__waiter: asyncio.Future[bool] | None = None
-        self.__is_closed = False
-
-    def __notify_waiter(self) -> None:
-        if (future := self.__waiter) is None:
-            return
-
-        self.__waiter = None
-        if not future.done():
-            future.set_result(True)
-
-    def __cancel_waiter(self) -> None:
-        future = self.__waiter
-
-        if not future or future.done():
-            return
-
-        future.cancel()
-
-    def bind_to_event_loop(self, loop: asyncio.AbstractEventLoop) -> None:
-        self.__loop = loop
-
-    def send(self, data: T) -> None:
-        self.__pending_data = data
-        self.__loop.call_soon_threadsafe(self.__notify_waiter)  # type: ignore
+        self._lock = Lock()
+        self._is_closed = False
+        self._data: T | None = None
+        self._waiter: asyncio.Future[bool] | None = None
 
     async def receive(self) -> T:
-        if self.__is_closed:
-            raise ChannelClosed
+        with self._lock:
+            if self._is_closed:
+                raise ChannelClosed()
 
-        if (item := self.__pending_data) is not None:
-            self.__pending_data = None
-            return item
+            if (item := self._data) is not None:
+                self._data = None
+                return item
 
-        future = self.__loop.create_future()
-        self.__waiter = future
+            loop = get_running_loop()
+            self._waiter = loop.create_future()
 
         try:
-            await future
+            await self._waiter
         except asyncio.CancelledError:
-            self.__waiter = None
-            raise ChannelClosed
+            self._waiter = None
+            raise ChannelClosed()
 
-        item = self.__pending_data
-        self.__pending_data = None
+        self._waiter = None
+
+        item = self._data
+        self._data = None
         return item
 
-    def close(self) -> None:
-        if self.__is_closed:
-            return
+    def send(self, data: T) -> None:
+        with self._lock:
+            self._data = data
 
-        self.__is_closed = True
-        self.__loop.call_soon_threadsafe(self.__cancel_waiter)  # type: ignore
+            if self._waiter is None:
+                return
+
+            loop = self._waiter.get_loop()
+            loop.call_soon_threadsafe(lambda: None if self._waiter.done() else self._waiter.set_result(True))  # type: ignore
+
+    def close(self) -> None:
+        with self._lock:
+            if self._is_closed:
+                return
+
+            self._is_closed = True
+
+            if self._waiter is None:
+                return
+
+            loop = self._waiter.get_loop()
+            loop.call_soon_threadsafe(lambda: None if self._waiter.done() else self._waiter.cancel())  # type: ignore

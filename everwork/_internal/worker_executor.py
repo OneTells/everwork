@@ -234,7 +234,6 @@ class WorkerExecutor:
 
         self._signal_handler.register()
 
-        self._response_channel.bind_to_event_loop(asyncio.get_running_loop())
         self._resource_manager.start()
 
         await self._worker_registry.initialize()

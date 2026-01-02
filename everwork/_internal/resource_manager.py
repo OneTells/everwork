@@ -53,8 +53,6 @@ class ResourceCoordinator:
     async def run(self) -> None:
         logger.debug(f'[{self._worker_names}] Координатор ресурсов запущен')
 
-        self._answer_channel.bind_to_event_loop(asyncio.get_running_loop())
-
         retry = GracefulShutdownRetry(self._process.redis_backoff_strategy, self._shutdown_event)
         lock = asyncio.Lock()
 
