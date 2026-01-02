@@ -5,7 +5,7 @@ from typing import Any
 from loguru import logger
 from redis.asyncio import Redis
 
-from everwork._internal.resource.resource_supervisor import ResourceSupervisor
+from everwork._internal.resource_supervisor import ResourceSupervisor
 from everwork._internal.utils.redis_retry import GracefulShutdownRetry
 from everwork._internal.utils.single_value_channel import SingleValueChannel
 from everwork.schemas import Process

@@ -5,7 +5,7 @@ from loguru import logger
 from redis.asyncio import Redis
 from redis.exceptions import NoScriptError
 
-from everwork._internal.resource.resource_handler import (
+from everwork._internal.resource_handler import (
     AbstractResourceHandler,
     ExecutorResourceHandler,
     Resources,
