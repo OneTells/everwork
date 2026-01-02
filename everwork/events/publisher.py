@@ -36,7 +36,7 @@ class EventPublisher:
         if self._script is None:
             await self._load_push_event_script()
 
-        args = list(chain.from_iterable((event.target_stream, dumps(to_jsonable_python(event.data))) for event in events))
+        args = list(chain.from_iterable((event.stream, dumps(to_jsonable_python(event.data))) for event in events))
 
         try:
             await self._redis.evalsha(self._script, 0, *args)

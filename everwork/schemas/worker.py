@@ -55,5 +55,5 @@ class WorkerSettings(BaseModel):
 class WorkerEvent(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    target_stream: _StreamName
+    stream: _StreamName
     data: dict[str, Any] = Field(default_factory=dict)
