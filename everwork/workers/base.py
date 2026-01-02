@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from inspect import isabstract
 from typing import Any, ClassVar
 
-from pydantic import validate_call
+from pydantic import ConfigDict, validate_call
 
 from everwork.schemas.worker import WorkerSettings
 
@@ -25,7 +25,7 @@ class AbstractWorker(ABC):
             )
 
         cls.settings = settings
-        cls.__call__ = validate_call(cls.__call__)
+        cls.__call__ = validate_call(config=ConfigDict(arbitrary_types_allowed=True))(cls.__call__)
 
     @classmethod
     @abstractmethod
