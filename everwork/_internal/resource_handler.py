@@ -44,7 +44,7 @@ class TriggerResourceHandler(AbstractResourceHandler):
         timeout = self._worker_settings.mode.execution_interval - (start_time - float(last_time or 0))
 
         if int(timeout * 1000) > 0:
-            data: dict[str, list[tuple[str, dict[str, Any]]]] = await wait_for_or_cancel(
+            data: dict[str, list[list[tuple[str, dict[str, str]]]]] = await wait_for_or_cancel(
                 self._redis.xreadgroup(
                     groupname=self._worker_settings.name,
                     consumername=self._uuid,
@@ -56,7 +56,7 @@ class TriggerResourceHandler(AbstractResourceHandler):
 
             if data:
                 stream, messages = list(data.items())[0]
-                message_id, kwargs = messages[0]
+                message_id, kwargs = messages[0][0]
 
                 self.resources = Resources(stream=stream, message_id=message_id)
                 return loads(kwargs['data'])
@@ -71,7 +71,7 @@ class TriggerResourceHandler(AbstractResourceHandler):
 class ExecutorResourceHandler(AbstractResourceHandler):
 
     async def get_kwargs(self) -> dict[str, Any]:
-        data: dict[str, list[tuple[str, dict[str, Any]]]] = await wait_for_or_cancel(
+        data: dict[str, list[list[tuple[str, dict[str, str]]]]] = await wait_for_or_cancel(
             self._redis.xreadgroup(
                 groupname=self._worker_settings.name,
                 consumername=self._uuid,
@@ -81,10 +81,8 @@ class ExecutorResourceHandler(AbstractResourceHandler):
             ), self._shutdown_event
         )
 
-        logger.debug(f'[{self._worker_settings.name}] Получено сообщение {data}')
-
         stream, messages = list(data.items())[0]
-        message_id, kwargs = messages[0]
+        message_id, kwargs = messages[0][0]
 
         self.resources = Resources(stream=stream, message_id=message_id)
         return loads(kwargs['data'])
