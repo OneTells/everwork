@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 from uuid import uuid4
 
+from loguru import logger
 from orjson import loads
 from pydantic import BaseModel
 from redis.asyncio import Redis
@@ -79,6 +80,8 @@ class ExecutorResourceHandler(AbstractResourceHandler):
                 block=0
             ), self._shutdown_event
         )
+
+        logger.debug(f'[{self._worker_settings.name}] Получено сообщение {data}')
 
         stream, messages = list(data.items())[0]
         message_id, kwargs = messages[0]
