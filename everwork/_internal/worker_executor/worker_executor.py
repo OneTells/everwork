@@ -15,7 +15,6 @@ from loguru import logger
 from orjson import dumps
 from redis.asyncio import Redis
 
-from everwork._internal.process_supervisor.redis_task_checker import RedisTaskChecker
 from everwork._internal.resource_manager import ResourceManagerRunner
 from everwork._internal.utils.redis_retry import GracefulShutdownRetry, RetryShutdownException
 from everwork._internal.utils.single_value_channel import ChannelClosed, SingleValueChannel
@@ -38,17 +37,17 @@ class SignalHandler:
         self,
         shutdown_event: asyncio.Event,
         is_executing_callback: typing.Callable[[], bool],
-        resource_manager_runner: ResourceManagerRunner,
+        on_resource_runner_cancel: typing.Callable[[], None],
     ) -> None:
         self._shutdown_event = shutdown_event
         self._is_executing_callback = is_executing_callback
-        self._resource_manager_runner = resource_manager_runner
+        self._on_resource_runner_cancel = on_resource_runner_cancel
 
     def _handle_shutdown_signal(self, *_: Any) -> None:
         loop = asyncio.get_running_loop()
         loop.call_soon_threadsafe(self._shutdown_event.set)  # type: ignore
 
-        self._resource_manager_runner.cancel()
+        self._on_resource_runner_cancel()
 
     def _handle_terminate_signal(self, signal_num: int, frame: FrameType | None) -> None:
         if not self._is_executing_callback():
@@ -203,7 +202,9 @@ class WorkerExecutor:
             self._response_channel,
             self._answer_channel
         )
+
         self._worker_registry = WorkerRegistry(process)
+
         self._event_processor = EventProcessor(
             self._worker_registry,
             self._pipe_connection,
@@ -214,7 +215,7 @@ class WorkerExecutor:
         self._signal_handler = SignalHandler(
             self._shutdown_event,
             self._event_processor.is_executing,
-            self._resource_manager_runner
+            self._resource_manager_runner.cancel
         )
 
     async def _run_worker_loop(self) -> None:
@@ -282,8 +283,6 @@ class WorkerProcess:
         self._pipe_reader: connection.Connection | None = None
         self._pipe_writer: connection.Connection | None = None
 
-        self._redis_task_checker = RedisTaskChecker(self._redis_dsn, self._process)
-
     @property
     def pipe_reader(self) -> connection.Connection:
         if self._pipe_reader is None:
@@ -294,8 +293,6 @@ class WorkerProcess:
     async def start(self) -> None:
         if self._base_process is not None:
             raise ValueError('Нельзя запустить менеджер воркеров повторно, пока он запущен')
-
-        await self._redis_task_checker.check_for_hung_tasks()
 
         self._pipe_reader, self._pipe_writer = Pipe(duplex=False)
 
@@ -361,5 +358,3 @@ class WorkerProcess:
 
         self._pipe_reader = None
         self._pipe_writer = None
-
-        await self._redis_task_checker.check_for_hung_tasks()

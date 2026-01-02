@@ -5,6 +5,7 @@ from loguru import logger
 from orjson import loads
 from pydantic import BaseModel
 
+from everwork._internal.process_supervisor.redis_task_checker import RedisTaskChecker
 from everwork._internal.process_supervisor.utils import wait_for_pipe_data
 from everwork._internal.worker_executor.worker_executor import WorkerProcess
 from everwork.schemas import Process
@@ -25,10 +26,13 @@ class ProcessSupervisor:
         self._worker_names = ', '.join(worker.settings.name for worker in process.workers)
         self._worker_process = WorkerProcess(self._redis_dsn, self._process)
 
+        self._redis_task_checker = RedisTaskChecker(self._redis_dsn, self._process)
+
     async def _restart_worker_manager(self, worker_name: str) -> None:
         logger.warning(f'[{self._worker_names}] Воркер {worker_name} завис. Начат перезапуск процесса')
 
         await self._worker_process.close()
+        await self._redis_task_checker.check_for_hung_tasks()
 
         if self._shutdown_event.is_set():
             logger.warning(f'[{self._worker_names}] Процесс завершен')
@@ -60,6 +64,7 @@ class ProcessSupervisor:
     async def run(self) -> None:
         logger.debug(f'[{self._worker_names}] Запущен наблюдатель процесса')
 
+        await self._redis_task_checker.check_for_hung_tasks()
         await self._worker_process.start()
 
         try:
@@ -70,5 +75,6 @@ class ProcessSupervisor:
         logger.debug(f'[{self._worker_names}] Начато завершение наблюдателя процесса')
 
         await self._worker_process.close()
+        await self._redis_task_checker.check_for_hung_tasks()
 
         logger.debug(f'[{self._worker_names}] Наблюдатель процесса завершил работу')
