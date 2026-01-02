@@ -56,7 +56,7 @@ class ProcessManager:
         if not check_environment():
             return
 
-        logger.info('Менеджер процессов запушен')
+        logger.info('Менеджер процессов запущен')
 
         shutdown_event = asyncio.Event()
         SignalHandler(shutdown_event).register()

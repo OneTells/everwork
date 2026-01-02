@@ -8,8 +8,8 @@ from orjson import loads
 from pydantic import BaseModel
 from redis.asyncio import Redis
 
+from everwork._internal.utils.task_utils import wait_for_or_cancel
 from everwork.schemas import WorkerSettings
-from .utils.task_utils import wait_for_or_cancel
 
 
 class Resources(BaseModel):

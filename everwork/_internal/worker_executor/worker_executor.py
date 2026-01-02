@@ -15,7 +15,7 @@ from loguru import logger
 from orjson import dumps
 from redis.asyncio import Redis
 
-from everwork._internal.resource_manager import ResourceManagerRunner
+from everwork._internal.resource_manager import ResourceManager
 from everwork._internal.utils.redis_retry import GracefulShutdownRetry, RetryShutdownException
 from everwork._internal.utils.single_value_channel import ChannelClosed, SingleValueChannel
 from everwork.events import EventCollector, EventPublisher, HybridEventStorage
@@ -196,7 +196,7 @@ class WorkerExecutor:
         self._response_channel = SingleValueChannel[tuple[str, dict[str, Any]]]()
         self._answer_channel = SingleValueChannel[bool]()
 
-        self._resource_manager_runner = ResourceManagerRunner(
+        self._resource_manager = ResourceManager(
             self._redis_dsn,
             self._process,
             self._response_channel,
@@ -215,7 +215,7 @@ class WorkerExecutor:
         self._signal_handler = SignalHandler(
             self._shutdown_event,
             self._event_processor.is_executing,
-            self._resource_manager_runner.cancel
+            self._resource_manager.cancel
         )
 
     async def _run_worker_loop(self) -> None:
@@ -230,12 +230,12 @@ class WorkerExecutor:
                     await storage.clear()
 
     async def run(self) -> None:
-        logger.debug(f'[{self._worker_names}] Менеджер воркеров запущен')
+        logger.debug(f'[{self._worker_names}] Исполнитель воркеров запущен')
 
         self._signal_handler.register()
 
         self._response_channel.bind_to_event_loop(asyncio.get_running_loop())
-        self._resource_manager_runner.start()
+        self._resource_manager.start()
 
         await self._worker_registry.initialize()
         await self._worker_registry.startup_all()
@@ -243,32 +243,16 @@ class WorkerExecutor:
         try:
             await self._run_worker_loop()
         except Exception as error:
-            logger.critical(f'[{self._worker_names}] Менеджер воркеров завершился с ошибкой: {error}')
+            logger.critical(f'[{self._worker_names}] Исполнитель воркеров завершился с ошибкой: {error}')
 
         await self._worker_registry.shutdown_all()
 
-        logger.debug(f'[{self._worker_names}] Менеджер воркеров начал завершение')
+        logger.debug(f'[{self._worker_names}] Исполнитель воркеров начал завершение')
 
-        self._resource_manager_runner.join()
+        self._resource_manager.join()
         self._pipe_connection.close()
 
-        logger.debug(f'[{self._worker_names}] Менеджер воркеров завершил работу')
-
-
-def run_worker_executor(
-    redis_dsn: str,
-    process: Process,
-    pipe_connection: connection.Connection,
-    logger_: Logger
-) -> None:
-    logger.remove()
-    logger_.reinstall()
-
-    with suppress(KeyboardInterrupt):
-        with asyncio.Runner(loop_factory=new_event_loop) as runner:
-            runner.run(WorkerExecutor(redis_dsn, process, pipe_connection).run())
-
-    logger.remove()
+        logger.debug(f'[{self._worker_names}] Исполнитель воркеров завершил работу')
 
 
 class WorkerProcess:
@@ -286,7 +270,7 @@ class WorkerProcess:
     @property
     def pipe_reader(self) -> connection.Connection:
         if self._pipe_reader is None:
-            raise RuntimeError("Процесс не запушен")
+            raise RuntimeError("Процесс не запущен")
 
         return self._pipe_reader
 
@@ -297,7 +281,7 @@ class WorkerProcess:
         self._pipe_reader, self._pipe_writer = Pipe(duplex=False)
 
         self._base_process = BaseProcess(
-            target=run_worker_executor,
+            target=self._run,
             kwargs={
                 'redis_dsn': self._redis_dsn,
                 'process': self._process,
@@ -358,3 +342,19 @@ class WorkerProcess:
 
         self._pipe_reader = None
         self._pipe_writer = None
+
+    @staticmethod
+    def _run(
+        redis_dsn: str,
+        process: Process,
+        pipe_connection: connection.Connection,
+        logger_: Logger
+    ) -> None:
+        logger.remove()
+        logger_.reinstall()
+
+        with suppress(KeyboardInterrupt):
+            with asyncio.Runner(loop_factory=new_event_loop) as runner:
+                runner.run(WorkerExecutor(redis_dsn, process, pipe_connection).run())
+
+        logger.remove()
