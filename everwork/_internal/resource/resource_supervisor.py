@@ -5,8 +5,13 @@ from loguru import logger
 from redis.asyncio import Redis
 from redis.exceptions import NoScriptError
 
-from everwork._internal.resource_handler import AbstractResourceHandler, ExecutorResourceHandler, Resources, \
+from everwork import WorkerSettings
+from everwork._internal.resource.resource_handler import (
+    AbstractResourceHandler,
+    ExecutorResourceHandler,
+    Resources,
     TriggerResourceHandler
+)
 from everwork._internal.utils.redis_retry import RetryShutdownException
 from everwork._internal.utils.single_value_channel import SingleValueChannel
 from everwork._internal.utils.task_utils import OperationCancelled, wait_for_or_cancel
@@ -88,7 +93,26 @@ class RedisResourceProcessor:
         if resources is None:
             return
 
+        logger.warning(
+            f'({self._worker.settings.name}) Не удалось обработать сообщение из потока. '
+            f'Поток: {resources.stream}. '
+            f'ID сообщения: {resources.message_id}'
+        )
+
         await self._redis.xack(resources.stream, self._worker.settings.name, resources.message_id)
+
+
+def get_resource_handler(
+    worker_settings: WorkerSettings,
+    redis: Redis,
+    shutdown_event: asyncio.Event
+) -> AbstractResourceHandler:
+    if isinstance(worker_settings.mode, TriggerMode):
+        handler_cls = TriggerResourceHandler
+    else:
+        handler_cls = ExecutorResourceHandler
+
+    return handler_cls(redis, worker_settings, shutdown_event)
 
 
 class ResourceSupervisor:
@@ -109,20 +133,16 @@ class ResourceSupervisor:
         self._lock = lock
         self._shutdown_event = shutdown_event
 
-        self._resource_handler = self.__create_resource_handler()
+        self._resource_handler = get_resource_handler(
+            self._worker.settings,
+            self._redis,
+            self._shutdown_event
+        )
 
         self._state_manager = WorkerStateManager(self._redis, self._worker, self._shutdown_event)
         self._resource_processor = RedisResourceProcessor(self._redis, self._worker)
 
-    def __create_resource_handler(self) -> AbstractResourceHandler:
-        if isinstance(self._worker.settings.mode, TriggerMode):
-            handler_cls = TriggerResourceHandler
-        else:
-            handler_cls = ExecutorResourceHandler
-
-        return handler_cls(self._redis, self._worker.settings, self._shutdown_event)
-
-    async def __process_worker_messages(self) -> None:
+    async def _process_worker_messages(self) -> None:
         while not self._shutdown_event.is_set():
             if not await self._state_manager.wait_until_enabled():
                 continue
@@ -151,13 +171,6 @@ class ResourceSupervisor:
                     await self._resource_processor.handle_success(self._resource_handler.resources)
                     continue
 
-                if self._resource_handler.resources is not None:
-                    logger.warning(
-                        f'({self._worker.settings.name}) Не удалось обработать сообщение из потока. '
-                        f'Поток: {self._resource_handler.resources.stream}. '
-                        f'ID сообщения: {self._resource_handler.resources.message_id}'
-                    )
-
                 await self._resource_processor.handle_error(self._resource_handler.resources)
 
     async def run(self) -> None:
@@ -172,7 +185,7 @@ class ResourceSupervisor:
         logger.debug(f'({self._worker.settings.name}) Скрипты зарегистрированы')
 
         try:
-            await self.__process_worker_messages()
+            await self._process_worker_messages()
         except RetryShutdownException:
             logger.exception(f'({self._worker.settings.name}) Redis недоступен при мониторинге ресурсов')
 
