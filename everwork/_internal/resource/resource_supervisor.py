@@ -5,7 +5,6 @@ from loguru import logger
 from redis.asyncio import Redis
 from redis.exceptions import NoScriptError
 
-from everwork import WorkerSettings
 from everwork._internal.resource.resource_handler import (
     AbstractResourceHandler,
     ExecutorResourceHandler,
@@ -15,7 +14,7 @@ from everwork._internal.resource.resource_handler import (
 from everwork._internal.utils.redis_retry import RetryShutdownException
 from everwork._internal.utils.single_value_channel import SingleValueChannel
 from everwork._internal.utils.task_utils import OperationCancelled, wait_for_or_cancel
-from everwork.schemas import TriggerMode
+from everwork.schemas import TriggerMode, WorkerSettings
 from everwork.workers.base import AbstractWorker
 
 
