@@ -1,4 +1,4 @@
-from ._internal.process_manager import ProcessManager
+from everwork._internal.process.process_manager import ProcessManager
 from .events import EventCollector
 from .schemas import (
     EventPublisherSettings,

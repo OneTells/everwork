@@ -4,7 +4,6 @@ from abc import ABC, abstractmethod
 from typing import Any
 from uuid import uuid4
 
-from loguru import logger
 from orjson import loads
 from pydantic import BaseModel
 from redis.asyncio import Redis

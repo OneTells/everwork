@@ -15,7 +15,7 @@ from loguru import logger
 from orjson import dumps
 from redis.asyncio import Redis
 
-from everwork._internal.resource_manager import ResourceManager
+from everwork._internal.resource.resource_manager import ResourceManager
 from everwork._internal.utils.redis_retry import GracefulShutdownRetry, RetryShutdownException
 from everwork._internal.utils.single_value_channel import ChannelClosed, SingleValueChannel
 from everwork.events import EventCollector, EventPublisher, HybridEventStorage
