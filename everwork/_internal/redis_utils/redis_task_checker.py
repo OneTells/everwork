@@ -37,7 +37,7 @@ class RedisTaskChecker:
                 f'Поток: {stream}. '
                 f'Воркер (группа): {group_name}. '
                 f'ID сообщения: {message["message_id"]}. '
-                f'Время обработки (ms): {message["elapsed"]}'
+                f'Время обработки (ms): {message["time_since_delivered"]}'
             )
 
     async def check_for_hung_tasks(self) -> None:
