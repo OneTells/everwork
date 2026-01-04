@@ -34,7 +34,7 @@ class ResourceSupervisor:
         redis: Redis,
         worker: type[AbstractWorker],
         response_channel: SingleValueChannel[tuple[str, dict[str, Any]]],
-        answer_channel: SingleValueChannel[bool],
+        answer_channel: SingleValueChannel[BaseException | None],
         lock: asyncio.Lock,
         shutdown_event: asyncio.Event
     ) -> None:
@@ -75,23 +75,22 @@ class ResourceSupervisor:
 
             if self._shutdown_event.is_set() or not (await self._state_manager.is_enabled()):
                 await self._resource_processor.handle_cancel(self._resource_handler.resources)
-                del kwargs
                 continue
 
             async with self._lock:
                 if self._shutdown_event.is_set() or not (await self._state_manager.is_enabled()):
                     await self._resource_processor.handle_cancel(self._resource_handler.resources)
-                    del kwargs
                     continue
 
                 self._response_channel.send((self._worker.settings.name, kwargs))
-                del kwargs
 
-                if await self._answer_channel.receive():
+                error_answer = await self._answer_channel.receive()
+
+                if error_answer is None:
                     await self._resource_processor.handle_success(self._resource_handler.resources)
                     continue
 
-                await self._resource_processor.handle_error(self._resource_handler.resources)
+                await self._resource_processor.handle_error(self._resource_handler.resources, kwargs, error_answer)
 
     async def run(self) -> None:
         logger.debug(f'({self._worker.settings.name}) Запущен наблюдатель ресурсов')

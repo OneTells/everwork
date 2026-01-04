@@ -1,4 +1,8 @@
-from loguru import logger
+import traceback
+from datetime import datetime, UTC
+from typing import Any
+
+from orjson import dumps
 from redis.asyncio import Redis
 from redis.exceptions import NoScriptError
 
@@ -46,14 +50,18 @@ class RedisResourceProcessor:
             await self._load_handle_cancel_script()
             await self._redis.evalsha(self._scripts['handle_cancel'], 3, *keys)
 
-    async def handle_error(self, resources: Resources | None) -> None:
+    async def handle_error(self, resources: Resources | None, kwargs: dict[str, Any], exception: BaseException) -> None:
+        payload = {
+            'worker_name': self._worker.settings.name,
+            'kwargs': kwargs,
+            'resources': resources.model_dump() if resources else None,
+            'exception': "".join(traceback.format_exception(type(exception), exception, exception.__traceback__)),
+            'created_at': datetime.now(UTC).isoformat()
+        }
+
+        await self._redis.rpush('errors', dumps(payload))
+
         if resources is None:
             return
-
-        logger.warning(
-            f'({self._worker.settings.name}) Не удалось обработать сообщение из потока. '
-            f'Поток: {resources.stream}. '
-            f'ID сообщения: {resources.message_id}'
-        )
 
         await self._redis.xack(resources.stream, self._worker.settings.name, resources.message_id)

@@ -124,7 +124,7 @@ class EventProcessor:
         worker_registry: WorkerRegistry,
         pipe_connection: connection.Connection,
         response_channel: SingleValueChannel[tuple[str, dict[str, Any]]],
-        answer_channel: SingleValueChannel[bool]
+        answer_channel: SingleValueChannel[BaseException | None]
     ) -> None:
         self._worker_registry = worker_registry
         self._response_channel = response_channel
@@ -153,32 +153,32 @@ class EventProcessor:
 
         self._notifier.notify_worker_start(worker.settings)
 
+        error_answer: BaseException | None = None
+        
         try:
             self._is_executing = True
             await worker.__call__(**kwargs)
-        except (KeyboardInterrupt, asyncio.CancelledError):
+        except (KeyboardInterrupt, asyncio.CancelledError) as error:
             logger.exception(f'({worker_name}) Выполнение прервано по таймауту')
-            success = False
+            error_answer = error
         except Exception as error:
             logger.exception(f'({worker_name}) Ошибка при обработке события: {error}')
-            success = False
-        else:
-            success = True
+            error_answer = error
         finally:
             self._is_executing = False
             self._notifier.notify_worker_end()
 
-        if success:
+        if error_answer is None:
             try:
                 await publisher.push_events_from_async_iterator(
                     storage.read_all(),
                     worker.settings.event_publisher.max_batch_size
                 )
-            except RetryShutdownException:
+            except RetryShutdownException as error:
                 logger.exception(f'({worker_name}) Ошибка Redis при сохранении ивентов')
-                success = False
+                error_answer = error
 
-        self._answer_channel.send(success)
+        self._answer_channel.send(error_answer)
         return True
 
 
@@ -194,7 +194,7 @@ class WorkerExecutor:
         self._shutdown_event = asyncio.Event()
 
         self._response_channel = SingleValueChannel[tuple[str, dict[str, Any]]]()
-        self._answer_channel = SingleValueChannel[bool]()
+        self._answer_channel = SingleValueChannel[BaseException | None]()
 
         self._resource_manager = ResourceManager(
             self._redis_dsn,

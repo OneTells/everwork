@@ -23,7 +23,7 @@ class ResourceCoordinator:
         redis_dsn: str,
         process: Process,
         response_channel: SingleValueChannel[tuple[str, dict[str, Any]]],
-        answer_channel: SingleValueChannel[bool],
+        answer_channel: SingleValueChannel[BaseException | None],
         shutdown_event: asyncio.Event
     ) -> None:
         self._redis_dsn = redis_dsn
@@ -72,7 +72,7 @@ class ResourceManager:
         redis_dsn: str,
         process: Process,
         response_channel: SingleValueChannel[tuple[str, dict[str, Any]]],
-        answer_channel: SingleValueChannel[bool]
+        answer_channel: SingleValueChannel[BaseException | None]
     ) -> None:
         self._shutdown_event = asyncio.Event()
         self._loop = new_event_loop()
@@ -103,7 +103,7 @@ class ResourceManager:
         redis_dsn: str,
         process: Process,
         response_channel: SingleValueChannel[tuple[str, dict[str, Any]]],
-        answer_channel: SingleValueChannel[bool],
+        answer_channel: SingleValueChannel[BaseException | None],
         shutdown_event: asyncio.Event,
         loop: asyncio.AbstractEventLoop
     ) -> None:
