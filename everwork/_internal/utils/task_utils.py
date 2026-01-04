@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import suppress
+from multiprocessing import connection
 from typing import Any, Coroutine
 
 
@@ -31,3 +32,34 @@ async def wait_for_or_cancel[T](coroutine: Coroutine[Any, Any, T], event: asynci
                 task.cancel()
 
         await asyncio.shield(asyncio.gather(*tasks, return_exceptions=True))
+
+
+async def wait_for_pipe_data(
+    pipe_connection: connection.Connection,
+    shutdown_event: asyncio.Event,
+    timeout: float | None = None
+) -> bool:
+    loop = asyncio.get_running_loop()
+    future = loop.create_future()
+    shutdown_task = loop.create_task(shutdown_event.wait())
+
+    def callback() -> None:
+        if not future.done() and pipe_connection.poll(0):
+            future.set_result(True)
+
+    fd = pipe_connection.fileno()
+    loop.add_reader(fd, callback)  # type: ignore
+
+    try:
+        await asyncio.wait(
+            (shutdown_task, future),
+            timeout=timeout,
+            return_when=asyncio.FIRST_COMPLETED
+        )
+    finally:
+        loop.remove_reader(fd)
+
+        if not shutdown_task.done():
+            shutdown_task.cancel()
+
+    return future.done()
