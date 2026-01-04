@@ -18,8 +18,8 @@ class RedisResourceProcessor:
 
         self._scripts: dict[str, str] = {}
 
-    async def _load_handle_cancel_script(self) -> None:
-        self._scripts['handle_cancel'] = await self._redis.script_load(
+    async def _load_handle_return_script(self) -> None:
+        self._scripts['handle_return'] = await self._redis.script_load(
             """
             local messages = redis.call('XRANGE', KEYS[1], KEYS[3], KEYS[3], 'COUNT', 1)
             if #messages > 0 then
@@ -30,7 +30,7 @@ class RedisResourceProcessor:
         )
 
     async def initialize(self) -> None:
-        await self._load_handle_cancel_script()
+        await self._load_handle_return_script()
 
     async def handle_success(self, resources: Resources | None) -> None:
         if resources is None:
@@ -38,17 +38,17 @@ class RedisResourceProcessor:
 
         await self._redis.xack(resources.stream, self._worker.settings.name, resources.message_id)
 
-    async def handle_cancel(self, resources: Resources | None) -> None:
+    async def handle_return(self, resources: Resources | None) -> None:
         if resources is None:
             return
 
         keys = [resources.stream, self._worker.settings.name, resources.message_id]
 
         try:
-            await self._redis.evalsha(self._scripts['handle_cancel'], 3, *keys)
+            await self._redis.evalsha(self._scripts['handle_return'], 3, *keys)
         except NoScriptError:
-            await self._load_handle_cancel_script()
-            await self._redis.evalsha(self._scripts['handle_cancel'], 3, *keys)
+            await self._load_handle_return_script()
+            await self._redis.evalsha(self._scripts['handle_return'], 3, *keys)
 
     async def handle_error(self, resources: Resources | None, kwargs: dict[str, Any], exception: BaseException) -> None:
         payload = {

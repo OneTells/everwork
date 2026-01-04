@@ -70,16 +70,16 @@ class ResourceSupervisor:
             try:
                 kwargs = await self._resource_handler.get_kwargs()
             except OperationCancelled:
-                await self._resource_processor.handle_cancel(self._resource_handler.resources)
+                await self._resource_processor.handle_return(self._resource_handler.resources)
                 continue
 
             if self._shutdown_event.is_set() or not (await self._state_manager.is_enabled()):
-                await self._resource_processor.handle_cancel(self._resource_handler.resources)
+                await self._resource_processor.handle_return(self._resource_handler.resources)
                 continue
 
             async with self._lock:
                 if self._shutdown_event.is_set() or not (await self._state_manager.is_enabled()):
-                    await self._resource_processor.handle_cancel(self._resource_handler.resources)
+                    await self._resource_processor.handle_return(self._resource_handler.resources)
                     continue
 
                 self._response_channel.send((self._worker.settings.name, kwargs))
