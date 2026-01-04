@@ -31,6 +31,7 @@ class RedisTaskChecker:
         await pipe.xack(stream, group_name, *message_ids)
 
         for message in pending_messages:
+            logger.info(message)
             logger.warning(
                 f'[{self._worker_names}] Обнаружено зависшее сообщение. '
                 f'Поток: {stream}. '
