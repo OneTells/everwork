@@ -1,20 +1,24 @@
-from typing import Annotated, Any, final, Self
+from abc import ABC
+from typing import Annotated, Any, final, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-type _StreamName = Annotated[str, Field(min_length=1, max_length=300, pattern=r'^[a-zA-Z0-9_\-:]+$')]
+type StreamName = Annotated[str, Field(min_length=1, max_length=300, pattern=r'^[a-zA-Z0-9_\-:]+$')]
+
+
+class Trigger(BaseModel, ABC):
+    type: Literal['interval', 'cron']
 
 
 @final
-class ExecutorMode(BaseModel):
-    model_config = ConfigDict(frozen=True)
+class IntervalTrigger(Trigger):
+    type: Literal['interval'] = 'interval'
 
-
-@final
-class TriggerMode(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    execution_interval: Annotated[float, Field(gt=0)]
+    weeks: Annotated[int, Field(ge=1)] = 0
+    days: Annotated[int, Field(ge=1)] = 0
+    hours: Annotated[int, Field(ge=1)] = 0
+    minutes: Annotated[int, Field(ge=1)] = 0
+    seconds: Annotated[int, Field(ge=1)] = 0
 
 
 @final
@@ -33,11 +37,10 @@ class EventPublisherSettings(BaseModel):
 
 @final
 class WorkerSettings(BaseModel):
-    model_config = ConfigDict()
+    name: StreamName
 
-    name: _StreamName
-    source_streams: set[_StreamName] = Field(default_factory=set, max_length=100)
-    mode: ExecutorMode | TriggerMode
+    source_streams: set[StreamName] = Field(default_factory=set, max_length=100)
+    triggers: list[Trigger] = Field(default_factory=list, max_length=1000)
 
     execution_timeout: Annotated[float, Field(gt=0.1, lt=86400)] = 180
     worker_status_check_interval: Annotated[float, Field(gt=0.1, lt=3600)] = 60
@@ -55,5 +58,5 @@ class WorkerSettings(BaseModel):
 class WorkerEvent(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    stream: _StreamName
+    stream: StreamName
     data: dict[str, Any] = Field(default_factory=dict)
