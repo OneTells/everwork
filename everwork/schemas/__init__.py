@@ -1,12 +1,12 @@
 from .process import Process, ProcessGroup
-from .worker import EventPublisherSettings, EventStorageSettings, ExecutorMode, TriggerMode, WorkerEvent, WorkerSettings
+from .worker import AbstractTrigger, EventPublisherSettings, EventStorageSettings, IntervalTrigger, WorkerEvent, WorkerSettings
 
 __all__ = (
     'Process',
     'ProcessGroup',
     'WorkerSettings',
-    'ExecutorMode',
-    'TriggerMode',
+    'AbstractTrigger',
+    'IntervalTrigger',
     'WorkerEvent',
     'EventStorageSettings',
     'EventPublisherSettings'

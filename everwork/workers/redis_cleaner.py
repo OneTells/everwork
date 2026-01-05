@@ -7,22 +7,22 @@ from orjson import loads
 from pydantic import BaseModel, ConfigDict, Field, RedisDsn
 from redis.asyncio import Redis
 
-from everwork.schemas import TriggerMode, WorkerSettings
+from everwork.schemas import AbstractTrigger, IntervalTrigger, WorkerSettings
 from everwork.trigger_utils import timer
 from .base import AbstractWorker
 
 
-class RetentionWorkerConfig(BaseModel):
+class RedisCleanerWorkerConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     redis_dns: RedisDsn
 
-    execution_interval: Annotated[float, Field(gt=0)] = timer(days=1)
+    triggers: Annotated[list[AbstractTrigger], Field(max_length=1000)] = [IntervalTrigger(days=1)]
     max_age_seconds: Annotated[float, Field(gt=0)] = timer(weeks=4)
 
 
-class AbstractRetentionWorker(AbstractWorker, ABC):
-    _config: ClassVar[RetentionWorkerConfig]
+class AbstractRedisCleanerWorker(AbstractWorker, ABC):
+    _config: ClassVar[RedisCleanerWorkerConfig]
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         cls._config = cls._get_config()
@@ -30,14 +30,14 @@ class AbstractRetentionWorker(AbstractWorker, ABC):
 
     @staticmethod
     @abstractmethod
-    def _get_config() -> RetentionWorkerConfig:
+    def _get_config() -> RedisCleanerWorkerConfig:
         raise NotImplementedError
 
     @classmethod
     def _get_settings(cls) -> WorkerSettings:
         return WorkerSettings(
-            name="base:retention",
-            mode=TriggerMode(execution_interval=cls._config.execution_interval)
+            name="base:redis:cleaner",
+            triggers=cls._config.triggers
         )
 
     async def _trim_streams(self, redis: Redis, streams: set[str]) -> dict[str, int]:

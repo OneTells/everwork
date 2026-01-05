@@ -4,7 +4,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from redis.backoff import AbstractBackoff, FullJitterBackoff
 
 from everwork.workers.base import AbstractWorker
-from .worker import TriggerMode
 
 
 @final
@@ -26,11 +25,10 @@ class ProcessGroup(BaseModel):
 
     @model_validator(mode='after')
     def _validate_replication_compatibility(self) -> Self:
-        if self.replicas > 1:
-            if len(self.process.workers) > 1:
-                raise ValueError('Репликация поддерживается только для одного воркера')
+        if self.replicas == 1:
+            return self
 
-            if any(isinstance(worker.settings.mode, TriggerMode) for worker in self.process.workers):
-                raise ValueError('Репликация не поддерживается для воркеров с TriggerMode')
+        if len(self.process.workers) > 1:
+            raise ValueError('Репликация поддерживается только для одного воркера')
 
         return self

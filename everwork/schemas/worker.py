@@ -6,12 +6,12 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 type StreamName = Annotated[str, Field(min_length=1, max_length=300, pattern=r'^[a-zA-Z0-9_\-:]+$')]
 
 
-class Trigger(BaseModel, ABC):
+class AbstractTrigger(BaseModel, ABC):
     type: Literal['interval', 'cron']
 
 
 @final
-class IntervalTrigger(Trigger):
+class IntervalTrigger(AbstractTrigger):
     type: Literal['interval'] = 'interval'
 
     weeks: Annotated[int, Field(ge=1)] = 0
@@ -40,7 +40,7 @@ class WorkerSettings(BaseModel):
     name: StreamName
 
     source_streams: set[StreamName] = Field(default_factory=set, max_length=100)
-    triggers: list[Trigger] = Field(default_factory=list, max_length=1000)
+    triggers: list[AbstractTrigger] = Field(default_factory=list, max_length=1000)
 
     execution_timeout: Annotated[float, Field(gt=0.1, lt=86400)] = 180
     worker_status_check_interval: Annotated[float, Field(gt=0.1, lt=3600)] = 60
