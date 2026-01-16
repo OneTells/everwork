@@ -104,18 +104,21 @@ class ProcessManager:
 
         self._shutdown_event = asyncio.Event()
 
-    async def _startup(self, backend: AbstractBackend) -> None:
+    async def _startup(self) -> None:
         worker_settings = [
             worker.settings
             for process in self._processes
             for worker in process.workers
         ]
 
-        await backend.initialize_manager(self._uuid, worker_settings)
-        await backend.set_manager_status(self._uuid, 'on')
+        async with self._backend_factory() as backend:
+            await wait_for_or_cancel(backend.initialize_manager(self._uuid, worker_settings), self._shutdown_event)
+            await wait_for_or_cancel(backend.set_manager_status(self._uuid, 'on'), self._shutdown_event)
 
-    async def _shutdown(self, backend: AbstractBackend) -> None:
-        await backend.set_manager_status(self._uuid, 'off')
+    async def _shutdown(self) -> None:
+        async with self._backend_factory() as backend:
+            async with asyncio.timeout(5):
+                await backend.set_manager_status(self._uuid, 'off')
 
     async def _start_supervisors(self) -> None:
         async with asyncio.TaskGroup() as task_group:
@@ -141,8 +144,7 @@ class ProcessManager:
         SignalHandler(self._shutdown_event).register()
 
         try:
-            async with self._backend_factory() as backend:
-                await wait_for_or_cancel(self._startup(backend), self._shutdown_event)
+            await self._startup()
         except OperationCancelled:
             logger.debug('Менеджер процессов не удалось инициализировать, так как был пойман сигнал о завершении')
         except Exception as error:
@@ -153,9 +155,7 @@ class ProcessManager:
             await self._start_supervisors()
 
         try:
-            async with self._backend_factory() as backend:
-                async with asyncio.timeout(5):
-                    await self._shutdown(backend)
+            await self._shutdown()
         except asyncio.TimeoutError:
             logger.debug('Менеджер процессов не успел завершиться')
         except Exception as error:
