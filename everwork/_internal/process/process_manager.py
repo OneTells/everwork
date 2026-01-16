@@ -99,11 +99,12 @@ class ProcessManager:
     ) -> None:
         self._uuid = uuid
         self._processes: list[Process] = processes
-
         self._backend_factory = backend_factory
         self._broker_factory = broker_factory
 
-    async def _startup(self, shutdown_event: asyncio.Event) -> None:
+        self._shutdown_event = asyncio.Event()
+
+    async def _startup(self) -> None:
         worker_settings = [
             worker.settings
             for process in self._processes
@@ -111,14 +112,14 @@ class ProcessManager:
         ]
 
         async with self._backend_factory() as backend:
-            await wait_for_or_cancel(backend.initialize_manager(self._uuid, worker_settings), shutdown_event)
-            await wait_for_or_cancel(backend.set_manager_status(self._uuid, 'on'), shutdown_event)
+            await wait_for_or_cancel(backend.initialize_manager(self._uuid, worker_settings), self._shutdown_event)
+            await wait_for_or_cancel(backend.set_manager_status(self._uuid, 'on'), self._shutdown_event)
 
-    async def _shutdown(self, shutdown_event: asyncio.Event) -> None:
+    async def _shutdown(self) -> None:
         async with self._backend_factory() as backend:
-            await wait_for_or_cancel(backend.set_manager_status(self._uuid, 'off'), shutdown_event)
+            await wait_for_or_cancel(backend.set_manager_status(self._uuid, 'off'), self._shutdown_event)
 
-    async def _start_supervisors(self, shutdown_event: asyncio.Event) -> None:
+    async def _start_supervisors(self) -> None:
         async with asyncio.TaskGroup() as task_group:
             for process in self._processes:
                 supervisor = ProcessSupervisor(
@@ -126,7 +127,7 @@ class ProcessManager:
                     process,
                     self._backend_factory,
                     self._broker_factory,
-                    shutdown_event
+                    self._shutdown_event
                 )
 
                 task_group.create_task(supervisor.run())
@@ -139,13 +140,12 @@ class ProcessManager:
 
         logger.info('Менеджер процессов запущен')
 
-        shutdown_event = asyncio.Event()
-        SignalHandler(shutdown_event).register()
+        SignalHandler(self._shutdown_event).register()
 
-        await self._startup(shutdown_event)
+        await self._startup()
         logger.info('Менеджер процессов инициализирован')
 
-        await self._start_supervisors(shutdown_event)
+        await self._start_supervisors()
 
-        await self._shutdown(shutdown_event)
+        await self._shutdown()
         logger.info('Менеджер процессов завершил работу')
