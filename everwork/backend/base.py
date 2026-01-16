@@ -21,7 +21,7 @@ class AbstractBackend(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def delete_manager(self, manager_uuid: str) -> None:
+    async def set_manager_status(self, manager_uuid: str, status: Literal['on', 'off']) -> None:
         raise NotImplementedError
 
     # Воркер
