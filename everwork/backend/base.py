@@ -1,15 +1,63 @@
 from abc import ABC, abstractmethod
 from typing import Literal
 
-from everwork.schemas import Process
+from everwork.schemas import WorkerSettings
 
 
 class AbstractBackend(ABC):
 
     @abstractmethod
-    async def initialize(self, manager_uuid: str, processes: list[Process]) -> None:
+    async def initialize(self) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    async def get_worker_status(self, name: str) -> Literal['on', 'off']:
+    async def close(self) -> None:
+        raise NotImplementedError
+
+    # Менеджер
+
+    @abstractmethod
+    async def initialize_manager(self, manager_uuid: str, worker_settings: list[WorkerSettings]) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def delete_manager(self, manager_uuid: str) -> None:
+        raise NotImplementedError
+
+    # Воркер
+
+    @abstractmethod
+    async def get_worker_status(self, worker_name: str) -> Literal['on', 'off']:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def set_worker_status(self, worker_name: str, status: Literal['on', 'off']) -> None:
+        raise NotImplementedError
+
+    # Воркер исполнитель
+
+    @abstractmethod
+    async def initialize_worker_executor(self, worker_executor_id: str) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_worker_executor_status(self, worker_executor_id: str) -> Literal['working', 'free', 'reboot']:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def set_worker_executor_status(self, worker_executor_id: str, status: Literal['working', 'free', 'reboot']) -> None:
+        raise NotImplementedError
+
+    # Триггер
+
+    @abstractmethod
+    async def initialize_trigger(self, trigger_id: str) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_trigger_status(self, trigger_id: str) -> Literal['on', 'off']:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def set_trigger_status(self, trigger_id: str, status: Literal['on', 'off']) -> None:
         raise NotImplementedError
