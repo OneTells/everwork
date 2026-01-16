@@ -1,13 +1,15 @@
 import asyncio
 import time
+from typing import Callable
 
 from loguru import logger
 from orjson import loads
 from pydantic import BaseModel
 
-from everwork._internal.redis_utils.redis_task_checker import RedisTaskChecker
 from everwork._internal.utils.task_utils import wait_for_pipe_data
 from everwork._internal.worker.worker_executor import WorkerProcess
+from everwork.backend import AbstractBackend
+from everwork.broker import AbstractBroker
 from everwork.schemas import Process
 
 
@@ -18,21 +20,23 @@ class EventStartMessage(BaseModel):
 
 class ProcessSupervisor:
 
-    def __init__(self, redis_dsn: str, process: Process, shutdown_event: asyncio.Event) -> None:
-        self._redis_dsn = redis_dsn
-        self._process = process
+    def __init__(
+        self,
+        manager_uuid: str,
+        process: Process,
+        backend_factory: Callable[[], AbstractBackend],
+        broker_factory: Callable[[], AbstractBroker],
+        shutdown_event: asyncio.Event
+    ) -> None:
         self._shutdown_event = shutdown_event
 
         self._worker_names = ', '.join(worker.settings.name for worker in process.workers)
-        self._worker_process = WorkerProcess(self._redis_dsn, self._process)
-
-        self._task_checker = RedisTaskChecker(self._redis_dsn, self._process)
+        self._worker_process = WorkerProcess(manager_uuid, process, backend_factory, broker_factory)
 
     async def _restart_worker_manager(self, worker_name: str) -> None:
         logger.warning(f'[{self._worker_names}] Воркер {worker_name} завис. Начат перезапуск процесса')
 
         await self._worker_process.close()
-        await self._task_checker.check_for_hung_tasks()
 
         if self._shutdown_event.is_set():
             logger.warning(f'[{self._worker_names}] Процесс завершен')
@@ -64,7 +68,6 @@ class ProcessSupervisor:
     async def run(self) -> None:
         logger.debug(f'[{self._worker_names}] Запущен наблюдатель процесса')
 
-        await self._task_checker.check_for_hung_tasks()
         await self._worker_process.start()
 
         try:
@@ -75,6 +78,5 @@ class ProcessSupervisor:
         logger.debug(f'[{self._worker_names}] Начато завершение наблюдателя процесса')
 
         await self._worker_process.close()
-        await self._task_checker.check_for_hung_tasks()
 
         logger.debug(f'[{self._worker_names}] Наблюдатель процесса завершил работу')
