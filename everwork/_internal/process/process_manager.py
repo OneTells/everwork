@@ -114,6 +114,10 @@ class ProcessManager:
             await wait_for_or_cancel(backend.initialize_manager(self._uuid, worker_settings), shutdown_event)
             await wait_for_or_cancel(backend.set_manager_status(self._uuid, 'on'), shutdown_event)
 
+    async def _shutdown(self, shutdown_event: asyncio.Event) -> None:
+        async with self._backend_factory() as backend:
+            await wait_for_or_cancel(backend.set_manager_status(self._uuid, 'off'), shutdown_event)
+
     async def _start_supervisors(self, shutdown_event: asyncio.Event) -> None:
         async with asyncio.TaskGroup() as task_group:
             for process in self._processes:
@@ -128,10 +132,6 @@ class ProcessManager:
                 task_group.create_task(supervisor.run())
 
             logger.info('Наблюдатели процессов запущены')
-
-    async def _shutdown(self, shutdown_event: asyncio.Event) -> None:
-        async with self._backend_factory() as backend:
-            await wait_for_or_cancel(backend.set_manager_status(self._uuid, 'off'), shutdown_event)
 
     async def run(self) -> None:
         if not check_environment():
