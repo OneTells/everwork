@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Self
 
 from everwork.schemas import WorkerEvent
 
@@ -13,6 +13,15 @@ class AbstractBroker[T](ABC):
     @abstractmethod
     async def close(self) -> None:
         raise NotImplementedError
+
+    async def __aenter__(self) -> Self:
+        await self.initialize()
+        return self
+
+    async def __aexit__(self, _: Any) -> None:
+        await self.close()
+
+    # Ивент
 
     @abstractmethod
     async def push_event(

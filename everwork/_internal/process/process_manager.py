@@ -3,15 +3,16 @@ import signal
 from asyncio import Event, get_running_loop
 from multiprocessing import get_start_method
 from platform import system
-from typing import Annotated, final
+from typing import Annotated, Callable, final
 from uuid import UUID
 
 from loguru import logger
-from pydantic import AfterValidator, ConfigDict, RedisDsn, validate_call
-from redis.backoff import AbstractBackoff, FullJitterBackoff
+from pydantic import AfterValidator, ConfigDict, validate_call
 
 from everwork._internal.process.process_supervisor import ProcessSupervisor
-from everwork._internal.redis_utils.redis_initializer import RedisInitializer
+from everwork._internal.utils.task_utils import wait_for_or_cancel
+from everwork.backend import AbstractBackend
+from everwork.broker import AbstractBroker
 from everwork.schemas import Process, ProcessGroup
 
 
@@ -93,31 +94,44 @@ class ProcessManager:
             AfterValidator(validate_worker_names),
             AfterValidator(expand_groups)
         ],
-        redis_dsn: RedisDsn,
-        redis_backoff_strategy: AbstractBackoff = FullJitterBackoff(cap=30.0, base=1.0)
+        backend_factory: Callable[[], AbstractBackend],
+        broker_factory: Callable[[], AbstractBroker]
     ) -> None:
         self._uuid = uuid
         self._processes: list[Process] = processes
-        self._redis_dsn = redis_dsn.encoded_string()
-        self._redis_backoff_strategy = redis_backoff_strategy
 
-    async def _initialize_components(self, shutdown_event: asyncio.Event) -> None:
-        initializer = RedisInitializer(
-            self._uuid,
-            self._processes,
-            self._redis_dsn,
-            self._redis_backoff_strategy,
-            shutdown_event
-        )
-        await initializer.initialize()
+        self._backend_factory = backend_factory
+        self._broker_factory = broker_factory
+
+    async def _startup(self, shutdown_event: asyncio.Event) -> None:
+        worker_settings = [
+            worker.settings
+            for process in self._processes
+            for worker in process.workers
+        ]
+
+        async with self._backend_factory() as backend:
+            await wait_for_or_cancel(backend.initialize_manager(self._uuid, worker_settings), shutdown_event)
+            await wait_for_or_cancel(backend.set_manager_status(self._uuid, 'on'), shutdown_event)
 
     async def _start_supervisors(self, shutdown_event: asyncio.Event) -> None:
         async with asyncio.TaskGroup() as task_group:
             for process in self._processes:
-                supervisor = ProcessSupervisor(self._redis_dsn, process, shutdown_event)
+                supervisor = ProcessSupervisor(
+                    self._uuid,
+                    process,
+                    self._backend_factory,
+                    self._broker_factory,
+                    shutdown_event
+                )
+
                 task_group.create_task(supervisor.run())
 
             logger.info('Наблюдатели процессов запущены')
+
+    async def _shutdown(self, shutdown_event: asyncio.Event) -> None:
+        async with self._backend_factory() as backend:
+            await wait_for_or_cancel(backend.set_manager_status(self._uuid, 'off'), shutdown_event)
 
     async def run(self) -> None:
         if not check_environment():
@@ -128,8 +142,10 @@ class ProcessManager:
         shutdown_event = asyncio.Event()
         SignalHandler(shutdown_event).register()
 
-        await self._initialize_components(shutdown_event)
-        logger.info('Компоненты инициализированы')
+        await self._startup(shutdown_event)
+        logger.info('Менеджер процессов инициализирован')
 
         await self._start_supervisors(shutdown_event)
+
+        await self._shutdown(shutdown_event)
         logger.info('Менеджер процессов завершил работу')

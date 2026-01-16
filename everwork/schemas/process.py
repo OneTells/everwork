@@ -2,7 +2,7 @@ from typing import Annotated, final, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from everwork.workers.base import AbstractWorker
+from everwork.workers import AbstractWorker
 
 
 @final

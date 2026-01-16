@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Literal
+from typing import Any, Literal, Self
 
 from everwork.schemas import WorkerSettings
 
@@ -13,6 +13,13 @@ class AbstractBackend(ABC):
     @abstractmethod
     async def close(self) -> None:
         raise NotImplementedError
+
+    async def __aenter__(self) -> Self:
+        await self.initialize()
+        return self
+
+    async def __aexit__(self, _: Any) -> None:
+        await self.close()
 
     # Менеджер
 
