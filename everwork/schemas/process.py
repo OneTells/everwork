@@ -1,6 +1,7 @@
-from typing import Annotated, final, Self
+from typing import Annotated, final
+from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from everwork.workers import AbstractWorker
 
@@ -9,6 +10,7 @@ from everwork.workers import AbstractWorker
 class Process(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    uuid: UUID = uuid4()
     workers: Annotated[list[type[AbstractWorker]], Field(min_length=1)]
 
     shutdown_timeout: Annotated[float, Field(gt=0, lt=180)] = 20
@@ -20,13 +22,3 @@ class ProcessGroup(BaseModel):
 
     process: Process
     replicas: Annotated[int, Field(ge=1, lt=300)] = 1
-
-    @model_validator(mode='after')
-    def _validate_replication_compatibility(self) -> Self:
-        if self.replicas == 1:
-            return self
-
-        if len(self.process.workers) > 1:
-            raise ValueError('Репликация поддерживается только для одного воркера')
-
-        return self

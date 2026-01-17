@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Literal, Self
 
-from everwork.schemas import WorkerSettings
+from everwork.schemas import Process
 
 
 class AbstractBackend(ABC):
@@ -24,7 +24,7 @@ class AbstractBackend(ABC):
     # Менеджер
 
     @abstractmethod
-    async def initialize_manager(self, manager_uuid: str, worker_settings: list[WorkerSettings]) -> None:
+    async def initialize_manager(self, manager_uuid: str, processes: list[Process]) -> None:
         raise NotImplementedError
 
     @abstractmethod
@@ -44,10 +44,6 @@ class AbstractBackend(ABC):
     # Воркер исполнитель
 
     @abstractmethod
-    async def initialize_worker_executor(self, worker_executor_id: str) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
     async def get_worker_executor_status(self, worker_executor_id: str) -> Literal['working', 'free', 'reboot']:
         raise NotImplementedError
 
@@ -55,16 +51,16 @@ class AbstractBackend(ABC):
     async def set_worker_executor_status(self, worker_executor_id: str, status: Literal['working', 'free', 'reboot']) -> None:
         raise NotImplementedError
 
-    # Триггер
-
-    @abstractmethod
-    async def initialize_trigger(self, trigger_id: str) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    async def get_trigger_status(self, trigger_id: str) -> Literal['on', 'off']:
-        raise NotImplementedError
-
-    @abstractmethod
-    async def set_trigger_status(self, trigger_id: str, status: Literal['on', 'off']) -> None:
-        raise NotImplementedError
+    # # Триггер
+    #
+    # @abstractmethod
+    # async def initialize_trigger(self, trigger_id: str) -> None:
+    #     raise NotImplementedError
+    #
+    # @abstractmethod
+    # async def get_trigger_status(self, trigger_id: str) -> Literal['on', 'off']:
+    #     raise NotImplementedError
+    #
+    # @abstractmethod
+    # async def set_trigger_status(self, trigger_id: str, status: Literal['on', 'off']) -> None:
+    #     raise NotImplementedError

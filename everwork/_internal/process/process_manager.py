@@ -4,7 +4,7 @@ from asyncio import Event, get_running_loop
 from multiprocessing import get_start_method
 from platform import system
 from typing import Annotated, Callable, final
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from loguru import logger
 from pydantic import AfterValidator, ConfigDict, validate_call
@@ -14,6 +14,7 @@ from everwork._internal.utils.task_utils import OperationCancelled, wait_for_or_
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker
 from everwork.schemas import Process, ProcessGroup
+from everwork.workers import AbstractWorker
 
 
 def check_environment() -> bool:
@@ -39,16 +40,18 @@ def check_environment() -> bool:
 
 
 def validate_worker_names(processes: list[ProcessGroup | Process]) -> list[ProcessGroup | Process]:
-    names: set[str] = set()
+    workers: dict[str, type[AbstractWorker]] = dict()
 
     for item in processes:
         process = item.process if isinstance(item, ProcessGroup) else item
 
         for worker in process.workers:
-            if worker.settings.name in names:
+            other_worker = workers.get(worker.settings.name, None)
+
+            if other_worker is not None and other_worker is not worker:
                 raise ValueError(f"Имя воркера {worker.settings.name} не уникально")
 
-            names.add(worker.settings.name)
+            workers[worker.settings.name] = worker
 
     return processes
 
@@ -62,7 +65,7 @@ def expand_groups(processes: list[ProcessGroup | Process]) -> list[Process]:
             continue
 
         for _ in range(item.replicas):
-            result.append(item.process.model_copy(deep=True))
+            result.append(item.process.model_copy(update={'uuid': uuid4()}, deep=True))
 
     return result
 
@@ -97,7 +100,7 @@ class ProcessManager:
         backend_factory: Callable[[], AbstractBackend],
         broker_factory: Callable[[], AbstractBroker]
     ) -> None:
-        self._uuid = uuid
+        self._manager_uuid = uuid
         self._processes: list[Process] = processes
         self._backend_factory = backend_factory
         self._broker_factory = broker_factory
@@ -105,26 +108,20 @@ class ProcessManager:
         self._shutdown_event = asyncio.Event()
 
     async def _startup(self) -> None:
-        worker_settings = [
-            worker.settings
-            for process in self._processes
-            for worker in process.workers
-        ]
-
         async with self._backend_factory() as backend:
-            await wait_for_or_cancel(backend.initialize_manager(self._uuid, worker_settings), self._shutdown_event)
-            await wait_for_or_cancel(backend.set_manager_status(self._uuid, 'on'), self._shutdown_event)
+            await wait_for_or_cancel(backend.initialize_manager(self._manager_uuid, self._processes), self._shutdown_event)
+            await wait_for_or_cancel(backend.set_manager_status(self._manager_uuid, 'on'), self._shutdown_event)
 
     async def _shutdown(self) -> None:
         async with self._backend_factory() as backend:
             async with asyncio.timeout(5):
-                await backend.set_manager_status(self._uuid, 'off')
+                await backend.set_manager_status(self._manager_uuid, 'off')
 
     async def _start_supervisors(self) -> None:
         async with asyncio.TaskGroup() as task_group:
             for process in self._processes:
                 supervisor = ProcessSupervisor(
-                    self._uuid,
+                    self._manager_uuid,
                     process,
                     self._backend_factory,
                     self._broker_factory,
