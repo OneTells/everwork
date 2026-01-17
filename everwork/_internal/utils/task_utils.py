@@ -34,32 +34,30 @@ async def wait_for_or_cancel[T](coroutine: Coroutine[Any, Any, T], event: asynci
         await asyncio.shield(asyncio.gather(*tasks, return_exceptions=True))
 
 
-async def wait_for_pipe_data(
-    pipe_connection: connection.Connection,
-    shutdown_event: asyncio.Event,
-    timeout: float | None = None
-) -> bool:
+async def poll_connection(conn: connection.Connection, timeout: float | None = None) -> bool:
+    if conn.poll(0):
+        return True
+
+    fd = conn.fileno()
+
     loop = asyncio.get_running_loop()
     future = loop.create_future()
-    shutdown_task = loop.create_task(shutdown_event.wait())
 
-    def callback() -> None:
-        if not future.done() and pipe_connection.poll(0):
+    def _on_readable() -> None:
+        if not future.done():
             future.set_result(True)
 
-    fd = pipe_connection.fileno()
-    loop.add_reader(fd, callback)  # type: ignore
+    loop.add_reader(fd, _on_readable)  # type: ignore
 
     try:
-        await asyncio.wait(
-            (shutdown_task, future),
-            timeout=timeout,
-            return_when=asyncio.FIRST_COMPLETED
-        )
+        if conn.poll(0):
+            return True
+
+        async with asyncio.timeout(timeout):
+            await future
+    except asyncio.TimeoutError:
+        return False
     finally:
         loop.remove_reader(fd)
 
-        if not shutdown_task.done():
-            shutdown_task.cancel()
-
-    return future.done()
+    return True
