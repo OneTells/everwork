@@ -177,4 +177,4 @@ class ProcessManager:
                 else:
                     logger.info('Менеджер процессов завершил работу')
         except Exception as error:
-            logger.critical(f'Менеджер процессов завершился из-за критической ошибки: {error}')
+            logger.opt(exception=True).critical(f'Менеджер процессов завершился с ошибкой: {error}')
