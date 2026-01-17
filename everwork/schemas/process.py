@@ -1,7 +1,7 @@
 from typing import Annotated, final
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 from everwork.workers import AbstractWorker
 
@@ -10,7 +10,7 @@ from everwork.workers import AbstractWorker
 class Process(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    uuid: UUID = uuid4()
+    uuid: Annotated[str, AfterValidator(lambda x: UUID(x) and x)] = Field(default_factory=lambda: str(uuid4()))
     workers: Annotated[list[type[AbstractWorker]], Field(min_length=1)]
 
     shutdown_timeout: Annotated[float, Field(gt=0, lt=180)] = 20
