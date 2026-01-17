@@ -159,23 +159,22 @@ class ProcessManager:
 
         SignalHandler(self._shutdown_event).register()
 
-        async with self._backend_factory() as backend:
-            try:
-                await self._startup(backend)
-            except OperationCancelled:
-                logger.debug('Менеджер процессов не удалось инициализировать, так как был пойман сигнал о завершении')
-            except Exception as error:
-                logger.exception(f'Менеджер процессов не удалось инициализировать из-за критической ошибки: {error}')
-            else:
-                logger.info('Менеджер процессов инициализирован')
+        try:
+            async with self._backend_factory() as backend:
+                try:
+                    await self._startup(backend)
+                except OperationCancelled:
+                    logger.debug('Менеджер процессов не удалось инициализировать, так как был пойман сигнал о завершении')
+                else:
+                    logger.info('Менеджер процессов инициализирован')
 
-                await self._start_supervisors(backend)
+                    await self._start_supervisors(backend)
 
-            try:
-                await self._shutdown(backend)
-            except asyncio.TimeoutError:
-                logger.debug('Менеджер процессов не успел завершиться')
-            except Exception as error:
-                logger.exception(f'Менеджер процессов не удалось завершить из-за критической ошибки: {error}')
-            else:
-                logger.info('Менеджер процессов завершил работу')
+                try:
+                    await self._shutdown(backend)
+                except asyncio.TimeoutError:
+                    logger.debug('Менеджер процессов не успел завершиться')
+                else:
+                    logger.info('Менеджер процессов завершил работу')
+        except Exception as error:
+            logger.critical(f'Менеджер процессов завершился из-за критической ошибки: {error}')
