@@ -109,13 +109,12 @@ class ProcessManager:
 
     async def _startup(self) -> None:
         async with self._backend_factory() as backend:
-            await wait_for_or_cancel(backend.initialize_manager(self._manager_uuid, self._processes), self._shutdown_event)
-            await wait_for_or_cancel(backend.set_manager_status(self._manager_uuid, 'on'), self._shutdown_event)
+            await wait_for_or_cancel(backend.startup_manager(self._manager_uuid, self._processes), self._shutdown_event)
 
     async def _shutdown(self) -> None:
         async with self._backend_factory() as backend:
             async with asyncio.timeout(5):
-                await backend.set_manager_status(self._manager_uuid, 'off')
+                await backend.shutdown_manager(self._manager_uuid)
 
     async def _start_supervisors(self) -> None:
         async with asyncio.TaskGroup() as task_group:
