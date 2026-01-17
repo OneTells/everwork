@@ -65,7 +65,27 @@ def expand_groups(processes: list[ProcessGroup | Process]) -> list[Process]:
             continue
 
         for _ in range(item.replicas):
-            result.append(item.process.model_copy(update={'uuid': uuid4()}, deep=True))
+            result.append(item.process.model_copy(deep=True))
+
+    return result
+
+
+def validate_processes(processes: list[Process]) -> list[Process]:
+    result: list[Process] = []
+    uuids: set[str] = set()
+
+    for process in processes:
+        uuid = process.uuid
+
+        while uuid in uuids:
+            uuid = str(uuid4())
+
+        uuids.add(uuid)
+
+        if process.uuid != uuid:
+            result.append(process.model_copy(update={'uuid': uuid}))
+        else:
+            result.append(process)
 
     return result
 
@@ -95,7 +115,8 @@ class ProcessManager:
         processes: Annotated[
             list[ProcessGroup | Process],
             AfterValidator(validate_worker_names),
-            AfterValidator(expand_groups)
+            AfterValidator(expand_groups),
+            AfterValidator(validate_processes)
         ],
         backend_factory: Callable[[], AbstractBackend],
         broker_factory: Callable[[], AbstractBroker]
