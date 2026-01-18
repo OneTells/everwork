@@ -44,27 +44,13 @@ class AbstractBackend(ABC):
     # Исполнитель воркера
 
     @abstractmethod
-    async def mark_worker_as_busy(self, manager_uuid: str, process_uuid: str, worker_name: str) -> None:
+    async def mark_worker_executor_as_busy(self, manager_uuid: str, process_uuid: str, worker_name: str) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    async def mark_worker_as_available(self, manager_uuid: str, process_uuid: str) -> None:
+    async def mark_worker_executor_as_available(self, manager_uuid: str, process_uuid: str) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    async def mark_worker_for_reboot(self, manager_uuid: str, process_uuid: str) -> None:
+    async def mark_worker_executor_for_reboot(self, manager_uuid: str, process_uuid: str) -> None:
         raise NotImplementedError
-
-    # # Триггер
-    #
-    # @abstractmethod
-    # async def initialize_trigger(self, trigger_id: str) -> None:
-    #     raise NotImplementedError
-    #
-    # @abstractmethod
-    # async def get_trigger_status(self, trigger_id: str) -> Literal['on', 'off']:
-    #     raise NotImplementedError
-    #
-    # @abstractmethod
-    # async def set_trigger_status(self, trigger_id: str, status: Literal['on', 'off']) -> None:
-    #     raise NotImplementedError

@@ -1,12 +1,10 @@
-from everwork._internal.process.process_manager import ProcessManager
+from ._internal.process.process_manager import ProcessManager
 from .events import EventCollector
 from .schemas import (
     EventPublisherSettings,
     EventStorageSettings,
-    ExecutorMode,
     Process,
     ProcessGroup,
-    TriggerMode,
     WorkerEvent,
     WorkerSettings
 )
@@ -19,8 +17,6 @@ __all__ = (
     'ProcessGroup',
     'AbstractWorker',
     'WorkerSettings',
-    'ExecutorMode',
-    'TriggerMode',
     'WorkerEvent',
     'EventCollector',
     'EventStorageSettings',

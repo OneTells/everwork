@@ -71,7 +71,7 @@ class ProcessSupervisor:
             try:
                 async with asyncio.timeout(5):
                     await wait_for_or_cancel(
-                        self._backend.mark_worker_for_reboot(self._manager_uuid, self._process.uuid),
+                        self._backend.mark_worker_executor_for_reboot(self._manager_uuid, self._process.uuid),
                         self._shutdown_event
                     )
             except asyncio.TimeoutError:
