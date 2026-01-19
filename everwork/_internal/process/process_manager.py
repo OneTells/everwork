@@ -147,8 +147,6 @@ class ProcessManager:
 
                 task_group.create_task(supervisor.run())
 
-            logger.info('Наблюдатели процессов запущены')
-
     async def run(self) -> None:
         logger.info('Менеджер процессов запущен')
 
