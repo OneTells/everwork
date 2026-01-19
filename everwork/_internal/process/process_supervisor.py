@@ -64,8 +64,9 @@ class ProcessSupervisor:
                     self._worker_process.pipe_reader.recv_bytes()
                     continue
 
+                logger.debug(f'[{self._process.uuid}] ({state.worker_name}) Воркер будет помечен для перезапуска')
                 await self._backend.mark_worker_executor_for_reboot(self._manager_uuid, self._process.uuid)
-                logger.debug(f'[{self._process.uuid}] ({state.worker_name}) Супервайзер процесса пометил воркер для перезапуска')
+                logger.debug(f'[{self._process.uuid}] ({state.worker_name}) Воркер помечен для перезапуска')
 
                 await self._restart_worker_manager(state.worker_name)
 
