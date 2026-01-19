@@ -156,7 +156,6 @@ class ProcessManager:
             return
 
         SignalHandler(self._shutdown_event).register()
-        logger.debug("Менеджер процессов зарегистрировал обработчик сигналов")
 
         async with self._backend_factory() as backend:
             logger.debug('Менеджер процессов инициализировал backend')
