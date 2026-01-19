@@ -106,7 +106,7 @@ class SignalHandler:
 @final
 class ProcessManager:
 
-    @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
+    @validate_call
     def __init__(
         self,
         *,
