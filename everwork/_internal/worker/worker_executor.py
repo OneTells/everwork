@@ -4,25 +4,26 @@ import asyncio
 import os
 import signal
 import time
-import typing
 from contextlib import suppress
 from inspect import signature
 from multiprocessing import connection, Pipe, Process as BaseProcess
 from types import FrameType
-from typing import Any
+from typing import Any, Callable, TYPE_CHECKING
 
 from loguru import logger
 from orjson import dumps
-from redis.asyncio import Redis
 
 from everwork._internal.resource.resource_manager import ResourceManager
-from everwork._internal.utils.redis_retry import GracefulShutdownRetry, RetryShutdownException
+from everwork._internal.utils.async_thread import AsyncThread
 from everwork._internal.utils.single_value_channel import ChannelClosed, SingleValueChannel
+from everwork._internal.utils.task_utils import OperationCancelled, wait_for_or_cancel
+from everwork.backend import AbstractBackend
+from everwork.broker import AbstractBroker
 from everwork.events import EventCollector, EventPublisher, HybridEventStorage
 from everwork.schemas import Process, WorkerSettings
-from everwork.workers.base import AbstractWorker
+from everwork.workers import AbstractWorker
 
-if typing.TYPE_CHECKING:
+if TYPE_CHECKING:
     from loguru import Logger
 
 try:
@@ -36,10 +37,12 @@ class SignalHandler:
     def __init__(
         self,
         shutdown_event: asyncio.Event,
-        is_executing_callback: typing.Callable[[], bool],
-        on_resource_runner_cancel: typing.Callable[[], None],
+        terminate_event: asyncio.Event,
+        is_executing_callback: Callable[[], bool],
+        on_resource_runner_cancel: Callable[[], None],
     ) -> None:
         self._shutdown_event = shutdown_event
+        self._terminate_event = terminate_event
         self._is_executing_callback = is_executing_callback
         self._on_resource_runner_cancel = on_resource_runner_cancel
 
@@ -50,6 +53,9 @@ class SignalHandler:
         self._on_resource_runner_cancel()
 
     def _handle_terminate_signal(self, signal_num: int, frame: FrameType | None) -> None:
+        loop = asyncio.get_running_loop()
+        loop.call_soon_threadsafe(self._terminate_event.set)  # type: ignore
+
         if not self._is_executing_callback():
             return
 
@@ -62,19 +68,19 @@ class SignalHandler:
 
 class ProcessNotifier:
 
-    def __init__(self, pipe_connection: connection.Connection) -> None:
-        self._pipe_connection = pipe_connection
+    def __init__(self, conn: connection.Connection) -> None:
+        self._conn = conn
 
-    def notify_worker_start(self, worker_settings: WorkerSettings) -> None:
+    def send_start_event(self, worker_settings: WorkerSettings) -> None:
         data = {
             'worker_name': worker_settings.name,
             'end_time': time.time() + worker_settings.execution_timeout
         }
 
-        self._pipe_connection.send_bytes(dumps(data))
+        self._conn.send_bytes(dumps(data))
 
-    def notify_worker_end(self) -> None:
-        self._pipe_connection.send_bytes(b'')
+    def send_completion_event(self) -> None:
+        self._conn.send_bytes(b'')
 
 
 class WorkerRegistry:
@@ -90,7 +96,7 @@ class WorkerRegistry:
             try:
                 worker = worker_cls()
             except Exception as error:
-                logger.exception(f'({worker_cls.settings.name}) Ошибка при инициализации: {error}')
+                logger.exception(f'[{self._process.uuid}] ({worker_cls.settings.name}) Ошибка при инициализации: {error}')
                 continue
 
             self._workers[worker.settings.name] = worker
@@ -101,14 +107,14 @@ class WorkerRegistry:
             try:
                 await worker.startup()
             except Exception as error:
-                logger.exception(f'({worker.settings.name}) Ошибка при startup: {error}')
+                logger.exception(f'[{self._process.uuid}] ({worker.settings.name}) Ошибка при startup: {error}')
 
     async def shutdown_all(self) -> None:
         for worker in self._workers.values():
             try:
                 await worker.shutdown()
             except Exception as error:
-                logger.exception(f'({worker.settings.name}) Ошибка при shutdown: {error}')
+                logger.exception(f'[{self._process.uuid}] ({worker.settings.name}) Ошибка при shutdown: {error}')
 
     def get_worker(self, name: str) -> AbstractWorker:
         return self._workers[name]
@@ -121,14 +127,22 @@ class EventProcessor:
 
     def __init__(
         self,
+        manager_uuid: str,
+        process: Process,
         worker_registry: WorkerRegistry,
         pipe_connection: connection.Connection,
         response_channel: SingleValueChannel[tuple[str, dict[str, Any]]],
-        answer_channel: SingleValueChannel[BaseException | None]
+        answer_channel: SingleValueChannel[BaseException | None],
+        shutdown_event: asyncio.Event,
+        terminate_event: asyncio.Event
     ) -> None:
+        self._manager_uuid = manager_uuid
+        self._process = process
         self._worker_registry = worker_registry
         self._response_channel = response_channel
         self._answer_channel = answer_channel
+        self._shutdown_event = shutdown_event
+        self._terminate_event = terminate_event
 
         self._notifier = ProcessNotifier(pipe_connection)
         self._is_executing = False
@@ -136,7 +150,18 @@ class EventProcessor:
     def is_executing(self) -> bool:
         return self._is_executing
 
-    async def process_next(self, storage: HybridEventStorage, collector: EventCollector, publisher: EventPublisher) -> bool:
+    async def process_next(
+        self,
+        storage: HybridEventStorage,
+        collector: EventCollector,
+        publisher: EventPublisher,
+        backend: AbstractBackend
+    ) -> bool:
+        await wait_for_or_cancel(
+            backend.mark_worker_executor_as_available(self._manager_uuid, self._process.uuid),
+            self._terminate_event
+        )
+
         try:
             worker_name, kwargs_raw = await self._response_channel.receive()
         except ChannelClosed:
@@ -151,22 +176,30 @@ class EventProcessor:
             storage.max_events_in_memory = worker.settings.event_storage.max_events_in_memory
             kwargs['collector'] = collector
 
-        self._notifier.notify_worker_start(worker.settings)
+        try:
+            await wait_for_or_cancel(
+                backend.mark_worker_executor_as_busy(self._manager_uuid, self._process.uuid, worker_name),
+                self._terminate_event
+            )
+        except OperationCancelled:
+            return False
+
+        self._notifier.send_start_event(worker.settings)
 
         error_answer: BaseException | None = None
-        
+
         try:
             self._is_executing = True
             await worker.__call__(**kwargs)
         except (KeyboardInterrupt, asyncio.CancelledError) as error:
-            logger.exception(f'({worker_name}) Выполнение прервано по таймауту')
+            logger.exception(f'[{self._process.uuid}] ({worker_name}) Выполнение прервано по таймауту')
             error_answer = error
         except Exception as error:
-            logger.exception(f'({worker_name}) Ошибка при обработке события: {error}')
+            logger.exception(f'[{self._process.uuid}] ({worker_name}) Ошибка при обработке события: {error}')
             error_answer = error
         finally:
             self._is_executing = False
-            self._notifier.notify_worker_end()
+            self._notifier.send_completion_event()
 
         if error_answer is None:
             try:
@@ -175,62 +208,88 @@ class EventProcessor:
                     worker.settings.event_publisher.max_batch_size
                 )
             except RetryShutdownException as error:
-                logger.exception(f'({worker_name}) Ошибка Redis при сохранении ивентов')
+                logger.exception(f'[{self._process.uuid}] ({worker_name}) Ошибка Redis при сохранении ивентов')
                 error_answer = error
 
         self._answer_channel.send(error_answer)
+
+        await wait_for_or_cancel(
+            backend.mark_worker_executor_as_available(self._manager_uuid, self._process.uuid),
+            self._terminate_event
+        )
+
         return True
 
 
 class WorkerExecutor:
 
-    def __init__(self, redis_dsn: str, process: Process, pipe_connection: connection.Connection) -> None:
-        self._redis_dsn = redis_dsn
+    def __init__(
+        self,
+        manager_uuid: str,
+        process: Process,
+        backend_factory: Callable[[], AbstractBackend],
+        broker_factory: Callable[[], AbstractBroker],
+        pipe_connection: connection.Connection
+    ) -> None:
+        self._manager_uuid = manager_uuid
         self._process = process
+        self._backend_factory = backend_factory
+        self._broker_factory = broker_factory
         self._pipe_connection = pipe_connection
 
-        self._worker_names = ', '.join(worker.settings.name for worker in process.workers)
-
         self._shutdown_event = asyncio.Event()
+        self._terminate_event = asyncio.Event()
 
         self._response_channel = SingleValueChannel[tuple[str, dict[str, Any]]]()
         self._answer_channel = SingleValueChannel[BaseException | None]()
 
-        self._resource_manager = ResourceManager(
-            self._redis_dsn,
-            self._process,
-            self._response_channel,
-            self._answer_channel
+        self._resource_manager = AsyncThread(
+            target=lambda **kwargs: ResourceManager(**kwargs).run(),
+            kwargs={
+                'manager_uuid': manager_uuid,
+                'process': process,
+                'backend_factory': backend_factory,
+                'broker_factory': broker_factory,
+                'response_channel': self._response_channel,
+                'answer_channel': self._answer_channel
+            }
         )
 
         self._worker_registry = WorkerRegistry(process)
 
         self._event_processor = EventProcessor(
+            manager_uuid,
+            process,
             self._worker_registry,
             self._pipe_connection,
             self._response_channel,
-            self._answer_channel
+            self._answer_channel,
+            self._shutdown_event,
+            self._terminate_event
         )
 
         self._signal_handler = SignalHandler(
             self._shutdown_event,
+            self._terminate_event,
             self._event_processor.is_executing,
             self._resource_manager.cancel
         )
 
     async def _run_worker_loop(self) -> None:
-        retry = GracefulShutdownRetry(self._process.redis_backoff_strategy, self._shutdown_event)
+        async with self._backend_factory() as backend:
+            async with self._broker_factory() as broker:
+                async with HybridEventStorage() as storage:
+                    collector = EventCollector(storage)
+                    publisher = EventPublisher(broker)
 
-        async with Redis.from_url(self._redis_dsn, retry=retry, protocol=3, decode_responses=True) as redis:
-            async with HybridEventStorage() as storage:
-                collector = EventCollector(storage)
-                publisher = EventPublisher(redis)
-
-                while await self._event_processor.process_next(storage, collector, publisher):
-                    await storage.clear()
+                    while await self._event_processor.process_next(storage, collector, publisher, backend):
+                        await storage.clear()
 
     async def run(self) -> None:
-        logger.debug(f'[{self._worker_names}] Исполнитель воркеров запущен')
+        logger.debug(
+            f'[{self._process.uuid}] Исполнитель воркеров запущен. '
+            f'Состав: {', '.join(worker.settings.name for worker in self._process.workers)}'
+        )
 
         self._signal_handler.register()
 
@@ -242,25 +301,31 @@ class WorkerExecutor:
         try:
             await self._run_worker_loop()
         except Exception as error:
-            logger.critical(f'[{self._worker_names}] Исполнитель воркеров завершился с ошибкой: {error}')
+            logger.opt(exception=True).critical(f'[{self._process.uuid}] Исполнитель воркеров завершился с ошибкой: {error}')
 
         await self._worker_registry.shutdown_all()
 
-        logger.debug(f'[{self._worker_names}] Исполнитель воркеров начал завершение')
+        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров начал завершение')
 
         self._resource_manager.join()
         self._pipe_connection.close()
 
-        logger.debug(f'[{self._worker_names}] Исполнитель воркеров завершил работу')
+        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров завершил работу')
 
 
 class WorkerProcess:
 
-    def __init__(self, redis_dsn: str, process: Process) -> None:
-        self._redis_dsn = redis_dsn
+    def __init__(
+        self,
+        manager_uuid: str,
+        process: Process,
+        backend_factory: Callable[[], AbstractBackend],
+        broker_factory: Callable[[], AbstractBroker]
+    ) -> None:
+        self._manager_uuid = manager_uuid
         self._process = process
-
-        self._worker_names = ', '.join(worker.settings.name for worker in process.workers)
+        self._backend_factory = backend_factory
+        self._broker_factory = broker_factory
 
         self._base_process: BaseProcess | None = None
         self._pipe_reader: connection.Connection | None = None
@@ -282,8 +347,10 @@ class WorkerProcess:
         self._base_process = BaseProcess(
             target=self._run,
             kwargs={
-                'redis_dsn': self._redis_dsn,
+                'manager_uuid': self._manager_uuid,
                 'process': self._process,
+                'backend_factory': self._backend_factory,
+                'broker_factory': self._broker_factory,
                 'pipe_connection': self._pipe_writer,
                 'logger_': logger
             }
@@ -295,7 +362,7 @@ class WorkerProcess:
             return
 
         if self._base_process.is_alive():
-            logger.debug(f'[{self._worker_names}] Подан сигнал о закрытии процесса')
+            logger.debug(f'[{self._process.uuid}] Подан сигнал о закрытии процесса')
             os.kill(self._base_process.pid, signal.SIGUSR1)
 
         end_time = time.time() + max(worker.settings.execution_timeout for worker in self._process.workers)
@@ -310,7 +377,7 @@ class WorkerProcess:
             await asyncio.sleep(0.001)
 
         if self._base_process.is_alive():
-            logger.debug(f'[{self._worker_names}] Подан сигнал о немедленном закрытии процесса')
+            logger.debug(f'[{self._process.uuid}] Подан сигнал о немедленном закрытии процесса')
             os.kill(self._base_process.pid, signal.SIGTERM)
 
         end_time = time.time() + self._process.shutdown_timeout
@@ -326,7 +393,7 @@ class WorkerProcess:
 
         if self._base_process.is_alive():
             logger.critical(
-                f'[{self._worker_names}] Не удалось мягко завершить процесс, отправлен сигнал SIGKILL. '
+                f'[{self._process.uuid}] Не удалось мягко завершить процесс, отправлен сигнал SIGKILL. '
                 f'Возможно зависание воркеров, необходимо перезапустить менеджер'
             )
             os.kill(self._base_process.pid, signal.SIGKILL)
@@ -343,17 +410,12 @@ class WorkerProcess:
         self._pipe_writer = None
 
     @staticmethod
-    def _run(
-        redis_dsn: str,
-        process: Process,
-        pipe_connection: connection.Connection,
-        logger_: Logger
-    ) -> None:
+    def _run(logger_: Logger, **kwargs: Any) -> None:
         logger.remove()
         logger_.reinstall()
 
         with suppress(KeyboardInterrupt):
             with asyncio.Runner(loop_factory=new_event_loop) as runner:
-                runner.run(WorkerExecutor(redis_dsn, process, pipe_connection).run())
+                runner.run(WorkerExecutor(**kwargs).run())
 
         logger.remove()

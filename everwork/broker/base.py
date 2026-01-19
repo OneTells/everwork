@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Self
+from typing import Any, Iterable, Self
 
 from everwork.schemas import WorkerEvent
 
@@ -33,17 +33,19 @@ class AbstractBroker[T](ABC):
     @abstractmethod
     async def fetch_event(
         self,
+        manager_uuid: str,
+        process_uuid: str,
         worker_name: str,
-        source_streams: str,
-        worker_executor_id: str
+        source_streams: Iterable[str]
     ) -> tuple[dict[str, Any], T]:
         raise NotImplementedError
 
     @abstractmethod
     async def ack_event(
         self,
+        manager_uuid: str,
+        process_uuid: str,
         worker_name: str,
-        worker_executor_id: str,
         event_identifier: T
     ) -> None:
         raise NotImplementedError
@@ -51,8 +53,9 @@ class AbstractBroker[T](ABC):
     @abstractmethod
     async def requeue_event(
         self,
+        manager_uuid: str,
+        process_uuid: str,
         worker_name: str,
-        worker_executor_id: str,
         event_identifier: T
     ) -> None:
         raise NotImplementedError
@@ -60,8 +63,11 @@ class AbstractBroker[T](ABC):
     @abstractmethod
     async def reject_event(
         self,
+        manager_uuid: str,
+        process_uuid: str,
         worker_name: str,
-        worker_executor_id: str,
-        event_identifier: T
+        event_identifier: T,
+        kwargs: dict[str, Any],
+        error: BaseException
     ) -> None:
         raise NotImplementedError
