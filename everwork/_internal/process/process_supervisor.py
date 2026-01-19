@@ -39,10 +39,8 @@ class ProcessSupervisor:
 
     async def _restart_worker_manager(self, worker_name: str) -> None:
         logger.warning(f'[{self._process.uuid}] Воркер {worker_name} завис. Начат перезапуск процесса')
-
         await self._worker_process.close()
         await self._worker_process.start()
-
         logger.warning(f'[{self._process.uuid}] Процесс перезапущен')
 
     async def _run_monitoring_cycle(self) -> None:
