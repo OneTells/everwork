@@ -37,7 +37,7 @@ class ProcessSupervisor:
 
         self._worker_process = WorkerProcess(manager_uuid, process, backend_factory, broker_factory)
 
-    async def _restart_worker_manager(self, worker_name: str) -> None:
+    async def _restart_worker_process(self, worker_name: str) -> None:
         logger.warning(f'[{self._process.uuid}] ({worker_name}) Процесс завис и будет перезапущен')
 
         await self._backend.mark_worker_executor_for_reboot(self._manager_uuid, self._process.uuid)
@@ -69,7 +69,7 @@ class ProcessSupervisor:
                     self._worker_process.pipe_reader.recv_bytes()
                     continue
 
-                await self._restart_worker_manager(state.worker_name)
+                await self._restart_worker_process(state.worker_name)
 
     async def run(self) -> None:
         logger.debug(
