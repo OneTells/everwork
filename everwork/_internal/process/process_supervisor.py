@@ -38,9 +38,14 @@ class ProcessSupervisor:
         self._worker_process = WorkerProcess(manager_uuid, process, backend_factory, broker_factory)
 
     async def _restart_worker_manager(self, worker_name: str) -> None:
-        logger.warning(f'[{self._process.uuid}] Воркер {worker_name} завис. Начат перезапуск процесса')
+        logger.warning(f'[{self._process.uuid}] ({worker_name}) Процесс завис и будет перезапущен')
+
+        await self._backend.mark_worker_executor_for_reboot(self._manager_uuid, self._process.uuid)
+        logger.debug(f'[{self._process.uuid}] ({worker_name}) Установлена отметка о перезапуске процесса')
+
         await self._worker_process.close()
         await self._worker_process.start()
+
         logger.warning(f'[{self._process.uuid}] Процесс перезапущен')
 
     async def _run_monitoring_cycle(self) -> None:
@@ -63,10 +68,6 @@ class ProcessSupervisor:
                 if is_exist_message:
                     self._worker_process.pipe_reader.recv_bytes()
                     continue
-
-                logger.debug(f'[{self._process.uuid}] ({state.worker_name}) Воркер будет помечен для перезапуска')
-                await self._backend.mark_worker_executor_for_reboot(self._manager_uuid, self._process.uuid)
-                logger.debug(f'[{self._process.uuid}] ({state.worker_name}) Воркер помечен для перезапуска')
 
                 await self._restart_worker_manager(state.worker_name)
 
