@@ -40,7 +40,7 @@ class ResourceSupervisor:
 
     async def _process_worker_messages(self) -> None:
         while not self._shutdown_event.is_set():
-            if await self._broker.get_worker_status(self._manager_uuid, self._worker.settings.name) == 'off':
+            if await self._get_worker_status() == 'off':
                 try:
                     await wait_for_or_cancel(
                         asyncio.sleep(self._worker.settings.worker_status_check_interval),
@@ -52,7 +52,7 @@ class ResourceSupervisor:
                 continue
 
             try:
-                kwargs, resource = await wait_for_or_cancel(
+                kwargs, event_identifier = await wait_for_or_cancel(
                     self._broker.fetch_event(
                         self._manager_uuid,
                         self._process.uuid,
@@ -65,23 +65,23 @@ class ResourceSupervisor:
                 continue
 
             if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
-                await self._broker.requeue_event(self._manager_uuid, self._process.uuid, self._worker.settings.name, resource)
+                await self._broker.requeue_event(self._manager_uuid, self._process.uuid, self._worker.settings.name, event_identifier)
                 continue
 
             async with self._lock:
                 if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
-                    await self._broker.requeue_event(self._manager_uuid, self._process.uuid, self._worker.settings.name, resource)
+                    await self._broker.requeue_event(self._manager_uuid, self._process.uuid, self._worker.settings.name, event_identifier)
                     continue
 
                 self._response_channel.send((self._worker.settings.name, kwargs))
                 error_answer = await self._answer_channel.receive()
 
                 if error_answer is None:
-                    await self._broker.ack_event(self._manager_uuid, self._process.uuid, self._worker.settings.name, resource)
+                    await self._broker.ack_event(self._manager_uuid, self._process.uuid, self._worker.settings.name, event_identifier)
                     continue
 
                 await self._broker.reject_event(
-                    self._manager_uuid, self._process.uuid, self._worker.settings.name, resource, kwargs, error_answer
+                    self._manager_uuid, self._process.uuid, self._worker.settings.name, event_identifier, kwargs, error_answer
                 )
 
     async def run(self) -> None:

@@ -24,33 +24,53 @@ class AbstractBackend(ABC):
     # Менеджер
 
     @abstractmethod
-    async def startup_manager(self, manager_uuid: str, processes: list[Process]) -> None:
+    async def startup_manager(
+        self,
+        manager_uuid: str,
+        processes: list[Process]
+    ) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    async def shutdown_manager(self, manager_uuid: str) -> None:
+    async def shutdown_manager(
+        self,
+        manager_uuid: str
+    ) -> None:
         raise NotImplementedError
 
     # Воркер
 
     @abstractmethod
-    async def get_worker_status(self, manager_uuid: str, worker_name: str) -> Literal['on', 'off']:
-        raise NotImplementedError
-
-    @abstractmethod
-    async def set_worker_status(self, manager_uuid: str, worker_name: str, status: Literal['on', 'off']) -> None:
+    async def get_worker_status(
+        self,
+        manager_uuid: str,
+        worker_name: str
+    ) -> Literal['on', 'off']:
         raise NotImplementedError
 
     # Исполнитель воркера
 
     @abstractmethod
-    async def mark_worker_executor_as_busy(self, manager_uuid: str, process_uuid: str, worker_name: str) -> None:
+    async def mark_worker_executor_as_busy(
+        self,
+        manager_uuid: str,
+        process_uuid: str,
+        worker_name: str
+    ) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    async def mark_worker_executor_as_available(self, manager_uuid: str, process_uuid: str) -> None:
+    async def mark_worker_executor_as_available(
+        self,
+        manager_uuid: str,
+        process_uuid: str
+    ) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    async def mark_worker_executor_for_reboot(self, manager_uuid: str, process_uuid: str) -> None:
+    async def mark_worker_executor_for_reboot(
+        self,
+        manager_uuid: str,
+        process_uuid: str
+    ) -> None:
         raise NotImplementedError
