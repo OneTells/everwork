@@ -7,7 +7,7 @@ from typing import Annotated, Callable, final
 from uuid import UUID, uuid4
 
 from loguru import logger
-from pydantic import AfterValidator, ConfigDict, validate_call
+from pydantic import AfterValidator, validate_call
 
 from everwork._internal.process.process_supervisor import ProcessSupervisor
 from everwork.backend import AbstractBackend
