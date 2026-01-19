@@ -159,6 +159,8 @@ class ProcessManager:
         logger.debug("Менеджер процессов зарегистрировал обработчик сигналов")
 
         async with self._backend_factory() as backend:
+            logger.debug('Менеджер процессов инициализировал backend')
+
             await self._startup(backend)
             logger.debug('Менеджер процессов выполнил startup')
 
