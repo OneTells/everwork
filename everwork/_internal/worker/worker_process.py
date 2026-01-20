@@ -4,7 +4,6 @@ import asyncio
 import os
 import signal
 import time
-from contextlib import suppress
 from multiprocessing import connection, Pipe, Process as BaseProcess
 from typing import Any, Callable, TYPE_CHECKING
 
@@ -125,8 +124,7 @@ class WorkerProcess:
         logger.remove()
         logger_.reinstall()
 
-        with suppress(KeyboardInterrupt):
-            with asyncio.Runner(loop_factory=new_event_loop) as runner:
-                runner.run(WorkerExecutor(**kwargs).run())
+        with asyncio.Runner(loop_factory=new_event_loop) as runner:
+            runner.run(WorkerExecutor(**kwargs).run())
 
         logger.remove()
