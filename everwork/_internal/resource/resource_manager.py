@@ -37,31 +37,31 @@ class ResourceManager:
             async with self._broker_factory() as broker:
                 async with asyncio.TaskGroup() as task_group:
                     for worker in self._process.workers:
-                        task_group.create_task(
-                            ResourceSupervisor(
-                                self._manager_uuid,
-                                self._process,
-                                worker,
-                                backend,
-                                broker,
-                                self._response_channel,
-                                self._answer_channel,
-                                lock,
-                                self._shutdown_event
-                            ).run()
+                        supervisor = ResourceSupervisor(
+                            self._manager_uuid,
+                            self._process,
+                            worker,
+                            backend,
+                            broker,
+                            self._response_channel,
+                            self._answer_channel,
+                            lock,
+                            self._shutdown_event
                         )
 
-                    logger.debug(f'[{self._process.uuid}] Наблюдатели ресурсов запущены')
+                        task_group.create_task(supervisor.run())
 
     async def run(self) -> None:
         logger.debug(
-            f'[{self._process.uuid}] Координатор ресурсов запущен. '
+            f'[{self._process.uuid}] Менеджер ресурсов запущен. '
             f'Состав: {', '.join(worker.settings.name for worker in self._process.workers)}'
         )
 
+        logger.debug(f'[{self._process.uuid}] Менеджер ресурсов запустил все супервайзеры ресурсов')
         await self._run_supervisors()
+        logger.debug(f'[{self._process.uuid}] Менеджер ресурсов завершил все супервайзеры ресурсов')
 
         self._response_channel.close()
         self._answer_channel.close()
 
-        logger.debug(f'[{self._process.uuid}] Координатор ресурсов завершил работу')
+        logger.debug(f'[{self._process.uuid}] Менеджер ресурсов завершил работу')
