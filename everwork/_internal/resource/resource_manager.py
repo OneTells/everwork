@@ -3,7 +3,7 @@ from typing import Any, Callable
 
 from loguru import logger
 
-from everwork._internal.resource.resource_supervisor import ResourceSupervisor
+from everwork._internal.resource.resource_handler import ResourceHandler
 from everwork._internal.utils.single_value_channel import SingleValueChannel
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker
@@ -37,7 +37,7 @@ class ResourceManager:
             async with self._broker_factory() as broker:
                 async with asyncio.TaskGroup() as task_group:
                     for worker in self._process.workers:
-                        supervisor = ResourceSupervisor(
+                        handler = ResourceHandler(
                             self._manager_uuid,
                             self._process,
                             worker,
@@ -49,7 +49,7 @@ class ResourceManager:
                             self._shutdown_event
                         )
 
-                        task_group.create_task(supervisor.run())
+                        task_group.create_task(handler.run())
 
     async def run(self) -> None:
         logger.debug(
@@ -57,9 +57,9 @@ class ResourceManager:
             f'Состав: {', '.join(worker.settings.name for worker in self._process.workers)}'
         )
 
-        logger.debug(f'[{self._process.uuid}] Менеджер ресурсов запустил все супервайзеры ресурсов')
+        logger.debug(f'[{self._process.uuid}] Менеджер ресурсов запустил все обработчики ресурсов')
         await self._run_supervisors()
-        logger.debug(f'[{self._process.uuid}] Менеджер ресурсов завершил все супервайзеры ресурсов')
+        logger.debug(f'[{self._process.uuid}] Менеджер ресурсов завершил все обработчики ресурсов')
 
         self._response_channel.close()
         self._answer_channel.close()

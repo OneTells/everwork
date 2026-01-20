@@ -12,7 +12,7 @@ from everwork.schemas import Process
 from everwork.workers import AbstractWorker
 
 
-class ResourceSupervisor:
+class ResourceHandler:
 
     def __init__(
         self,
@@ -39,6 +39,18 @@ class ResourceSupervisor:
     async def _get_worker_status(self) -> Literal['on', 'off']:
         return await self._backend.get_worker_status(self._manager_uuid, self._worker.settings.name)
 
+    async def _fetch_event(self) -> tuple[dict[str, Any], Any]:
+        return await self._broker.fetch_event(
+            self._manager_uuid,
+            self._process.uuid,
+            self._worker.settings.name,
+            self._worker.settings.source_streams
+        )
+
+    async def _execute(self, kwargs: dict[str, Any]) -> BaseException | None:
+        self._response_channel.send((self._worker.settings.name, kwargs))
+        return await self._answer_channel.receive()
+
     async def _ack_event(self, event_identifier: Any) -> None:
         await self._broker.ack_event(self._manager_uuid, self._process.uuid, self._worker.settings.name, event_identifier)
 
@@ -50,7 +62,7 @@ class ResourceSupervisor:
     async def _requeue_event(self, event_identifier: Any) -> None:
         await self._broker.requeue_event(self._manager_uuid, self._process.uuid, self._worker.settings.name, event_identifier)
 
-    async def _process_worker_messages(self) -> None:
+    async def _run_event_processing_loop(self) -> None:
         with suppress(OperationCancelled):
             while not self._shutdown_event.is_set():
                 if await self._get_worker_status() == 'off':
@@ -60,12 +72,7 @@ class ResourceSupervisor:
                     )
                     continue
 
-                kwargs, event_identifier = await self._broker.fetch_event(
-                    self._manager_uuid,
-                    self._process.uuid,
-                    self._worker.settings.name,
-                    self._worker.settings.source_streams
-                )
+                kwargs, event_identifier = await self._fetch_event()
 
                 if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
                     await self._requeue_event(event_identifier)
@@ -76,8 +83,7 @@ class ResourceSupervisor:
                         await self._requeue_event(event_identifier)
                         continue
 
-                    self._response_channel.send((self._worker.settings.name, kwargs))
-                    error_answer = await self._answer_channel.receive()
+                    error_answer = await self._execute(kwargs)
 
                     if error_answer is not None:
                         await self._reject_event(event_identifier, error_answer)
@@ -88,6 +94,6 @@ class ResourceSupervisor:
     async def run(self) -> None:
         logger.debug(f'({self._worker.settings.name}) Супервайзер ресурса запущен')
 
-        await self._process_worker_messages()
+        await self._run_event_processing_loop()
 
         logger.debug(f'({self._worker.settings.name}) Супервайзер ресурса завершил работ')
