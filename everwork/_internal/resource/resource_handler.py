@@ -90,8 +90,8 @@ class ResourceHandler:
                     await self._ack_event(event_identifier)
 
     async def run(self) -> None:
-        logger.debug(f'({self._worker.settings.name}) Супервайзер ресурса запущен')
+        logger.debug(f'({self._worker.settings.name}) Обработчик ресурсов запущен')
 
         await self._run_event_processing_loop()
 
-        logger.debug(f'({self._worker.settings.name}) Супервайзер ресурса завершил работ')
+        logger.debug(f'({self._worker.settings.name}) Обработчик ресурсов завершил работ')
