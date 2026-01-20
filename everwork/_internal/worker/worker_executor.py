@@ -11,8 +11,8 @@ from orjson import dumps
 
 from everwork._internal.resource.resource_manager import ResourceManager
 from everwork._internal.utils.async_thread import AsyncThread
+from everwork._internal.utils.external_executor import ExecutorReceiver, ExecutorTransmitter
 from everwork._internal.utils.single_value_channel import ChannelClosed, SingleValueChannel
-from everwork._internal.utils.task_utils import OperationCancelled, wait_for_or_cancel
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker
 from everwork.events import EventCollector, EventPublisher, HybridEventStorage
@@ -119,16 +119,14 @@ class EventProcessor:
         process: Process,
         worker_registry: WorkerRegistry,
         pipe_connection: connection.Connection,
-        response_channel: SingleValueChannel[tuple[str, dict[str, Any]]],
-        answer_channel: SingleValueChannel[BaseException | None],
+        receiver: ExecutorReceiver,
         shutdown_event: asyncio.Event,
         terminate_event: asyncio.Event
     ) -> None:
         self._manager_uuid = manager_uuid
         self._process = process
         self._worker_registry = worker_registry
-        self._response_channel = response_channel
-        self._answer_channel = answer_channel
+        self._receiver = receiver
         self._shutdown_event = shutdown_event
         self._terminate_event = terminate_event
 
@@ -145,13 +143,10 @@ class EventProcessor:
         publisher: EventPublisher,
         backend: AbstractBackend
     ) -> bool:
-        await wait_for_or_cancel(
-            backend.mark_worker_executor_as_available(self._manager_uuid, self._process.uuid),
-            self._terminate_event
-        )
+        await backend.mark_worker_executor_as_available(self._manager_uuid, self._process.uuid)
 
         try:
-            worker_name, kwargs_raw = await self._response_channel.receive()
+            worker_name, kwargs_raw = await self._receiver.get_response()
         except ChannelClosed:
             return False
 
@@ -164,13 +159,7 @@ class EventProcessor:
             storage.max_events_in_memory = worker.settings.event_storage.max_events_in_memory
             kwargs['collector'] = collector
 
-        try:
-            await wait_for_or_cancel(
-                backend.mark_worker_executor_as_busy(self._manager_uuid, self._process.uuid, worker_name),
-                self._terminate_event
-            )
-        except OperationCancelled:
-            return False
+        await backend.mark_worker_executor_as_busy(self._manager_uuid, self._process.uuid, worker_name)
 
         self._notifier.send_start_event(worker.settings)
 
@@ -190,21 +179,14 @@ class EventProcessor:
             self._notifier.send_completion_event()
 
         if error_answer is None:
-            try:
-                await publisher.push_events_from_async_iterator(
-                    storage.read_all(),
-                    worker.settings.event_publisher.max_batch_size
-                )
-            except RetryShutdownException as error:
-                logger.exception(f'[{self._process.uuid}] ({worker_name}) Ошибка Redis при сохранении ивентов')
-                error_answer = error
+            await publisher.push_events_from_async_iterator(
+                storage.read_all(),
+                worker.settings.event_publisher.max_batch_size
+            )
 
-        self._answer_channel.send(error_answer)
+        self._receiver.send_answer(error_answer)
 
-        await wait_for_or_cancel(
-            backend.mark_worker_executor_as_available(self._manager_uuid, self._process.uuid),
-            self._terminate_event
-        )
+        await backend.mark_worker_executor_as_available(self._manager_uuid, self._process.uuid)
 
         return True
 
@@ -228,8 +210,10 @@ class WorkerExecutor:
         self._shutdown_event = asyncio.Event()
         self._terminate_event = asyncio.Event()
 
-        self._response_channel = SingleValueChannel[tuple[str, dict[str, Any]]]()
-        self._answer_channel = SingleValueChannel[BaseException | None]()
+        response_channel = SingleValueChannel[tuple[str, dict[str, Any]]]()
+        answer_channel = SingleValueChannel[BaseException | None]()
+
+        self._receiver = ExecutorReceiver(response_channel, answer_channel)
 
         self._resource_manager = AsyncThread(
             target=lambda **kwargs: ResourceManager(**kwargs).run(),
@@ -238,8 +222,7 @@ class WorkerExecutor:
                 'process': process,
                 'backend_factory': backend_factory,
                 'broker_factory': broker_factory,
-                'response_channel': self._response_channel,
-                'answer_channel': self._answer_channel
+                'transmitter': ExecutorTransmitter(response_channel, answer_channel)
             }
         )
 
@@ -250,8 +233,7 @@ class WorkerExecutor:
             process,
             self._worker_registry,
             self._pipe_connection,
-            self._response_channel,
-            self._answer_channel,
+            self._receiver,
             self._shutdown_event,
             self._terminate_event
         )
@@ -282,18 +264,18 @@ class WorkerExecutor:
         self._signal_handler.register()
 
         self._resource_manager.start()
+        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров запустил менеджер ресурсов')
 
         await self._worker_registry.initialize()
         await self._worker_registry.startup_all()
+        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров выполнил startup_all')
 
-        try:
-            await self._run_worker_loop()
-        except Exception as error:
-            logger.opt(exception=True).critical(f'[{self._process.uuid}] Исполнитель воркеров завершился с ошибкой: {error}')
+        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров зашел в цикл обработки')
+        await self._run_worker_loop()
+        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров вышел из цикла обработки')
 
         await self._worker_registry.shutdown_all()
-
-        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров начал завершение')
+        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров выполнил shutdown_all')
 
         self._resource_manager.join()
         self._pipe_connection.close()
