@@ -67,7 +67,6 @@ class AbstractBroker[T](ABC):
         process_uuid: str,
         worker_name: str,
         event_identifier: T,
-        kwargs: dict[str, Any],
         error: BaseException
     ) -> None:
         raise NotImplementedError

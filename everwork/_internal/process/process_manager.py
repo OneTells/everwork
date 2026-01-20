@@ -163,7 +163,7 @@ class ProcessManager:
             logger.debug('Менеджер процессов выполнил startup')
 
             await self._start_supervisors(backend)
-            logger.debug('Менеджер процессов завершил все наблюдатели процессов')
+            logger.debug('Менеджер процессов завершил все супервайзеры процессов')
 
             await self._shutdown(backend)
             logger.debug('Менеджер процессов выполнил shutdown')
