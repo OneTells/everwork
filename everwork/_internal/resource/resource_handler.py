@@ -4,6 +4,7 @@ from typing import Any, Literal
 
 from loguru import logger
 
+from everwork._internal.utils.external_executor import ExecutorTransmitter
 from everwork._internal.utils.single_value_channel import SingleValueChannel
 from everwork._internal.utils.task_utils import OperationCancelled, wait_for_or_cancel
 from everwork.backend import AbstractBackend
@@ -21,8 +22,7 @@ class ResourceHandler:
         worker: type[AbstractWorker],
         backend: AbstractBackend,
         broker: AbstractBroker,
-        response_channel: SingleValueChannel[tuple[str, dict[str, Any]]],
-        answer_channel: SingleValueChannel[BaseException | None],
+        transmitter: ExecutorTransmitter,
         lock: asyncio.Lock,
         shutdown_event: asyncio.Event
     ) -> None:
@@ -31,8 +31,7 @@ class ResourceHandler:
         self._worker = worker
         self._backend = backend
         self._broker = broker
-        self._response_channel = response_channel
-        self._answer_channel = answer_channel
+        self._transmitter = transmitter
         self._lock = lock
         self._shutdown_event = shutdown_event
 
@@ -48,8 +47,7 @@ class ResourceHandler:
         )
 
     async def _execute(self, kwargs: dict[str, Any]) -> BaseException | None:
-        self._response_channel.send((self._worker.settings.name, kwargs))
-        return await self._answer_channel.receive()
+        return await self._transmitter.execute(self._worker.settings.name, kwargs)
 
     async def _ack_event(self, event_identifier: Any) -> None:
         await self._broker.ack_event(self._manager_uuid, self._process.uuid, self._worker.settings.name, event_identifier)

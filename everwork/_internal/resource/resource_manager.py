@@ -1,10 +1,10 @@
 import asyncio
-from typing import Any, Callable
+from typing import Callable
 
 from loguru import logger
 
 from everwork._internal.resource.resource_handler import ResourceHandler
-from everwork._internal.utils.single_value_channel import SingleValueChannel
+from everwork._internal.utils.external_executor import ExecutorTransmitter
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker
 from everwork.schemas import Process
@@ -18,16 +18,14 @@ class ResourceManager:
         process: Process,
         backend_factory: Callable[[], AbstractBackend],
         broker_factory: Callable[[], AbstractBroker],
-        response_channel: SingleValueChannel[tuple[str, dict[str, Any]]],
-        answer_channel: SingleValueChannel[BaseException | None],
+        transmitter: ExecutorTransmitter,
         shutdown_event: asyncio.Event
     ) -> None:
         self._manager_uuid = manager_uuid
         self._process = process
         self._backend_factory = backend_factory
         self._broker_factory = broker_factory
-        self._response_channel = response_channel
-        self._answer_channel = answer_channel
+        self._transmitter = transmitter
         self._shutdown_event = shutdown_event
 
     async def _run_supervisors(self) -> None:
@@ -43,8 +41,7 @@ class ResourceManager:
                             worker,
                             backend,
                             broker,
-                            self._response_channel,
-                            self._answer_channel,
+                            self._transmitter,
                             lock,
                             self._shutdown_event
                         )
@@ -61,7 +58,6 @@ class ResourceManager:
         await self._run_supervisors()
         logger.debug(f'[{self._process.uuid}] Менеджер ресурсов завершил все обработчики ресурсов')
 
-        self._response_channel.close()
-        self._answer_channel.close()
+        self._transmitter.close()
 
         logger.debug(f'[{self._process.uuid}] Менеджер ресурсов завершил работу')
