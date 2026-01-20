@@ -5,7 +5,6 @@ from typing import Any, Literal
 from loguru import logger
 
 from everwork._internal.utils.external_executor import ExecutorTransmitter
-from everwork._internal.utils.single_value_channel import SingleValueChannel
 from everwork._internal.utils.task_utils import OperationCancelled, wait_for_or_cancel
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker
@@ -61,33 +60,34 @@ class ResourceHandler:
         await self._broker.requeue_event(self._manager_uuid, self._process.uuid, self._worker.settings.name, event_identifier)
 
     async def _run_event_processing_loop(self) -> None:
-        with suppress(OperationCancelled):
-            while not self._shutdown_event.is_set():
-                if await self._get_worker_status() == 'off':
+        while not self._shutdown_event.is_set():
+            if await self._get_worker_status() == 'off':
+                with suppress(OperationCancelled):
                     await wait_for_or_cancel(
                         asyncio.sleep(self._worker.settings.worker_status_check_interval),
                         self._shutdown_event
                     )
-                    continue
 
-                kwargs, event_identifier = await self._fetch_event()
+                continue
 
+            kwargs, event_identifier = await self._fetch_event()
+
+            if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
+                await self._requeue_event(event_identifier)
+                continue
+
+            async with self._lock:
                 if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
                     await self._requeue_event(event_identifier)
                     continue
 
-                async with self._lock:
-                    if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
-                        await self._requeue_event(event_identifier)
-                        continue
+                error_answer = await self._execute(kwargs)
 
-                    error_answer = await self._execute(kwargs)
+                if error_answer is not None:
+                    await self._reject_event(event_identifier, error_answer)
+                    continue
 
-                    if error_answer is not None:
-                        await self._reject_event(event_identifier, error_answer)
-                        continue
-
-                    await self._ack_event(event_identifier)
+                await self._ack_event(event_identifier)
 
     async def run(self) -> None:
         logger.debug(f'({self._worker.settings.name}) Обработчик ресурсов запущен')
