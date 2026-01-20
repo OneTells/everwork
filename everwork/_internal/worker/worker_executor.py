@@ -1,12 +1,54 @@
 import asyncio
-from typing import Any
+import signal
+from multiprocessing import connection
+from types import FrameType
+from typing import Any, Callable
 
 from loguru import logger
 
-from everwork._internal.worker.heartbeat_notifier import HeartbeatNotifier
-from everwork.events import EventPublisher
+from everwork._internal.resource.resource_manager import ResourceManager
+from everwork._internal.utils.async_thread import AsyncThread
+from everwork._internal.utils.external_executor import ExecutorReceiver, ExecutorTransmitter
+from everwork._internal.utils.single_value_channel import SingleValueChannel
+from everwork._internal.worker.worker_loop import WorkerLoop
+from everwork._internal.worker.worker_registry import WorkerRegistry
+from everwork.backend import AbstractBackend
+from everwork.broker import AbstractBroker
 from everwork.schemas import Process
-from everwork.workers import AbstractWorker
+
+
+class SignalHandler:
+
+    def __init__(
+        self,
+        shutdown_event: asyncio.Event,
+        terminate_event: asyncio.Event,
+        is_executing_callback: Callable[[], bool],
+        on_resource_runner_cancel: Callable[[], None],
+    ) -> None:
+        self._shutdown_event = shutdown_event
+        self._terminate_event = terminate_event
+        self._is_executing_callback = is_executing_callback
+        self._on_resource_runner_cancel = on_resource_runner_cancel
+
+    def _handle_shutdown_signal(self, *_: Any) -> None:
+        loop = asyncio.get_running_loop()
+        loop.call_soon_threadsafe(self._shutdown_event.set)  # type: ignore
+
+        self._on_resource_runner_cancel()
+
+    def _handle_terminate_signal(self, signal_num: int, frame: FrameType | None) -> None:
+        loop = asyncio.get_running_loop()
+        loop.call_soon_threadsafe(self._terminate_event.set)  # type: ignore
+
+        if not self._is_executing_callback():
+            return
+
+        signal.default_int_handler(signal_num, frame)
+
+    def register(self) -> None:
+        signal.signal(signal.SIGUSR1, self._handle_shutdown_signal)
+        signal.signal(signal.SIGTERM, self._handle_terminate_signal)
 
 
 class WorkerExecutor:
@@ -15,37 +57,87 @@ class WorkerExecutor:
         self,
         manager_uuid: str,
         process: Process,
-        notifier: HeartbeatNotifier,
-        publisher: EventPublisher,
-        is_executing_event: asyncio.Event
+        backend_factory: Callable[[], AbstractBackend],
+        broker_factory: Callable[[], AbstractBroker],
+        pipe_connection: connection.Connection
     ) -> None:
         self._manager_uuid = manager_uuid
         self._process = process
+        self._backend_factory = backend_factory
+        self._broker_factory = broker_factory
+        self._pipe_connection = pipe_connection
 
-        self._notifier = notifier
-        self._publisher = publisher
+        self._shutdown_event = asyncio.Event()
+        self._terminate_event = asyncio.Event()
 
-        self._is_executing = is_executing_event
+        response_channel = SingleValueChannel[tuple[str, dict[str, Any]]]()
+        answer_channel = SingleValueChannel[BaseException | None]()
 
-    async def execute(self, worker: AbstractWorker, kwargs: dict[str, Any]) -> BaseException | None:
-        self._notifier.notify_started(worker.settings)
+        self._receiver = ExecutorReceiver(response_channel, answer_channel)
 
-        error_answer: BaseException | None = None
+        self._resource_manager = AsyncThread(
+            target=lambda **kwargs: ResourceManager(**kwargs).run(),
+            kwargs={
+                'manager_uuid': manager_uuid,
+                'process': process,
+                'backend_factory': backend_factory,
+                'broker_factory': broker_factory,
+                'transmitter': ExecutorTransmitter(response_channel, answer_channel)
+            }
+        )
 
-        try:
-            self._is_executing.set()
-            await worker.__call__(**kwargs)
-        except (KeyboardInterrupt, asyncio.CancelledError) as error:
-            logger.exception(f'[{self._process.uuid}] ({worker.settings.name}) Выполнение прервано по таймауту')
-            error_answer = error
-        except Exception as error:
-            logger.exception(f'[{self._process.uuid}] ({worker.settings.name}) Ошибка при обработке события: {error}')
-            error_answer = error
-        finally:
-            self._is_executing.clear()
-            self._notifier.notify_completed()
+        self._worker_registry = WorkerRegistry(process)
 
-        if error_answer is None:
-            await self._publisher.push_events(worker.settings.event_publisher.max_batch_size)
+        self._is_executing_event = asyncio.Event()
 
-        return error_answer
+    async def _initialize_workers(self) -> None:
+        await self._worker_registry.initialize()
+        await self._worker_registry.startup_all()
+
+    async def _shutdown_workers(self) -> None:
+        await self._worker_registry.shutdown_all()
+
+    async def _run_worker_loop(self) -> None:
+        loop = WorkerLoop(
+            self._manager_uuid,
+            self._process,
+            self._backend_factory,
+            self._broker_factory,
+            self._pipe_connection,
+            self._receiver,
+            self._worker_registry,
+            self._is_executing_event,
+        )
+
+        await loop.run()
+
+    async def run(self) -> None:
+        logger.debug(
+            f'[{self._process.uuid}] Исполнитель воркеров запущен. '
+            f'Состав: {', '.join(worker.settings.name for worker in self._process.workers)}'
+        )
+
+        SignalHandler(
+            self._shutdown_event,
+            self._terminate_event,
+            self._is_executing_event.is_set,
+            self._resource_manager.cancel
+        ).register()
+
+        self._resource_manager.start()
+        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров запустил менеджер ресурсов')
+
+        await self._initialize_workers()
+        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров выполнил startup_all')
+
+        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров зашел в цикл обработки')
+        await self._run_worker_loop()
+        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров вышел из цикла обработки')
+
+        await self._shutdown_workers()
+        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров выполнил shutdown_all')
+
+        self._resource_manager.join()
+        self._pipe_connection.close()
+
+        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров завершил работу')
