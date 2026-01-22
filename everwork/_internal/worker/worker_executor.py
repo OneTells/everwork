@@ -3,9 +3,8 @@ from typing import Any
 
 from loguru import logger
 
-from everwork._internal.utils.external_executor import ExecutorReceiver
-from everwork._internal.utils.heartbeat_notifier import HeartbeatNotifier
-from everwork._internal.utils.single_value_channel import ChannelClosed
+from everwork._internal.worker.utils.executor_channel import ChannelClosed, ExecutorReceiver
+from everwork._internal.worker.utils.heartbeat_notifier import HeartbeatNotifier
 from everwork._internal.worker.worker_registry import WorkerRegistry
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker

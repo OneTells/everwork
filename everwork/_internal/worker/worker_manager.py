@@ -7,8 +7,8 @@ from loguru import logger
 
 from everwork._internal.resource.resource_manager import ResourceManager
 from everwork._internal.utils.async_thread import AsyncThread
-from everwork._internal.utils.external_executor import create_executor_channel
-from everwork._internal.utils.heartbeat_notifier import HeartbeatNotifier
+from everwork._internal.worker.utils.executor_channel import create_executor_channel
+from everwork._internal.worker.utils.heartbeat_notifier import HeartbeatNotifier
 from everwork._internal.worker.worker_executor import WorkerExecutor
 from everwork._internal.worker.worker_registry import WorkerRegistry
 from everwork.backend import AbstractBackend

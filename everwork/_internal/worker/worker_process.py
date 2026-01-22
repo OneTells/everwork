@@ -9,7 +9,7 @@ from typing import Any, Callable, TYPE_CHECKING
 
 from loguru import logger
 
-from everwork._internal.utils.heartbeat_notifier import HeartbeatNotifier
+from everwork._internal.worker.utils.heartbeat_notifier import HeartbeatNotifier
 from everwork._internal.worker.worker_manager import WorkerManager
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker

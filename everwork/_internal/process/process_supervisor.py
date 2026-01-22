@@ -7,7 +7,8 @@ from loguru import logger
 from orjson import loads
 from pydantic import BaseModel
 
-from everwork._internal.utils.task_utils import OperationCancelled, poll_connection, wait_for_or_cancel
+from everwork._internal.process.utils.connection_utils import poll_connection
+from everwork._internal.utils.task_utils import OperationCancelled, wait_for_or_cancel
 from everwork._internal.worker.worker_process import WorkerProcess
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker

@@ -1,6 +1,7 @@
 import asyncio
 from asyncio import get_running_loop
 from threading import Lock
+from typing import Any
 
 
 class ChannelClosed(Exception):
@@ -61,3 +62,49 @@ class SingleValueChannel[T]:
 
             loop = self._waiter.get_loop()
             loop.call_soon_threadsafe(lambda: None if self._waiter.done() else self._waiter.cancel())  # type: ignore
+
+
+class ExecutorTransmitter:
+
+    def __init__(
+        self,
+        response_channel: SingleValueChannel[tuple[str, dict[str, Any]]],
+        answer_channel: SingleValueChannel[BaseException | None]
+    ) -> None:
+        self._response_channel = response_channel
+        self._answer_channel = answer_channel
+
+    async def execute(self, worker_name: str, kwargs: dict[str, Any]) -> BaseException | None:
+        self._response_channel.send((worker_name, kwargs))
+        return await self._answer_channel.receive()
+
+    def close(self) -> None:
+        self._response_channel.close()
+        self._answer_channel.close()
+
+
+class ExecutorReceiver:
+
+    def __init__(
+        self,
+        response_channel: SingleValueChannel[tuple[str, dict[str, Any]]],
+        answer_channel: SingleValueChannel[BaseException | None]
+    ) -> None:
+        self._response_channel = response_channel
+        self._answer_channel = answer_channel
+
+    async def get_response(self) -> tuple[str, dict[str, Any]]:
+        return await self._response_channel.receive()
+
+    def send_answer(self, answer: BaseException | None) -> None:
+        self._answer_channel.send(answer)
+
+
+def create_executor_channel() -> tuple[ExecutorTransmitter, ExecutorReceiver]:
+    response_channel = SingleValueChannel[tuple[str, dict[str, Any]]]()
+    answer_channel = SingleValueChannel[BaseException | None]()
+
+    transmitter = ExecutorTransmitter(response_channel, answer_channel)
+    receiver = ExecutorReceiver(response_channel, answer_channel)
+
+    return transmitter, receiver

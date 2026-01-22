@@ -4,7 +4,7 @@ from typing import Callable
 from loguru import logger
 
 from everwork._internal.resource.resource_handler import ResourceHandler
-from everwork._internal.utils.external_executor import ExecutorTransmitter
+from everwork._internal.worker.utils.executor_channel import ExecutorTransmitter
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker
 from everwork.schemas import Process

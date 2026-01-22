@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from loguru import logger
 
-from everwork._internal.utils.external_executor import ExecutorTransmitter
+from everwork._internal.worker.utils.executor_channel import ExecutorTransmitter
 from everwork._internal.utils.task_utils import OperationCancelled, wait_for_or_cancel
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker
