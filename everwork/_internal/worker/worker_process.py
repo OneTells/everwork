@@ -9,7 +9,8 @@ from typing import Any, Callable, TYPE_CHECKING
 
 from loguru import logger
 
-from everwork._internal.worker.worker_executor import WorkerExecutor
+from everwork._internal.utils.heartbeat_notifier import HeartbeatNotifier
+from everwork._internal.worker.worker_manager import WorkerManager
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker
 from everwork.schemas import Process
@@ -61,7 +62,7 @@ class WorkerProcess:
                 'process': self._process,
                 'backend_factory': self._backend_factory,
                 'broker_factory': self._broker_factory,
-                'pipe_connection': self._pipe_writer,
+                'notifier': HeartbeatNotifier(self._pipe_writer),
                 'logger_': logger
             }
         )
@@ -125,6 +126,6 @@ class WorkerProcess:
         logger_.reinstall()
 
         with asyncio.Runner(loop_factory=new_event_loop) as runner:
-            runner.run(WorkerExecutor(**kwargs).run())
+            runner.run(WorkerManager(**kwargs).run())
 
         logger.remove()

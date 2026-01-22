@@ -1,54 +1,16 @@
 import asyncio
-import signal
-from multiprocessing import connection
-from types import FrameType
-from typing import Any, Callable
+from typing import Callable
 
 from loguru import logger
 
-from everwork._internal.resource.resource_manager import ResourceManager
-from everwork._internal.utils.async_thread import AsyncThread
-from everwork._internal.utils.external_executor import ExecutorReceiver, ExecutorTransmitter
-from everwork._internal.utils.single_value_channel import SingleValueChannel
-from everwork._internal.worker.worker_loop import WorkerLoop
+from everwork._internal.utils.external_executor import ExecutorReceiver
+from everwork._internal.utils.heartbeat_notifier import HeartbeatNotifier
 from everwork._internal.worker.worker_registry import WorkerRegistry
+from everwork._internal.worker.worker_task_processor import WorkerTaskProcessor
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker
+from everwork.events import HybridEventStorage
 from everwork.schemas import Process
-
-
-class SignalHandler:
-
-    def __init__(
-        self,
-        shutdown_event: asyncio.Event,
-        terminate_event: asyncio.Event,
-        is_executing_callback: Callable[[], bool],
-        on_resource_runner_cancel: Callable[[], None],
-    ) -> None:
-        self._shutdown_event = shutdown_event
-        self._terminate_event = terminate_event
-        self._is_executing_callback = is_executing_callback
-        self._on_resource_runner_cancel = on_resource_runner_cancel
-
-    def _handle_shutdown_signal(self, *_: Any) -> None:
-        loop = asyncio.get_running_loop()
-        loop.call_soon_threadsafe(self._shutdown_event.set)  # type: ignore
-
-        self._on_resource_runner_cancel()
-
-    def _handle_terminate_signal(self, signal_num: int, frame: FrameType | None) -> None:
-        loop = asyncio.get_running_loop()
-        loop.call_soon_threadsafe(self._terminate_event.set)  # type: ignore
-
-        if not self._is_executing_callback():
-            return
-
-        signal.default_int_handler(signal_num, frame)
-
-    def register(self) -> None:
-        signal.signal(signal.SIGUSR1, self._handle_shutdown_signal)
-        signal.signal(signal.SIGTERM, self._handle_terminate_signal)
 
 
 class WorkerExecutor:
@@ -59,57 +21,50 @@ class WorkerExecutor:
         process: Process,
         backend_factory: Callable[[], AbstractBackend],
         broker_factory: Callable[[], AbstractBroker],
-        pipe_connection: connection.Connection
+        receiver: ExecutorReceiver,
+        notifier: HeartbeatNotifier,
+        worker_registry: WorkerRegistry,
+        is_executing_event: asyncio.Event,
+        shutdown_event: asyncio.Event,
+        terminate_event: asyncio.Event
     ) -> None:
         self._manager_uuid = manager_uuid
         self._process = process
         self._backend_factory = backend_factory
         self._broker_factory = broker_factory
-        self._pipe_connection = pipe_connection
-
-        self._shutdown_event = asyncio.Event()
-        self._terminate_event = asyncio.Event()
-
-        response_channel = SingleValueChannel[tuple[str, dict[str, Any]]]()
-        answer_channel = SingleValueChannel[BaseException | None]()
-
-        self._receiver = ExecutorReceiver(response_channel, answer_channel)
-
-        self._resource_manager = AsyncThread(
-            target=lambda **kwargs: ResourceManager(**kwargs).run(),
-            kwargs={
-                'manager_uuid': manager_uuid,
-                'process': process,
-                'backend_factory': backend_factory,
-                'broker_factory': broker_factory,
-                'transmitter': ExecutorTransmitter(response_channel, answer_channel)
-            }
-        )
-
-        self._worker_registry = WorkerRegistry(process)
-
-        self._is_executing_event = asyncio.Event()
-
-    async def _initialize_workers(self) -> None:
-        await self._worker_registry.initialize()
-        await self._worker_registry.startup_all()
-
-    async def _shutdown_workers(self) -> None:
-        await self._worker_registry.shutdown_all()
+        self._receiver = receiver
+        self._notifier = notifier
+        self._worker_registry = worker_registry
+        self._is_executing_event = is_executing_event
+        self._shutdown_event = shutdown_event
+        self._terminate_event = terminate_event
 
     async def _run_worker_loop(self) -> None:
-        loop = WorkerLoop(
-            self._manager_uuid,
-            self._process,
-            self._backend_factory,
-            self._broker_factory,
-            self._pipe_connection,
-            self._receiver,
-            self._worker_registry,
-            self._is_executing_event,
-        )
+        async with self._backend_factory() as backend, self._broker_factory() as broker:
+            logger.debug(f'[{self._process.uuid}] Исполнитель воркеров инициализировал backend и broker')
 
-        await loop.run()
+            await backend.mark_worker_executor_as_available(self._manager_uuid, self._process.uuid)
+            logger.debug(f'[{self._process.uuid}] Исполнитель воркеров стал доступным')
+
+            async with HybridEventStorage() as storage:
+                task_processor = WorkerTaskProcessor(
+                    self._manager_uuid,
+                    self._process,
+                    self._worker_registry,
+                    self._receiver,
+                    backend,
+                    broker,
+                    storage,
+                    self._notifier,
+                    self._is_executing_event
+                )
+
+                logger.debug(f'[{self._process.uuid}] Исполнитель воркеров запустил цикл обработки ивентов')
+
+                while await task_processor.process_task():
+                    await storage.clear()
+
+                logger.debug(f'[{self._process.uuid}] Исполнитель воркеров завершил цикл обработки ивентов')
 
     async def run(self) -> None:
         logger.debug(
@@ -117,27 +72,8 @@ class WorkerExecutor:
             f'Состав: {', '.join(worker.settings.name for worker in self._process.workers)}'
         )
 
-        SignalHandler(
-            self._shutdown_event,
-            self._terminate_event,
-            self._is_executing_event.is_set,
-            self._resource_manager.cancel
-        ).register()
-
-        self._resource_manager.start()
-        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров запустил менеджер ресурсов')
-
-        await self._initialize_workers()
-        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров выполнил startup_all')
-
         logger.debug(f'[{self._process.uuid}] Исполнитель воркеров зашел в цикл обработки')
         await self._run_worker_loop()
         logger.debug(f'[{self._process.uuid}] Исполнитель воркеров вышел из цикла обработки')
-
-        await self._shutdown_workers()
-        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров выполнил shutdown_all')
-
-        self._resource_manager.join()
-        self._pipe_connection.close()
 
         logger.debug(f'[{self._process.uuid}] Исполнитель воркеров завершил работу')

@@ -1,11 +1,14 @@
+import asyncio
 from typing import Any
 
 from everwork._internal.utils.external_executor import ExecutorReceiver
+from everwork._internal.utils.heartbeat_notifier import HeartbeatNotifier
 from everwork._internal.utils.single_value_channel import ChannelClosed
 from everwork._internal.worker.worker_invoker import WorkerInvoker
 from everwork._internal.worker.worker_registry import WorkerRegistry
 from everwork.backend import AbstractBackend
-from everwork.events import EventCollector, HybridEventStorage
+from everwork.broker import AbstractBroker
+from everwork.events import EventCollector, EventPublisher, HybridEventStorage
 from everwork.schemas import Process
 from everwork.workers import AbstractWorker
 
@@ -19,18 +22,29 @@ class WorkerTaskProcessor:
         worker_registry: WorkerRegistry,
         receiver: ExecutorReceiver,
         backend: AbstractBackend,
+        broker: AbstractBroker,
         storage: HybridEventStorage,
-        collector: EventCollector,
-        worker_invoker: WorkerInvoker
+        notifier: HeartbeatNotifier,
+        is_executing_event: asyncio.Event
     ) -> None:
         self._manager_uuid = manager_uuid
         self._process = process
+
         self._worker_registry = worker_registry
+
         self._receiver = receiver
         self._backend = backend
         self._storage = storage
-        self._collector = collector
-        self._worker_invoker = worker_invoker
+
+        self._collector = EventCollector(storage)
+
+        self._worker_invoker = WorkerInvoker(
+            self._manager_uuid,
+            self._process,
+            notifier,
+            EventPublisher(storage, broker),
+            is_executing_event,
+        )
 
     def _prepare_worker_kwargs(self, worker: AbstractWorker, kwargs_raw: dict[str, Any]) -> dict[str, Any]:
         worker_params = self._worker_registry.get_worker_params(worker.settings.name)

@@ -3,7 +3,7 @@ from typing import Any
 
 from loguru import logger
 
-from everwork._internal.worker.heartbeat_notifier import HeartbeatNotifier
+from everwork._internal.utils.heartbeat_notifier import HeartbeatNotifier
 from everwork.events import EventPublisher
 from everwork.schemas import Process
 from everwork.workers import AbstractWorker

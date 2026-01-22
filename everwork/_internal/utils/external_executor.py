@@ -37,3 +37,13 @@ class ExecutorReceiver:
 
     def send_answer(self, answer: BaseException | None) -> None:
         self._answer_channel.send(answer)
+
+
+def create_executor_channel() -> tuple[ExecutorTransmitter, ExecutorReceiver]:
+    response_channel = SingleValueChannel[tuple[str, dict[str, Any]]]()
+    answer_channel = SingleValueChannel[BaseException | None]()
+
+    transmitter = ExecutorTransmitter(response_channel, answer_channel)
+    receiver = ExecutorReceiver(response_channel, answer_channel)
+
+    return transmitter, receiver

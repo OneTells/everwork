@@ -21,3 +21,6 @@ class HeartbeatNotifier:
 
     def notify_completed(self) -> None:
         self._conn.send_bytes(b'')
+
+    def close(self) -> None:
+        self._conn.close()
