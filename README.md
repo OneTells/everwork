@@ -35,9 +35,9 @@ uv sync
 ## Быстрый старт
 
 ```python
-from pydantic import RedisDsn
 
-from everwork import AbstractWorker, ExecutorMode, Process, ProcessManager, WorkerSettings
+
+from everwork import AbstractBackend, AbstractBroker, AbstractWorker, Process, ProcessManager, WorkerSettings
 
 
 class ExampleWorker(AbstractWorker):
@@ -46,7 +46,6 @@ class ExampleWorker(AbstractWorker):
     def _get_settings(cls) -> WorkerSettings:
         return WorkerSettings(
             name="example",
-            mode=ExecutorMode(),
             execution_timeout=120,
         )
 
@@ -56,8 +55,9 @@ class ExampleWorker(AbstractWorker):
 
 manager = ProcessManager(
     uuid="<uuid>",
-    redis_dsn=RedisDsn("redis://localhost:6379/0"),
     processes=[Process(workers=[ExampleWorker])],
+    backend_factory=lambda: AbstractBackend("redis://localhost:6379/0"),
+    broker_factory=lambda: AbstractBroker("redis://localhost:6379/0"),
 )
 ```
 
