@@ -1,4 +1,6 @@
 from ._internal.process.process_manager import ProcessManager
+from .backend import AbstractBackend
+from .broker import AbstractBroker
 from .events import EventCollector
 from .schemas import (
     EventPublisherSettings,
@@ -9,7 +11,7 @@ from .schemas import (
     WorkerSettings
 )
 from .trigger_utils import timer
-from .workers.base import AbstractWorker
+from .workers import AbstractWorker
 
 __all__ = (
     'ProcessManager',
@@ -17,9 +19,11 @@ __all__ = (
     'ProcessGroup',
     'AbstractWorker',
     'WorkerSettings',
-    'WorkerEvent',
-    'EventCollector',
     'EventStorageSettings',
     'EventPublisherSettings',
-    'timer'
+    'WorkerEvent',
+    'EventCollector',
+    'timer',
+    'AbstractBackend',
+    'AbstractBroker'
 )

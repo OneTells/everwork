@@ -5,10 +5,10 @@ from .worker import EventPublisherSettings, EventStorageSettings, WorkerEvent, W
 __all__ = (
     'Process',
     'ProcessGroup',
-    'WorkerSettings',
     'AbstractTrigger',
     'IntervalTrigger',
-    'WorkerEvent',
+    'WorkerSettings',
     'EventStorageSettings',
-    'EventPublisherSettings'
+    'EventPublisherSettings',
+    'WorkerEvent',
 )
