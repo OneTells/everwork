@@ -13,6 +13,7 @@ from everwork._internal.worker.worker_executor import WorkerExecutor
 from everwork._internal.worker.worker_registry import WorkerRegistry
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker
+from everwork.events import HybridEventStorage
 from everwork.schemas import Process
 
 
@@ -98,23 +99,31 @@ class WorkerManager:
         self._resource_manager.join()
 
     async def _run_worker_executor(self) -> None:
-        worker_executor = WorkerExecutor(
-            self._manager_uuid,
-            self._process,
-            self._backend_factory,
-            self._broker_factory,
-            self._receiver,
-            self._notifier,
-            self._worker_registry,
-            self._is_executing_event,
-            self._shutdown_event,
-            self._terminate_event
-        )
+        async with self._backend_factory() as backend, self._broker_factory() as broker:
+            logger.debug(f'[{self._process.uuid}] Менеджер воркеров инициализировал backend и broker')
 
-        await worker_executor.run()
+            async with HybridEventStorage() as storage:
+                executor = WorkerExecutor(
+                    self._manager_uuid,
+                    self._process,
+                    self._worker_registry,
+                    self._receiver,
+                    backend,
+                    broker,
+                    storage,
+                    self._notifier,
+                    self._is_executing_event,
+                    self._shutdown_event,
+                    self._terminate_event
+                )
+
+                await executor.run()
 
     async def run(self) -> None:
-        logger.debug(f'...')
+        logger.debug(
+            f'[{self._process.uuid}] Менеджер воркеров запущен. '
+            f'Состав: {', '.join(worker.settings.name for worker in self._process.workers)}'
+        )
 
         SignalHandler(
             self._shutdown_event,
@@ -124,15 +133,15 @@ class WorkerManager:
         ).register()
 
         await self._startup()
-        logger.debug(f'...')
+        logger.debug(f'[{self._process.uuid}] Менеджер воркеров выполнил startup')
 
-        logger.debug(f'...')
+        logger.debug(f'[{self._process.uuid}] Менеджер воркеров запустил исполнитель воркеров')
         await self._run_worker_executor()
-        logger.debug(f'...')
+        logger.debug(f'[{self._process.uuid}] Менеджер воркеров завершил исполнитель воркеров')
 
         await self._shutdown()
-        logger.debug(f'...')
+        logger.debug(f'[{self._process.uuid}] Менеджер воркеров выполнил shutdown')
 
         self._notifier.close()
 
-        logger.debug(f'...')
+        logger.debug(f'[{self._process.uuid}] Менеджер воркеров завершил работу')

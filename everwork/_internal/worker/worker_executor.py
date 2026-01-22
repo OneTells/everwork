@@ -1,16 +1,17 @@
 import asyncio
-from typing import Callable
+from typing import Any
 
 from loguru import logger
 
 from everwork._internal.utils.external_executor import ExecutorReceiver
 from everwork._internal.utils.heartbeat_notifier import HeartbeatNotifier
+from everwork._internal.utils.single_value_channel import ChannelClosed
 from everwork._internal.worker.worker_registry import WorkerRegistry
-from everwork._internal.worker.worker_task_processor import WorkerTaskProcessor
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker
-from everwork.events import HybridEventStorage
+from everwork.events import EventCollector, EventPublisher, HybridEventStorage
 from everwork.schemas import Process
+from everwork.workers import AbstractWorker
 
 
 class WorkerExecutor:
@@ -19,52 +20,81 @@ class WorkerExecutor:
         self,
         manager_uuid: str,
         process: Process,
-        backend_factory: Callable[[], AbstractBackend],
-        broker_factory: Callable[[], AbstractBroker],
-        receiver: ExecutorReceiver,
-        notifier: HeartbeatNotifier,
         worker_registry: WorkerRegistry,
+        receiver: ExecutorReceiver,
+        backend: AbstractBackend,
+        broker: AbstractBroker,
+        storage: HybridEventStorage,
+        notifier: HeartbeatNotifier,
         is_executing_event: asyncio.Event,
         shutdown_event: asyncio.Event,
         terminate_event: asyncio.Event
     ) -> None:
         self._manager_uuid = manager_uuid
         self._process = process
-        self._backend_factory = backend_factory
-        self._broker_factory = broker_factory
-        self._receiver = receiver
-        self._notifier = notifier
         self._worker_registry = worker_registry
+        self._receiver = receiver
+        self._backend = backend
+        self._storage = storage
+        self._notifier = notifier
         self._is_executing_event = is_executing_event
         self._shutdown_event = shutdown_event
         self._terminate_event = terminate_event
 
-    async def _run_worker_loop(self) -> None:
-        async with self._backend_factory() as backend, self._broker_factory() as broker:
-            logger.debug(f'[{self._process.uuid}] Исполнитель воркеров инициализировал backend и broker')
+        self._collector = EventCollector(storage)
+        self._publisher = EventPublisher(storage, broker)
 
-            await backend.mark_worker_executor_as_available(self._manager_uuid, self._process.uuid)
-            logger.debug(f'[{self._process.uuid}] Исполнитель воркеров стал доступным')
+    def _prepare_worker_kwargs(self, worker: AbstractWorker, kwargs_raw: dict[str, Any]) -> dict[str, Any]:
+        worker_params = self._worker_registry.get_worker_params(worker.settings.name)
 
-            async with HybridEventStorage() as storage:
-                task_processor = WorkerTaskProcessor(
-                    self._manager_uuid,
-                    self._process,
-                    self._worker_registry,
-                    self._receiver,
-                    backend,
-                    broker,
-                    storage,
-                    self._notifier,
-                    self._is_executing_event
-                )
+        kwargs = {k: v for k, v in kwargs_raw.items() if k in worker_params}
 
-                logger.debug(f'[{self._process.uuid}] Исполнитель воркеров запустил цикл обработки ивентов')
+        if 'collector' in worker_params:
+            self._storage.max_events_in_memory = worker.settings.event_storage.max_events_in_memory
+            kwargs['collector'] = self._collector
 
-                while await task_processor.process_task():
-                    await storage.clear()
+        return kwargs
 
-                logger.debug(f'[{self._process.uuid}] Исполнитель воркеров завершил цикл обработки ивентов')
+    async def _execute(self, worker: AbstractWorker, kwargs: dict[str, Any]) -> BaseException | None:
+        self._notifier.notify_started(worker.settings)
+
+        error_answer: BaseException | None = None
+
+        try:
+            self._is_executing_event.set()
+            await worker.__call__(**kwargs)
+        except (KeyboardInterrupt, asyncio.CancelledError) as error:
+            logger.exception(f'[{self._process.uuid}] ({worker.settings.name}) Выполнение прервано по таймауту')
+            error_answer = error
+        except Exception as error:
+            logger.exception(f'[{self._process.uuid}] ({worker.settings.name}) Ошибка при обработке события: {error}')
+            error_answer = error
+        finally:
+            self._is_executing_event.clear()
+            self._notifier.notify_completed()
+
+        if error_answer is None:
+            await self._publisher.push_events(worker.settings.event_publisher.max_batch_size)
+
+        return error_answer
+
+    async def _process_task(self) -> bool:
+        try:
+            worker_name, kwargs_raw = await self._receiver.get_response()
+        except ChannelClosed:
+            return False
+
+        worker = self._worker_registry.get_worker(worker_name)
+        kwargs = self._prepare_worker_kwargs(worker, kwargs_raw)
+
+        await self._backend.mark_worker_executor_as_busy(self._manager_uuid, self._process.uuid, worker.settings.name)
+
+        error_answer = await self._execute(worker, kwargs)
+        self._receiver.send_answer(error_answer)
+
+        await self._backend.mark_worker_executor_as_available(self._manager_uuid, self._process.uuid)
+
+        return True
 
     async def run(self) -> None:
         logger.debug(
@@ -72,8 +102,10 @@ class WorkerExecutor:
             f'Состав: {', '.join(worker.settings.name for worker in self._process.workers)}'
         )
 
-        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров зашел в цикл обработки')
-        await self._run_worker_loop()
-        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров вышел из цикла обработки')
+        await self._backend.mark_worker_executor_as_available(self._manager_uuid, self._process.uuid)
+        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров стал доступным')
+
+        while await self._process_task():
+            await self._storage.clear()
 
         logger.debug(f'[{self._process.uuid}] Исполнитель воркеров завершил работу')
