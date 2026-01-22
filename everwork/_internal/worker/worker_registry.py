@@ -11,8 +11,8 @@ class WorkerRegistry:
     def __init__(self, process: Process) -> None:
         self._process = process
 
-        self._workers: dict[str, AbstractWorker] = {}
-        self._worker_params: dict[str, list[str]] = {}
+        self._worker_instances: dict[str, AbstractWorker] = {}
+        self._worker_call_signatures: dict[str, list[str]] = {}
 
     async def initialize(self) -> None:
         for worker_cls in self._process.workers:
@@ -22,25 +22,25 @@ class WorkerRegistry:
                 logger.exception(f'[{self._process.uuid}] ({worker_cls.settings.name}) Ошибка при инициализации: {error}')
                 continue
 
-            self._workers[worker.settings.name] = worker
-            self._worker_params[worker.settings.name] = list(signature(worker.__call__).parameters.keys())
+            self._worker_instances[worker.settings.name] = worker
+            self._worker_call_signatures[worker.settings.name] = list(signature(worker.__call__).parameters.keys())
 
     async def startup_all(self) -> None:
-        for worker in self._workers.values():
+        for worker in self._worker_instances.values():
             try:
                 await worker.startup()
             except Exception as error:
                 logger.exception(f'[{self._process.uuid}] ({worker.settings.name}) Ошибка при startup: {error}')
 
     async def shutdown_all(self) -> None:
-        for worker in self._workers.values():
+        for worker in self._worker_instances.values():
             try:
                 await worker.shutdown()
             except Exception as error:
                 logger.exception(f'[{self._process.uuid}] ({worker.settings.name}) Ошибка при shutdown: {error}')
 
     def get_worker(self, name: str) -> AbstractWorker:
-        return self._workers[name]
+        return self._worker_instances[name]
 
     def get_worker_params(self, name: str) -> list[str]:
-        return self._worker_params[name]
+        return self._worker_call_signatures[name]
