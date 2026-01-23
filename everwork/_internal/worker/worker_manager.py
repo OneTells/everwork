@@ -99,25 +99,30 @@ class WorkerManager:
         self._resource_manager.join()
 
     async def _run_worker_executor(self) -> None:
-        async with self._backend_factory() as backend, self._broker_factory() as broker:
-            logger.debug(f'[{self._process.uuid}] Менеджер воркеров инициализировал backend и broker')
+        try:
+            async with self._backend_factory() as backend, self._broker_factory() as broker:
+                logger.debug(f'[{self._process.uuid}] Менеджер воркеров инициализировал backend и broker')
 
-            async with HybridEventStorage() as storage:
-                executor = WorkerExecutor(
-                    self._manager_uuid,
-                    self._process,
-                    self._worker_registry,
-                    self._receiver,
-                    backend,
-                    broker,
-                    storage,
-                    self._notifier,
-                    self._is_executing_event,
-                    self._shutdown_event,
-                    self._terminate_event
-                )
+                async with HybridEventStorage() as storage:
+                    executor = WorkerExecutor(
+                        self._manager_uuid,
+                        self._process,
+                        self._worker_registry,
+                        self._receiver,
+                        backend,
+                        broker,
+                        storage,
+                        self._notifier,
+                        self._is_executing_event,
+                        self._shutdown_event,
+                        self._terminate_event
+                    )
 
-                await executor.run()
+                    await executor.run()
+        except Exception as error:
+            logger.opt(exception=True).critical(
+                f'[{self._process.uuid}] Ошибка при открытии или закрытии backend и broker: {error}'
+            )
 
     async def run(self) -> None:
         logger.debug(
