@@ -69,7 +69,7 @@ class WorkerExecutor:
                 f'[{self._process.uuid}] ({worker_name}) Не удалось установить метку занятости исполнителя: {error}'
             )
 
-    async def _mark_worker_executor_as_available(self, worker_name: str) -> None:
+    async def _mark_worker_executor_as_available(self) -> None:
         try:
             await wait_for_or_cancel(
                 self._backend.mark_worker_executor_as_available(self._manager_uuid, self._process.uuid),
@@ -77,10 +77,10 @@ class WorkerExecutor:
                 timeout=5
             )
         except (OperationCancelled, asyncio.TimeoutError):
-            logger.debug(f'[{self._process.uuid}] ({worker_name}) Исполнитель воркеров прервал mark_worker_executor_as_available')
+            logger.debug(f'[{self._process.uuid}] Исполнитель воркеров прервал mark_worker_executor_as_available')
         except Exception as error:
             logger.opt(exception=True).critical(
-                f'[{self._process.uuid}] ({worker_name}) Не удалось установить метку доступности исполнителя: {error}'
+                f'[{self._process.uuid}] Не удалось установить метку доступности исполнителя: {error}'
             )
 
     async def _execute(self, worker: AbstractWorker, kwargs: dict[str, Any]) -> BaseException | None:
@@ -132,7 +132,7 @@ class WorkerExecutor:
         error_answer = await self._execute(worker, kwargs)
         self._receiver.send_answer(error_answer)
 
-        await self._mark_worker_executor_as_available(worker_name)
+        await self._mark_worker_executor_as_available()
 
         return True
 
@@ -142,20 +142,8 @@ class WorkerExecutor:
             f'Состав: {', '.join(worker.settings.name for worker in self._process.workers)}'
         )
 
-        try:
-            await wait_for_or_cancel(
-                self._backend.mark_worker_executor_as_available(self._manager_uuid, self._process.uuid),
-                self._terminate_event,
-                timeout=5
-            )
-        except (OperationCancelled, asyncio.TimeoutError):
-            logger.debug(f'[{self._process.uuid}] Исполнитель воркеров прервал mark_worker_executor_as_available')
-        except Exception as error:
-            logger.opt(exception=True).critical(
-                f'[{self._process.uuid}] Не удалось установить метку доступности исполнителя: {error}'
-            )
-        else:
-            logger.debug(f'[{self._process.uuid}] Исполнитель воркеров стал доступным')
+        await self._mark_worker_executor_as_available()
+        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров стал доступным')
 
         while await self._process_task():
             await self._storage.clear()

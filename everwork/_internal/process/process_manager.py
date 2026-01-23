@@ -143,10 +143,8 @@ class ProcessManager:
 
     async def _shutdown(self, backend: AbstractBackend) -> None:
         try:
-            return await asyncio.wait_for(
-                backend.shutdown_manager(self._manager_uuid),
-                timeout=5
-            )
+            async with asyncio.timeout(5):
+                await backend.shutdown_manager(self._manager_uuid)
         except asyncio.TimeoutError:
             logger.warning('Менеджер процессов прервал shutdown_manager')
         except Exception as error:

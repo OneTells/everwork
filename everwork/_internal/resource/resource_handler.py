@@ -72,10 +72,10 @@ class ResourceHandler:
 
     async def _ack_event(self, event_identifier: Any) -> None:
         try:
-            return await asyncio.wait_for(
-                self._broker.ack_event(self._manager_uuid, self._process.uuid, self._worker.settings.name, event_identifier),
-                timeout=5
-            )
+            async with asyncio.timeout(5):
+                return await self._broker.ack_event(
+                    self._manager_uuid, self._process.uuid, self._worker.settings.name, event_identifier
+                )
         except asyncio.TimeoutError:
             logger.error(f'[{self._process.uuid}] ({self._worker.settings.name}) Обработчик ресурсов прервал ack_event')
         except Exception as error:
@@ -83,14 +83,12 @@ class ResourceHandler:
                 f'[{self._process.uuid}] ({self._worker.settings.name}) Не удалось подтвердить ивент: {error}'
             )
 
-    async def _reject_event(self, event_identifier: Any, error: BaseException) -> None:
+    async def _reject_event(self, event_identifier: Any, error_answer: BaseException) -> None:
         try:
-            return await asyncio.wait_for(
-                self._broker.reject_event(
-                    self._manager_uuid, self._process.uuid, self._worker.settings.name, event_identifier, error
-                ),
-                timeout=5
-            )
+            async with asyncio.timeout(5):
+                return await self._broker.reject_event(
+                    self._manager_uuid, self._process.uuid, self._worker.settings.name, event_identifier, error_answer
+                )
         except asyncio.TimeoutError:
             logger.error(f'[{self._process.uuid}] ({self._worker.settings.name}) Обработчик ресурсов прервал reject_event')
         except Exception as error:
@@ -100,10 +98,10 @@ class ResourceHandler:
 
     async def _requeue_event(self, event_identifier: Any) -> None:
         try:
-            return await asyncio.wait_for(
-                self._broker.requeue_event(self._manager_uuid, self._process.uuid, self._worker.settings.name, event_identifier),
-                timeout=5
-            )
+            async with asyncio.timeout(5):
+                return await self._broker.requeue_event(
+                    self._manager_uuid, self._process.uuid, self._worker.settings.name, event_identifier
+                )
         except asyncio.TimeoutError:
             logger.error(f'[{self._process.uuid}] ({self._worker.settings.name}) Обработчик ресурсов прервал requeue_event')
         except Exception as error:
