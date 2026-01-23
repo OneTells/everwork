@@ -31,21 +31,26 @@ class ResourceManager:
     async def _run_supervisors(self) -> None:
         lock = asyncio.Lock()
 
-        async with self._backend_factory() as backend, self._broker_factory() as broker:
-            async with asyncio.TaskGroup() as task_group:
-                for worker in self._process.workers:
-                    handler = ResourceHandler(
-                        self._manager_uuid,
-                        self._process,
-                        worker,
-                        backend,
-                        broker,
-                        self._transmitter,
-                        lock,
-                        self._shutdown_event
-                    )
+        try:
+            async with self._backend_factory() as backend, self._broker_factory() as broker:
+                async with asyncio.TaskGroup() as task_group:
+                    for worker in self._process.workers:
+                        handler = ResourceHandler(
+                            self._manager_uuid,
+                            self._process,
+                            worker,
+                            backend,
+                            broker,
+                            self._transmitter,
+                            lock,
+                            self._shutdown_event
+                        )
 
-                    task_group.create_task(handler.run())
+                        task_group.create_task(handler.run())
+        except Exception as error:
+            logger.opt(exception=True).critical(
+                f'[{self._process.uuid}] Не удалось открыть или закрыть backend / broker: {error}'
+            )
 
     async def run(self) -> None:
         logger.debug(
