@@ -3,6 +3,7 @@ from typing import Any
 
 from loguru import logger
 
+from everwork._internal.utils.task_utils import OperationCancelled, wait_for_or_cancel
 from everwork._internal.worker.utils.executor_channel import ChannelClosed, ExecutorReceiver
 from everwork._internal.worker.utils.heartbeat_notifier import HeartbeatNotifier
 from everwork._internal.worker.worker_registry import WorkerRegistry
@@ -73,7 +74,19 @@ class WorkerExecutor:
             self._notifier.notify_completed()
 
         if error_answer is None:
-            await self._publisher.push_events(worker.settings.event_publisher.max_batch_size)
+            try:
+                await wait_for_or_cancel(
+                    self._publisher.push_events(worker.settings.event_publisher.max_batch_size),
+                    self._terminate_event
+                )
+            except OperationCancelled as error:
+                error_answer = error
+                logger.debug(f'[{self._process.uuid}] ({worker.settings.name}) Исполнитель воркеров прервал push_events')
+            except Exception as error:
+                error_answer = error
+                logger.opt(exception=True).critical(
+                    f'[{self._process.uuid}] ({worker.settings.name}) Во время сохранения ивентов произошла ошибка: {error}'
+                )
 
         return error_answer
 
@@ -86,12 +99,34 @@ class WorkerExecutor:
         worker = self._worker_registry.get_worker(worker_name)
         kwargs = self._prepare_worker_kwargs(worker, kwargs_raw)
 
-        await self._backend.mark_worker_executor_as_busy(self._manager_uuid, self._process.uuid, worker.settings.name)
+        try:
+            await wait_for_or_cancel(
+                self._backend.mark_worker_executor_as_busy(self._manager_uuid, self._process.uuid, worker.settings.name),
+                self._terminate_event,
+                timeout=5
+            )
+        except (OperationCancelled, asyncio.TimeoutError):
+            logger.debug(f'[{self._process.uuid}] ({worker_name}) Исполнитель воркеров прервал mark_worker_executor_as_busy')
+        except Exception as error:
+            logger.opt(exception=True).critical(
+                f'[{self._process.uuid}] ({worker_name}) Во время установки метки занятости процесса произошла ошибка: {error}'
+            )
 
         error_answer = await self._execute(worker, kwargs)
         self._receiver.send_answer(error_answer)
 
-        await self._backend.mark_worker_executor_as_available(self._manager_uuid, self._process.uuid)
+        try:
+            await wait_for_or_cancel(
+                self._backend.mark_worker_executor_as_available(self._manager_uuid, self._process.uuid),
+                self._terminate_event,
+                timeout=5
+            )
+        except (OperationCancelled, asyncio.TimeoutError):
+            logger.debug(f'[{self._process.uuid}] ({worker_name}) Исполнитель воркеров прервал mark_worker_executor_as_available')
+        except Exception as error:
+            logger.opt(exception=True).critical(
+                f'[{self._process.uuid}] ({worker_name}) Во время установки метки доступности процесса произошла ошибка: {error}'
+            )
 
         return True
 
@@ -101,8 +136,20 @@ class WorkerExecutor:
             f'Состав: {', '.join(worker.settings.name for worker in self._process.workers)}'
         )
 
-        await self._backend.mark_worker_executor_as_available(self._manager_uuid, self._process.uuid)
-        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров стал доступным')
+        try:
+            await wait_for_or_cancel(
+                self._backend.mark_worker_executor_as_available(self._manager_uuid, self._process.uuid),
+                self._terminate_event,
+                timeout=5
+            )
+        except (OperationCancelled, asyncio.TimeoutError):
+            logger.debug(f'[{self._process.uuid}] Исполнитель воркеров прервал mark_worker_executor_as_available')
+        except Exception as error:
+            logger.opt(exception=True).critical(
+                f'[{self._process.uuid}] Во время установки метки доступности процесса произошла ошибка: {error}'
+            )
+        else:
+            logger.debug(f'[{self._process.uuid}] Исполнитель воркеров стал доступным')
 
         while await self._process_task():
             await self._storage.clear()
