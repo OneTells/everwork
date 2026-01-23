@@ -48,7 +48,7 @@ class ProcessSupervisor:
                 timeout=5
             )
         except (OperationCancelled, asyncio.TimeoutError):
-            logger.warning(f'[{self._process.uuid}] ({worker_name}) Супервайзер процесса прервал mark_worker_executor_for_reboot')
+            logger.debug(f'[{self._process.uuid}] ({worker_name}) Супервайзер процесса прервал mark_worker_executor_for_reboot')
         except Exception as error:
             logger.opt(exception=True).critical(
                 f'[{self._process.uuid}] ({worker_name}) Во время установки метки перезапуска процесса произошла ошибка: {error}'
