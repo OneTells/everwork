@@ -1,5 +1,4 @@
 import asyncio
-from contextlib import suppress
 from typing import Any, Coroutine
 
 
@@ -7,21 +6,21 @@ class OperationCancelled(Exception):
     pass
 
 
-async def wait_for_or_cancel[T](coroutine: Coroutine[Any, Any, T], event: asyncio.Event) -> T:
+async def wait_for_or_cancel[T](
+    coroutine: Coroutine[Any, Any, T],
+    event: asyncio.Event,
+    timeout: int | None = None
+) -> T:
     main_task = asyncio.create_task(coroutine)
     event_task = asyncio.create_task(event.wait())
 
     tasks = {main_task, event_task}
 
     try:
-        await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        async with asyncio.timeout(timeout):
+            await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
 
         if event.is_set():
-            main_task.cancel()
-
-            with suppress(asyncio.CancelledError):
-                await main_task
-
             raise OperationCancelled
 
         return await main_task
