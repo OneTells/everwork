@@ -53,9 +53,9 @@ class ResourceManager:
             f'Состав: {', '.join(worker.settings.name for worker in self._process.workers)}'
         )
 
-        logger.debug(f'[{self._process.uuid}] Менеджер ресурсов запустил все обработчики ресурсов')
+        logger.debug(f'[{self._process.uuid}] Менеджер ресурсов запустил обработчики ресурсов')
         await self._run_supervisors()
-        logger.debug(f'[{self._process.uuid}] Менеджер ресурсов завершил все обработчики ресурсов')
+        logger.debug(f'[{self._process.uuid}] Менеджер ресурсов завершил обработчики ресурсов')
 
         self._transmitter.close()
 
