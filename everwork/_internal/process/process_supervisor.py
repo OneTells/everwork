@@ -51,10 +51,10 @@ class ProcessSupervisor:
             logger.debug(f'[{self._process.uuid}] ({worker_name}) Супервайзер процесса прервал mark_worker_executor_for_reboot')
         except Exception as error:
             logger.opt(exception=True).critical(
-                f'[{self._process.uuid}] ({worker_name}) Во время установки метки перезапуска процесса произошла ошибка: {error}'
+                f'[{self._process.uuid}] ({worker_name}) Не удалось установить метку перезапуска исполнителя: {error}'
             )
-
-        logger.debug(f'[{self._process.uuid}] ({worker_name}) Установлена отметка о перезапуске процесса')
+        else:
+            logger.debug(f'[{self._process.uuid}] ({worker_name}) Установлена метка о перезапуске процесса')
 
         await self._worker_process.close()
         await self._worker_process.start()

@@ -85,7 +85,7 @@ class WorkerExecutor:
             except Exception as error:
                 error_answer = error
                 logger.opt(exception=True).critical(
-                    f'[{self._process.uuid}] ({worker.settings.name}) Во время сохранения ивентов произошла ошибка: {error}'
+                    f'[{self._process.uuid}] ({worker.settings.name}) Не удалось сохранить ивенты: {error}'
                 )
 
         return error_answer
@@ -109,7 +109,7 @@ class WorkerExecutor:
             logger.debug(f'[{self._process.uuid}] ({worker_name}) Исполнитель воркеров прервал mark_worker_executor_as_busy')
         except Exception as error:
             logger.opt(exception=True).critical(
-                f'[{self._process.uuid}] ({worker_name}) Во время установки метки занятости процесса произошла ошибка: {error}'
+                f'[{self._process.uuid}] ({worker_name}) Не удалось установить метку занятости исполнителя: {error}'
             )
 
         error_answer = await self._execute(worker, kwargs)
@@ -125,7 +125,7 @@ class WorkerExecutor:
             logger.debug(f'[{self._process.uuid}] ({worker_name}) Исполнитель воркеров прервал mark_worker_executor_as_available')
         except Exception as error:
             logger.opt(exception=True).critical(
-                f'[{self._process.uuid}] ({worker_name}) Во время установки метки доступности процесса произошла ошибка: {error}'
+                f'[{self._process.uuid}] ({worker_name}) Не удалось установить метку доступности исполнителя: {error}'
             )
 
         return True
@@ -146,7 +146,7 @@ class WorkerExecutor:
             logger.debug(f'[{self._process.uuid}] Исполнитель воркеров прервал mark_worker_executor_as_available')
         except Exception as error:
             logger.opt(exception=True).critical(
-                f'[{self._process.uuid}] Во время установки метки доступности процесса произошла ошибка: {error}'
+                f'[{self._process.uuid}] Не удалось установить метку доступности исполнителя: {error}'
             )
         else:
             logger.debug(f'[{self._process.uuid}] Исполнитель воркеров стал доступным')
