@@ -49,7 +49,7 @@ class ResourceManager:
                         task_group.create_task(handler.run())
         except Exception as error:
             logger.opt(exception=True).critical(
-                f'[{self._process.uuid}] Не удалось открыть или закрыть backend / broker: {error}'
+                f'[{self._process.uuid}] Менеджеру ресурсов не удалось открыть или закрыть backend / broker: {error}'
             )
 
     async def run(self) -> None:

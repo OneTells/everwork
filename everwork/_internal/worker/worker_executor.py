@@ -55,6 +55,34 @@ class WorkerExecutor:
 
         return kwargs
 
+    async def _mark_worker_executor_as_busy(self, worker_name: str) -> None:
+        try:
+            await wait_for_or_cancel(
+                self._backend.mark_worker_executor_as_busy(self._manager_uuid, self._process.uuid, worker_name),
+                self._terminate_event,
+                timeout=5
+            )
+        except (OperationCancelled, asyncio.TimeoutError):
+            logger.debug(f'[{self._process.uuid}] ({worker_name}) Исполнитель воркеров прервал mark_worker_executor_as_busy')
+        except Exception as error:
+            logger.opt(exception=True).critical(
+                f'[{self._process.uuid}] ({worker_name}) Не удалось установить метку занятости исполнителя: {error}'
+            )
+
+    async def _mark_worker_executor_as_available(self, worker_name: str) -> None:
+        try:
+            await wait_for_or_cancel(
+                self._backend.mark_worker_executor_as_available(self._manager_uuid, self._process.uuid),
+                self._terminate_event,
+                timeout=5
+            )
+        except (OperationCancelled, asyncio.TimeoutError):
+            logger.debug(f'[{self._process.uuid}] ({worker_name}) Исполнитель воркеров прервал mark_worker_executor_as_available')
+        except Exception as error:
+            logger.opt(exception=True).critical(
+                f'[{self._process.uuid}] ({worker_name}) Не удалось установить метку доступности исполнителя: {error}'
+            )
+
     async def _execute(self, worker: AbstractWorker, kwargs: dict[str, Any]) -> BaseException | None:
         self._notifier.notify_started(worker.settings)
 
@@ -99,34 +127,12 @@ class WorkerExecutor:
         worker = self._worker_registry.get_worker(worker_name)
         kwargs = self._prepare_worker_kwargs(worker, kwargs_raw)
 
-        try:
-            await wait_for_or_cancel(
-                self._backend.mark_worker_executor_as_busy(self._manager_uuid, self._process.uuid, worker.settings.name),
-                self._terminate_event,
-                timeout=5
-            )
-        except (OperationCancelled, asyncio.TimeoutError):
-            logger.debug(f'[{self._process.uuid}] ({worker_name}) Исполнитель воркеров прервал mark_worker_executor_as_busy')
-        except Exception as error:
-            logger.opt(exception=True).critical(
-                f'[{self._process.uuid}] ({worker_name}) Не удалось установить метку занятости исполнителя: {error}'
-            )
+        await self._mark_worker_executor_as_busy(worker_name)
 
         error_answer = await self._execute(worker, kwargs)
         self._receiver.send_answer(error_answer)
 
-        try:
-            await wait_for_or_cancel(
-                self._backend.mark_worker_executor_as_available(self._manager_uuid, self._process.uuid),
-                self._terminate_event,
-                timeout=5
-            )
-        except (OperationCancelled, asyncio.TimeoutError):
-            logger.debug(f'[{self._process.uuid}] ({worker_name}) Исполнитель воркеров прервал mark_worker_executor_as_available')
-        except Exception as error:
-            logger.opt(exception=True).critical(
-                f'[{self._process.uuid}] ({worker_name}) Не удалось установить метку доступности исполнителя: {error}'
-            )
+        await self._mark_worker_executor_as_available(worker_name)
 
         return True
 

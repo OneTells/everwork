@@ -130,23 +130,29 @@ class ProcessManager:
 
     async def _startup(self, backend: AbstractBackend) -> None:
         try:
-            await wait_for_or_cancel(
+            return await wait_for_or_cancel(
                 backend.startup_manager(self._manager_uuid, self._processes),
                 self._shutdown_event
             )
         except OperationCancelled:
             logger.warning('Менеджер процессов прервал startup_manager')
-            raise
+        except Exception as error:
+            logger.opt(exception=True).critical(f'Не удалось инициализировать менеджер: {error}')
+
+        raise ValueError
 
     async def _shutdown(self, backend: AbstractBackend) -> None:
         try:
-            await asyncio.wait_for(
+            return await asyncio.wait_for(
                 backend.shutdown_manager(self._manager_uuid),
                 timeout=5
             )
         except asyncio.TimeoutError:
             logger.warning('Менеджер процессов прервал shutdown_manager')
-            raise
+        except Exception as error:
+            logger.opt(exception=True).critical(f'Не удалось завершить менеджер: {error}')
+
+        raise ValueError
 
     async def _start_supervisors(self, backend: AbstractBackend) -> None:
         async with asyncio.TaskGroup() as task_group:
@@ -183,10 +189,9 @@ class ProcessManager:
 
                 await self._shutdown(backend)
                 logger.debug('Менеджер процессов выполнил shutdown')
-        except (OperationCancelled, asyncio.TimeoutError):
+        except ValueError:
             pass
         except Exception as error:
-            logger.opt(exception=True).critical(f'Менеджер процессов завершился с ошибкой: {error}')
-            return
+            logger.opt(exception=True).critical(f'Менеджеру процессов не удалось открыть или закрыть backend / broker: {error}')
 
         logger.info('Менеджер процессов завершил работу')

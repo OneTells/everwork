@@ -38,9 +38,7 @@ class ProcessSupervisor:
 
         self._worker_process = WorkerProcess(manager_uuid, process, backend_factory, broker_factory)
 
-    async def _restart_worker_process(self, worker_name: str) -> None:
-        logger.warning(f'[{self._process.uuid}] ({worker_name}) Процесс завис и будет перезапущен')
-
+    async def _mark_worker_executor_for_reboot(self, worker_name: str) -> None:
         try:
             await wait_for_or_cancel(
                 self._backend.mark_worker_executor_for_reboot(self._manager_uuid, self._process.uuid),
@@ -55,6 +53,11 @@ class ProcessSupervisor:
             )
         else:
             logger.debug(f'[{self._process.uuid}] ({worker_name}) Установлена метка о перезапуске процесса')
+
+    async def _restart_worker_process(self, worker_name: str) -> None:
+        logger.warning(f'[{self._process.uuid}] ({worker_name}) Процесс завис и будет перезапущен')
+
+        await self._mark_worker_executor_for_reboot(worker_name)
 
         await self._worker_process.close()
         await self._worker_process.start()

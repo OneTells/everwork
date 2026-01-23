@@ -121,7 +121,7 @@ class WorkerManager:
                     await executor.run()
         except Exception as error:
             logger.opt(exception=True).critical(
-                f'[{self._process.uuid}] Ошибка при открытии или закрытии backend / broker: {error}'
+                f'[{self._process.uuid}] Менеджеру воркеров не удалось открыть или закрыть backend / broker: {error}'
             )
 
     async def run(self) -> None:
