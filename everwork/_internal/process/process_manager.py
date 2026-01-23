@@ -10,6 +10,7 @@ from loguru import logger
 from pydantic import AfterValidator, validate_call
 
 from everwork._internal.process.process_supervisor import ProcessSupervisor
+from everwork._internal.utils.task_utils import OperationCancelled, wait_for_or_cancel
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker
 from everwork.schemas import Process, ProcessGroup
@@ -128,10 +129,24 @@ class ProcessManager:
         self._shutdown_event = asyncio.Event()
 
     async def _startup(self, backend: AbstractBackend) -> None:
-        await backend.startup_manager(self._manager_uuid, self._processes)
+        try:
+            await wait_for_or_cancel(
+                backend.startup_manager(self._manager_uuid, self._processes),
+                self._shutdown_event
+            )
+        except OperationCancelled:
+            logger.warning('Менеджер процессов прервал startup_manager')
+            raise
 
     async def _shutdown(self, backend: AbstractBackend) -> None:
-        await backend.shutdown_manager(self._manager_uuid)
+        try:
+            await asyncio.wait_for(
+                backend.shutdown_manager(self._manager_uuid),
+                timeout=5
+            )
+        except asyncio.TimeoutError:
+            logger.warning('Менеджер процессов прервал shutdown_manager')
+            raise
 
     async def _start_supervisors(self, backend: AbstractBackend) -> None:
         async with asyncio.TaskGroup() as task_group:
@@ -156,16 +171,22 @@ class ProcessManager:
         SignalHandler(self._shutdown_event).register()
         logger.debug("Менеджер процессов зарегистрировал обработчик сигналов")
 
-        async with self._backend_factory() as backend:
-            logger.debug('Менеджер процессов инициализировал backend')
+        try:
+            async with self._backend_factory() as backend:
+                logger.debug('Менеджер процессов инициализировал backend')
 
-            await self._startup(backend)
-            logger.debug('Менеджер процессов выполнил startup')
+                await self._startup(backend)
+                logger.debug('Менеджер процессов выполнил startup')
 
-            await self._start_supervisors(backend)
-            logger.debug('Менеджер процессов завершил все супервайзеры процессов')
+                await self._start_supervisors(backend)
+                logger.debug('Менеджер процессов завершил супервайзеры процессов')
 
-            await self._shutdown(backend)
-            logger.debug('Менеджер процессов выполнил shutdown')
+                await self._shutdown(backend)
+                logger.debug('Менеджер процессов выполнил shutdown')
+        except (OperationCancelled, asyncio.TimeoutError):
+            pass
+        except Exception as error:
+            logger.opt(exception=True).critical(f'Менеджер процессов завершился с ошибкой: {error}')
+            return
 
         logger.info('Менеджер процессов завершил работу')
