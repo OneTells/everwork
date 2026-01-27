@@ -5,15 +5,14 @@ from typing import Any, Callable
 
 from loguru import logger
 
+from everwork._internal.events import HybridStorage
 from everwork._internal.resource.resource_manager import ResourceManager
 from everwork._internal.utils.async_thread import AsyncThread
 from everwork._internal.worker.utils.executor_channel import create_executor_channel
 from everwork._internal.worker.utils.heartbeat_notifier import HeartbeatNotifier
 from everwork._internal.worker.worker_executor import WorkerExecutor
-from everwork._internal.worker.worker_registry import WorkerRegistry
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker
-from everwork.events import HybridEventStorage
 from everwork.schemas import Process
 
 
@@ -67,7 +66,7 @@ class WorkerManager:
         self._broker_factory = broker_factory
         self._notifier = notifier
 
-        self._transmitter, self._receiver = create_executor_channel()
+        transmitter, self._receiver = create_executor_channel()
 
         self._shutdown_event = asyncio.Event()
         self._terminate_event = asyncio.Event()
@@ -81,48 +80,28 @@ class WorkerManager:
                 'process': self._process,
                 'backend_factory': self._backend_factory,
                 'broker_factory': self._broker_factory,
-                'transmitter': self._transmitter
+                'transmitter': transmitter
             }
         )
 
-        self._worker_registry = WorkerRegistry(process)
-
-    async def _startup(self) -> None:
+    async def _start_resource_manager(self) -> None:
         self._resource_manager.start()
 
-        await self._worker_registry.initialize()
-        await self._worker_registry.startup_all()
-
-    async def _shutdown(self) -> None:
-        await self._worker_registry.shutdown_all()
-
+    async def _join_resource_manager(self) -> None:
         self._resource_manager.join()
 
     async def _run_worker_executor(self) -> None:
-        try:
-            async with self._backend_factory() as backend, self._broker_factory() as broker:
-                logger.debug(f'[{self._process.uuid}] Менеджер воркеров инициализировал backend и broker')
-
-                async with HybridEventStorage() as storage:
-                    executor = WorkerExecutor(
-                        self._manager_uuid,
-                        self._process,
-                        self._worker_registry,
-                        self._receiver,
-                        backend,
-                        broker,
-                        storage,
-                        self._notifier,
-                        self._is_executing_event,
-                        self._shutdown_event,
-                        self._terminate_event
-                    )
-
-                    await executor.run()
-        except Exception as error:
-            logger.opt(exception=True).critical(
-                f'[{self._process.uuid}] Менеджеру воркеров не удалось открыть или закрыть backend / broker: {error}'
+        with HybridStorage() as storage:
+            executor = WorkerExecutor(
+                self._manager_uuid,
+                self._process,
+                self._receiver,
+                self._notifier,
+                self._is_executing_event,
+                storage
             )
+
+            await executor.run()
 
     async def run(self) -> None:
         logger.debug(
@@ -137,15 +116,15 @@ class WorkerManager:
             self._resource_manager.cancel
         ).register()
 
-        await self._startup()
-        logger.debug(f'[{self._process.uuid}] Менеджер воркеров выполнил startup')
+        await self._start_resource_manager()
+        logger.debug(f'[{self._process.uuid}] Менеджер воркеров запустил менеджер ресурсов')
 
         logger.debug(f'[{self._process.uuid}] Менеджер воркеров запустил исполнитель воркеров')
         await self._run_worker_executor()
         logger.debug(f'[{self._process.uuid}] Менеджер воркеров завершил исполнитель воркеров')
 
-        await self._shutdown()
-        logger.debug(f'[{self._process.uuid}] Менеджер воркеров выполнил shutdown')
+        await self._join_resource_manager()
+        logger.debug(f'[{self._process.uuid}] Менеджер воркеров дождался закрытия менеджера ресурсов')
 
         self._notifier.close()
 
