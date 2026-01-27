@@ -4,6 +4,7 @@ from typing import Callable
 from loguru import logger
 
 from everwork._internal.resource.resource_handler import ResourceHandler
+from everwork._internal.utils.task_utils import OperationCancelled, wait_for_or_cancel
 from everwork._internal.worker.utils.executor_channel import ExecutorTransmitter
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker
@@ -28,11 +29,30 @@ class ResourceManager:
         self._transmitter = transmitter
         self._shutdown_event = shutdown_event
 
-    async def _run_supervisors(self) -> None:
+    async def _mark_worker_executor_as_available(self, backend: AbstractBackend) -> None:
+        try:
+            await wait_for_or_cancel(
+                backend.mark_worker_executor_as_available(self._manager_uuid, self._process.uuid),
+                self._shutdown_event,
+                timeout=5
+            )
+        except (OperationCancelled, asyncio.TimeoutError):
+            logger.debug(f'[{self._process.uuid}] Менеджер ресурсов прервал mark_worker_executor_as_available')
+        except Exception as error:
+            logger.opt(exception=True).critical(
+                f'[{self._process.uuid}] Не удалось установить метку доступности исполнителя: {error}'
+            )
+
+    async def _run_handlers(self) -> None:
         lock = asyncio.Lock()
 
         try:
             async with self._backend_factory() as backend, self._broker_factory() as broker:
+                logger.debug(f'[{self._process.uuid}] Менеджеру ресурсов инициализировал backend / broker')
+
+                await self._mark_worker_executor_as_available(backend)
+                logger.debug(f'[{self._process.uuid}] Исполнитель воркеров стал доступным')
+
                 async with asyncio.TaskGroup() as task_group:
                     for worker in self._process.workers:
                         handler = ResourceHandler(
@@ -59,7 +79,7 @@ class ResourceManager:
         )
 
         logger.debug(f'[{self._process.uuid}] Менеджер ресурсов запустил обработчики ресурсов')
-        await self._run_supervisors()
+        await self._run_handlers()
         logger.debug(f'[{self._process.uuid}] Менеджер ресурсов завершил обработчики ресурсов')
 
         self._transmitter.close()
