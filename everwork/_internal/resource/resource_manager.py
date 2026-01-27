@@ -4,7 +4,7 @@ from typing import Callable
 from loguru import logger
 
 from everwork._internal.resource.resource_handler import ResourceHandler
-from everwork._internal.utils.task_utils import OperationCancelled, wait_for_or_cancel
+from everwork._internal.utils.async_task import OperationCancelled, wait_for_or_cancel
 from everwork._internal.worker.utils.executor_channel import ExecutorTransmitter
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker

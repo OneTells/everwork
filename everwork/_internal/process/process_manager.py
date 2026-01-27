@@ -10,7 +10,7 @@ from loguru import logger
 from pydantic import AfterValidator, validate_call
 
 from everwork._internal.process.process_supervisor import ProcessSupervisor
-from everwork._internal.utils.task_utils import OperationCancelled, wait_for_or_cancel
+from everwork._internal.utils.async_task import OperationCancelled, wait_for_or_cancel
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker
 from everwork.schemas import Process, ProcessGroup
