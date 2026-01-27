@@ -3,6 +3,8 @@ from asyncio import get_running_loop
 from threading import Lock
 from typing import Any
 
+from everwork._internal.events import AbstractReader
+
 
 class ChannelClosed(Exception):
     pass
@@ -64,17 +66,21 @@ class SingleValueChannel[T]:
             loop.call_soon_threadsafe(lambda: None if self._waiter.done() else self._waiter.cancel())  # type: ignore
 
 
+type ResponseType = tuple[str, dict[str, Any]]
+type AnswerType = AbstractReader | BaseException
+
+
 class ExecutorTransmitter:
 
     def __init__(
         self,
-        response_channel: SingleValueChannel[tuple[str, dict[str, Any]]],
-        answer_channel: SingleValueChannel[BaseException | None]
+        response_channel: SingleValueChannel[ResponseType],
+        answer_channel: SingleValueChannel[AnswerType]
     ) -> None:
         self._response_channel = response_channel
         self._answer_channel = answer_channel
 
-    async def execute(self, worker_name: str, kwargs: dict[str, Any]) -> BaseException | None:
+    async def execute(self, worker_name: str, kwargs: dict[str, Any]) -> AnswerType:
         self._response_channel.send((worker_name, kwargs))
         return await self._answer_channel.receive()
 
@@ -87,22 +93,22 @@ class ExecutorReceiver:
 
     def __init__(
         self,
-        response_channel: SingleValueChannel[tuple[str, dict[str, Any]]],
-        answer_channel: SingleValueChannel[BaseException | None]
+        response_channel: SingleValueChannel[ResponseType],
+        answer_channel: SingleValueChannel[AnswerType]
     ) -> None:
         self._response_channel = response_channel
         self._answer_channel = answer_channel
 
-    async def get_response(self) -> tuple[str, dict[str, Any]]:
+    async def get_response(self) -> ResponseType:
         return await self._response_channel.receive()
 
-    def send_answer(self, answer: BaseException | None) -> None:
+    def send_answer(self, answer: AnswerType) -> None:
         self._answer_channel.send(answer)
 
 
 def create_executor_channel() -> tuple[ExecutorTransmitter, ExecutorReceiver]:
-    response_channel = SingleValueChannel[tuple[str, dict[str, Any]]]()
-    answer_channel = SingleValueChannel[BaseException | None]()
+    response_channel = SingleValueChannel[ResponseType]()
+    answer_channel = SingleValueChannel[AnswerType]()
 
     transmitter = ExecutorTransmitter(response_channel, answer_channel)
     receiver = ExecutorReceiver(response_channel, answer_channel)
