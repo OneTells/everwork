@@ -34,7 +34,7 @@ class ResourceManager:
             await wait_for_or_cancel(
                 backend.mark_worker_executor_as_available(self._manager_uuid, self._process.uuid),
                 self._shutdown_event,
-                timeout=5
+                max_timeout=5
             )
         except (OperationCancelled, asyncio.TimeoutError):
             logger.debug(f'[{self._process.uuid}] Менеджер ресурсов прервал mark_worker_executor_as_available')

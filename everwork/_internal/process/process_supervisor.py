@@ -43,7 +43,7 @@ class ProcessSupervisor:
             await wait_for_or_cancel(
                 self._backend.mark_worker_executor_for_reboot(self._manager_uuid, self._process.uuid),
                 self._shutdown_event,
-                timeout=5
+                max_timeout=5
             )
         except (OperationCancelled, asyncio.TimeoutError):
             logger.debug(f'[{self._process.uuid}] ({worker_name}) Супервайзер процесса прервал mark_worker_executor_for_reboot')

@@ -130,10 +130,7 @@ class ProcessManager:
 
     async def _startup(self, backend: AbstractBackend) -> None:
         try:
-            return await wait_for_or_cancel(
-                backend.startup_manager(self._manager_uuid, self._processes),
-                self._shutdown_event
-            )
+            return await wait_for_or_cancel(backend.startup_manager(self._manager_uuid, self._processes), self._shutdown_event)
         except OperationCancelled:
             logger.warning('Менеджер процессов прервал startup_manager')
         except Exception as error:
