@@ -6,18 +6,26 @@ class OperationCancelled(Exception):
     pass
 
 
+async def wait_for_event_with_min_timeout(event: asyncio.Event, min_timeout: int) -> None:
+    await event.wait()
+    await asyncio.sleep(min_timeout)
+
+
 async def wait_for_or_cancel[T](
     coroutine: Coroutine[Any, Any, T],
     event: asyncio.Event,
-    timeout: int | None = None
+    min_timeout: int = 0,
+    max_timeout: int | None = None,
 ) -> T:
     main_task = asyncio.create_task(coroutine)
-    event_task = asyncio.create_task(event.wait())
+    event_task = asyncio.create_task(
+        wait_for_event_with_min_timeout(event, min_timeout)
+    )
 
     tasks = {main_task, event_task}
 
     try:
-        async with asyncio.timeout(timeout):
+        async with asyncio.timeout(max_timeout):
             await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
 
         if event.is_set():
