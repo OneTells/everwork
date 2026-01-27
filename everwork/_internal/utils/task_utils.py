@@ -28,7 +28,7 @@ async def wait_for_or_cancel[T](
         async with asyncio.timeout(max_timeout):
             await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
 
-        if event.is_set():
+        if not main_task.done():
             raise OperationCancelled
 
         return await main_task
