@@ -198,7 +198,7 @@ class ResourceHandler:
 
                 await self._mark_worker_executor_as_busy(event_id)
 
-                reader_or_error = await self._transmitter.execute(self._worker.settings.name, event_payload.kwargs)
+                reader_or_error = await self._transmitter.execute(self._worker.settings.name, event_payload)
 
                 if isinstance(reader_or_error, AbstractReader):
                     error = await self._push_events(reader_or_error)

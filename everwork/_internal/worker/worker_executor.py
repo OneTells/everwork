@@ -73,12 +73,12 @@ class WorkerExecutor:
     async def _run_execute_loop(self) -> None:
         while True:
             try:
-                worker_name, kwargs_raw = await self._receiver.get_response()
+                worker_name, event_payload = await self._receiver.get_response()
             except ChannelClosed:
                 break
 
             worker = self._worker_registry.get_worker(worker_name)
-            kwargs = self._prepare_kwargs(worker, kwargs_raw)
+            kwargs = self._prepare_kwargs(worker, event_payload.kwargs)
 
             answer = await self._execute(worker, kwargs)
             self._receiver.send_answer(answer)

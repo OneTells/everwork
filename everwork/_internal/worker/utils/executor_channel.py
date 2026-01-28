@@ -1,9 +1,9 @@
 import asyncio
 from asyncio import get_running_loop
 from threading import Lock
-from typing import Any
 
 from everwork._internal.utils.event_storage import AbstractReader
+from everwork.schemas import EventPayload
 
 
 class ChannelClosed(Exception):
@@ -66,7 +66,7 @@ class SingleValueChannel[T]:
             loop.call_soon_threadsafe(lambda: None if self._waiter.done() else self._waiter.cancel())  # type: ignore
 
 
-type ResponseType = tuple[str, dict[str, Any]]
+type ResponseType = tuple[str, EventPayload]
 type AnswerType = AbstractReader | BaseException
 
 
@@ -80,8 +80,8 @@ class ExecutorTransmitter:
         self._response_channel = response_channel
         self._answer_channel = answer_channel
 
-    async def execute(self, worker_name: str, kwargs: dict[str, Any]) -> AnswerType:
-        self._response_channel.send((worker_name, kwargs))
+    async def execute(self, worker_name: str, event_payload: EventPayload) -> AnswerType:
+        self._response_channel.send((worker_name, event_payload))
         return await self._answer_channel.receive()
 
     def close(self) -> None:
