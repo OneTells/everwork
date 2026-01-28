@@ -55,7 +55,8 @@ class AbstractBackend(ABC):
         self,
         manager_uuid: str,
         process_uuid: str,
-        worker_name: str
+        worker_name: str,
+        event_identifier: Any
     ) -> None:
         raise NotImplementedError
 
