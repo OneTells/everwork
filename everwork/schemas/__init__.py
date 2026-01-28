@@ -1,6 +1,7 @@
+from .event import EventPayload
 from .process import Process, ProcessGroup
 from .trigger import AbstractTrigger, IntervalTrigger
-from .worker import EventPublisherSettings, EventStorageSettings, WorkerEvent, WorkerSettings
+from .worker import EventPublisherSettings, EventStorageSettings, WorkerSettings
 
 __all__ = (
     'Process',
@@ -10,5 +11,5 @@ __all__ = (
     'WorkerSettings',
     'EventStorageSettings',
     'EventPublisherSettings',
-    'WorkerEvent',
+    'EventPayload',
 )

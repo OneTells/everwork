@@ -61,14 +61,14 @@ class ResourceHandler:
                 min_timeout=5
             )
 
-    async def _mark_worker_executor_as_busy(self, event_identifier: Any) -> None:
+    async def _mark_worker_executor_as_busy(self, event_id: str) -> None:
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
                 self._backend.mark_worker_executor_as_busy(
                     self._manager_uuid,
                     self._process.uuid,
                     self._worker.settings.name,
-                    event_identifier
+                    event_id
                 ),
                 min_timeout=5
             )
@@ -85,7 +85,7 @@ class ResourceHandler:
 
         return 'off'
 
-    async def _fetch_event(self) -> tuple[dict[str, Any], Any]:
+    async def _fetch_event(self) -> tuple[dict[str, Any], str]:
         with suppress(Exception):
             return await self._execute_with_graceful_cancel(
                 self._broker.fetch_event(
@@ -99,39 +99,39 @@ class ResourceHandler:
 
         raise ValueError
 
-    async def _ack_event(self, event_identifier: Any) -> None:
+    async def _ack_event(self, event_id: str) -> None:
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
                 self._broker.ack_event(
                     self._manager_uuid,
                     self._process.uuid,
                     self._worker.settings.name,
-                    event_identifier
+                    event_id
                 ),
                 min_timeout=5
             )
 
-    async def _fail_event(self, event_identifier: Any, error_answer: BaseException) -> None:
+    async def _fail_event(self, event_id: str, error_answer: BaseException) -> None:
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
                 self._broker.fail_event(
                     self._manager_uuid,
                     self._process.uuid,
                     self._worker.settings.name,
-                    event_identifier,
+                    event_id,
                     error_answer
                 ),
                 min_timeout=5
             )
 
-    async def _return_event(self, event_identifier: Any) -> None:
+    async def _return_event(self, event_id: str) -> None:
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
                 self._broker.return_event(
                     self._manager_uuid,
                     self._process.uuid,
                     self._worker.settings.name,
-                    event_identifier
+                    event_id
                 ),
                 min_timeout=5
             )
@@ -166,20 +166,20 @@ class ResourceHandler:
                 continue
 
             try:
-                kwargs, event_identifier = await self._fetch_event()
+                kwargs, event_id = await self._fetch_event()
             except ValueError:
                 continue
 
             if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
-                await self._return_event(event_identifier)
+                await self._return_event(event_id)
                 continue
 
             async with self._lock:
                 if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
-                    await self._return_event(event_identifier)
+                    await self._return_event(event_id)
                     continue
 
-                await self._mark_worker_executor_as_busy(event_identifier)
+                await self._mark_worker_executor_as_busy(event_id)
 
                 reader_or_error = await self._transmitter.execute(self._worker.settings.name, kwargs)
 
@@ -192,10 +192,10 @@ class ResourceHandler:
                 await self._mark_worker_executor_as_available()
 
             if error is not None:
-                await self._fail_event(event_identifier, error)
+                await self._fail_event(event_id, error)
                 continue
 
-            await self._ack_event(event_identifier)
+            await self._ack_event(event_id)
 
     async def run(self) -> None:
         logger.debug(f'[{self._process.uuid}] ({self._worker.settings.name}) Обработчик ресурсов запущен')

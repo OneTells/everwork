@@ -7,7 +7,7 @@ from .schemas import (
     EventStorageSettings,
     Process,
     ProcessGroup,
-    WorkerEvent,
+    EventPayload,
     WorkerSettings
 )
 from .trigger_utils import timer
@@ -21,7 +21,7 @@ __all__ = (
     'WorkerSettings',
     'EventStorageSettings',
     'EventPublisherSettings',
-    'WorkerEvent',
+    'EventPayload',
     'EventCollector',
     'timer',
     'AbstractBackend',

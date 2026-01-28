@@ -1,4 +1,4 @@
-from typing import Annotated, Any, final, Self
+from typing import Annotated, final, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -35,11 +35,3 @@ class WorkerSettings(BaseModel):
     def _configure_stream_sources(self) -> Self:
         self.source_streams = {f'{self.name}:stream', *self.source_streams}
         return self
-
-
-@final
-class WorkerEvent(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    stream: NameType
-    data: dict[str, Any] = Field(default_factory=dict)

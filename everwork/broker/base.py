@@ -1,10 +1,10 @@
 from abc import ABC, abstractmethod
 from typing import Any, Iterable, Self
 
-from everwork.schemas import WorkerEvent
+from everwork.schemas import EventPayload
 
 
-class AbstractBroker[T](ABC):
+class AbstractBroker(ABC):
 
     @abstractmethod
     async def initialize(self) -> None:
@@ -26,7 +26,7 @@ class AbstractBroker[T](ABC):
     @abstractmethod
     async def push_event(
         self,
-        event: WorkerEvent | list[WorkerEvent]
+        event: EventPayload | list[EventPayload]
     ) -> None:
         raise NotImplementedError
 
@@ -37,7 +37,7 @@ class AbstractBroker[T](ABC):
         process_uuid: str,
         worker_name: str,
         source_streams: Iterable[str]
-    ) -> tuple[dict[str, Any], T]:
+    ) -> tuple[dict[str, Any], str]:
         raise NotImplementedError
 
     @abstractmethod
@@ -46,7 +46,7 @@ class AbstractBroker[T](ABC):
         manager_uuid: str,
         process_uuid: str,
         worker_name: str,
-        event_identifier: T
+        event_id: str
     ) -> None:
         raise NotImplementedError
 
@@ -56,7 +56,7 @@ class AbstractBroker[T](ABC):
         manager_uuid: str,
         process_uuid: str,
         worker_name: str,
-        event_identifier: T
+        event_id: str
     ) -> None:
         raise NotImplementedError
 
@@ -66,7 +66,7 @@ class AbstractBroker[T](ABC):
         manager_uuid: str,
         process_uuid: str,
         worker_name: str,
-        event_identifier: T,
+        event_id: str,
         error: BaseException
     ) -> None:
         raise NotImplementedError
@@ -77,6 +77,6 @@ class AbstractBroker[T](ABC):
         manager_uuid: str,
         process_uuid: str,
         worker_name: str,
-        event_identifier: T
+        event_id: str
     ) -> None:
         raise NotImplementedError

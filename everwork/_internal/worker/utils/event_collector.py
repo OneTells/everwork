@@ -1,7 +1,9 @@
 from typing import Any, final
 
+from pydantic import AwareDatetime
+
 from everwork._internal.utils.event_storage import AbstractStorage
-from everwork.schemas import WorkerEvent
+from everwork.schemas import EventPayload
 
 
 @final
@@ -10,12 +12,12 @@ class EventCollector:
     def __init__(self, storage: AbstractStorage) -> None:
         self._storage = storage
 
-    def add(self, stream: str, data: dict[str, Any]) -> None:
-        event = WorkerEvent(stream=stream, data=data)
+    def add(self, stream: str, kwargs: dict[str, Any], expires: AwareDatetime) -> None:
+        event_payload = EventPayload(stream=stream, kwargs=kwargs, expires=expires)
+        self._storage.write(event_payload)
+
+    def add_event(self, event: EventPayload) -> None:
         self._storage.write(event)
 
-    def add_event(self, event: WorkerEvent) -> None:
-        self._storage.write(event)
-
-    def add_events(self, events: list[WorkerEvent]) -> None:
+    def add_events(self, events: list[EventPayload]) -> None:
         self._storage.write(events)
