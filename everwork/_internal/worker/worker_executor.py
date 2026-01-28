@@ -3,7 +3,8 @@ from typing import Any
 
 from loguru import logger
 
-from everwork._internal.events import AbstractReader, EventCollector, HybridStorage
+from everwork._internal.utils.event_storage import AbstractReader, HybridStorage
+from everwork._internal.worker.utils.event_collector import EventCollector
 from everwork._internal.worker.utils.executor_channel import ChannelClosed, ExecutorReceiver
 from everwork._internal.worker.utils.heartbeat_notifier import HeartbeatNotifier
 from everwork._internal.worker.worker_registry import WorkerRegistry

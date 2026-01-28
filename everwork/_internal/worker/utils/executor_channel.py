@@ -3,7 +3,7 @@ from asyncio import get_running_loop
 from threading import Lock
 from typing import Any
 
-from everwork._internal.events import AbstractReader
+from everwork._internal.utils.event_storage import AbstractReader
 
 
 class ChannelClosed(Exception):

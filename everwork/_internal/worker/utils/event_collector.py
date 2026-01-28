@@ -1,6 +1,6 @@
 from typing import Any, final
 
-from everwork._internal.events.storage import AbstractStorage
+from everwork._internal.utils.event_storage import AbstractStorage
 from everwork.schemas import WorkerEvent
 
 

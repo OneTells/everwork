@@ -1,5 +1,5 @@
-from ._internal.events import EventCollector
 from ._internal.process.process_manager import ProcessManager
+from ._internal.worker.utils.event_collector import EventCollector
 from .backend import AbstractBackend
 from .broker import AbstractBroker
 from .schemas import (
