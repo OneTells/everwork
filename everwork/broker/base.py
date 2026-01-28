@@ -51,7 +51,7 @@ class AbstractBroker[T](ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def requeue_event(
+    async def return_event(
         self,
         manager_uuid: str,
         process_uuid: str,
@@ -61,12 +61,22 @@ class AbstractBroker[T](ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def reject_event(
+    async def fail_event(
         self,
         manager_uuid: str,
         process_uuid: str,
         worker_name: str,
         event_identifier: T,
         error: BaseException
+    ) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def reject_event(
+        self,
+        manager_uuid: str,
+        process_uuid: str,
+        worker_name: str,
+        event_identifier: T
     ) -> None:
         raise NotImplementedError

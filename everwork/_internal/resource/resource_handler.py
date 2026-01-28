@@ -111,10 +111,10 @@ class ResourceHandler:
                 min_timeout=5
             )
 
-    async def _reject_event(self, event_identifier: Any, error_answer: BaseException) -> None:
+    async def _fail_event(self, event_identifier: Any, error_answer: BaseException) -> None:
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
-                self._broker.reject_event(
+                self._broker.fail_event(
                     self._manager_uuid,
                     self._process.uuid,
                     self._worker.settings.name,
@@ -124,10 +124,10 @@ class ResourceHandler:
                 min_timeout=5
             )
 
-    async def _requeue_event(self, event_identifier: Any) -> None:
+    async def _return_event(self, event_identifier: Any) -> None:
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
-                self._broker.ack_event(
+                self._broker.return_event(
                     self._manager_uuid,
                     self._process.uuid,
                     self._worker.settings.name,
@@ -171,12 +171,12 @@ class ResourceHandler:
                 continue
 
             if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
-                await self._requeue_event(event_identifier)
+                await self._return_event(event_identifier)
                 continue
 
             async with self._lock:
                 if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
-                    await self._requeue_event(event_identifier)
+                    await self._return_event(event_identifier)
                     continue
 
                 await self._mark_worker_executor_as_busy(event_identifier)
@@ -192,7 +192,7 @@ class ResourceHandler:
                 await self._mark_worker_executor_as_available()
 
             if error is not None:
-                await self._reject_event(event_identifier, error)
+                await self._fail_event(event_identifier, error)
                 continue
 
             await self._ack_event(event_identifier)
