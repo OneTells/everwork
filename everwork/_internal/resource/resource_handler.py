@@ -1,10 +1,11 @@
 import asyncio
 from contextlib import suppress
-from typing import Any, Literal
+from typing import Any, Coroutine, Literal
 
 from loguru import logger
 
-from everwork._internal.utils.task_utils import OperationCancelled, wait_for_or_cancel
+from everwork._internal.utils.async_task import OperationCancelled, wait_for_or_cancel
+from everwork._internal.utils.event_storage import AbstractReader
 from everwork._internal.worker.utils.executor_channel import ExecutorTransmitter
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker
@@ -34,88 +35,132 @@ class ResourceHandler:
         self._lock = lock
         self._shutdown_event = shutdown_event
 
-    async def _get_worker_status(self) -> Literal['on', 'off']:
+    async def _execute_with_graceful_cancel[T](self, coroutine: Coroutine[Any, Any, T], min_timeout: int = 0) -> T:
         try:
-            return await wait_for_or_cancel(
-                self._backend.get_worker_status(self._manager_uuid, self._worker.settings.name),
-                self._shutdown_event,
-                timeout=5
+            return await wait_for_or_cancel(coroutine, self._shutdown_event, min_timeout)
+        except OperationCancelled:
+            logger.debug(
+                f"[{self._process.uuid}] ({self._worker.settings.name}) "
+                f"Обработчик ресурсов прервал '{coroutine.__name__}'"
             )
-        except (OperationCancelled, asyncio.TimeoutError):
-            logger.debug(f'[{self._process.uuid}] ({self._worker.settings.name}) Обработчик ресурсов прервал get_worker_status')
+            raise
         except Exception as error:
             logger.opt(exception=True).critical(
-                f'[{self._process.uuid}] ({self._worker.settings.name}) Не удалось получить статус воркера: {error}'
+                f"[{self._process.uuid}] ({self._worker.settings.name}) "
+                f"Не удалось выполнить '{coroutine.__name__}': {error}"
+            )
+            raise
+
+    async def _mark_worker_executor_as_available(self) -> None:
+        with suppress(Exception):
+            await self._execute_with_graceful_cancel(
+                self._backend.mark_worker_executor_as_available(
+                    self._manager_uuid,
+                    self._process.uuid
+                ),
+                min_timeout=5
+            )
+
+    async def _mark_worker_executor_as_busy(self, event_identifier: Any) -> None:
+        with suppress(Exception):
+            await self._execute_with_graceful_cancel(
+                self._backend.mark_worker_executor_as_busy(
+                    self._manager_uuid,
+                    self._process.uuid,
+                    self._worker.settings.name,
+                    event_identifier
+                ),
+                min_timeout=5
+            )
+
+    async def _get_worker_status(self) -> Literal['on', 'off']:
+        with suppress(Exception):
+            return await self._execute_with_graceful_cancel(
+                self._backend.get_worker_status(
+                    self._manager_uuid,
+                    self._worker.settings.name
+                ),
+                min_timeout=5
             )
 
         return 'off'
 
     async def _fetch_event(self) -> tuple[dict[str, Any], Any]:
-        try:
-            return await wait_for_or_cancel(
+        with suppress(Exception):
+            return await self._execute_with_graceful_cancel(
                 self._broker.fetch_event(
                     self._manager_uuid,
                     self._process.uuid,
                     self._worker.settings.name,
                     self._worker.settings.source_streams
                 ),
-                self._shutdown_event
-            )
-        except OperationCancelled:
-            logger.debug(f'[{self._process.uuid}] ({self._worker.settings.name}) Обработчик ресурсов прервал fetch_event')
-        except Exception as error:
-            logger.opt(exception=True).critical(
-                f'[{self._process.uuid}] ({self._worker.settings.name}) Не удалось получить ивент: {error}'
+                min_timeout=5
             )
 
         raise ValueError
 
     async def _ack_event(self, event_identifier: Any) -> None:
-        try:
-            async with asyncio.timeout(5):
-                return await self._broker.ack_event(
-                    self._manager_uuid, self._process.uuid, self._worker.settings.name, event_identifier
-                )
-        except asyncio.TimeoutError:
-            logger.error(f'[{self._process.uuid}] ({self._worker.settings.name}) Обработчик ресурсов прервал ack_event')
-        except Exception as error:
-            logger.opt(exception=True).critical(
-                f'[{self._process.uuid}] ({self._worker.settings.name}) Не удалось подтвердить ивент: {error}'
+        with suppress(Exception):
+            await self._execute_with_graceful_cancel(
+                self._broker.ack_event(
+                    self._manager_uuid,
+                    self._process.uuid,
+                    self._worker.settings.name,
+                    event_identifier
+                ),
+                min_timeout=5
             )
 
     async def _reject_event(self, event_identifier: Any, error_answer: BaseException) -> None:
-        try:
-            async with asyncio.timeout(5):
-                return await self._broker.reject_event(
-                    self._manager_uuid, self._process.uuid, self._worker.settings.name, event_identifier, error_answer
-                )
-        except asyncio.TimeoutError:
-            logger.error(f'[{self._process.uuid}] ({self._worker.settings.name}) Обработчик ресурсов прервал reject_event')
-        except Exception as error:
-            logger.opt(exception=True).critical(
-                f'[{self._process.uuid}] ({self._worker.settings.name}) Не удалось отклонить ивент: {error}'
+        with suppress(Exception):
+            await self._execute_with_graceful_cancel(
+                self._broker.reject_event(
+                    self._manager_uuid,
+                    self._process.uuid,
+                    self._worker.settings.name,
+                    event_identifier,
+                    error_answer
+                ),
+                min_timeout=5
             )
 
     async def _requeue_event(self, event_identifier: Any) -> None:
-        try:
-            async with asyncio.timeout(5):
-                return await self._broker.requeue_event(
-                    self._manager_uuid, self._process.uuid, self._worker.settings.name, event_identifier
-                )
-        except asyncio.TimeoutError:
-            logger.error(f'[{self._process.uuid}] ({self._worker.settings.name}) Обработчик ресурсов прервал requeue_event')
-        except Exception as error:
-            logger.opt(exception=True).critical(
-                f'[{self._process.uuid}] ({self._worker.settings.name}) Не удалось вернуть ивент: {error}'
+        with suppress(Exception):
+            await self._execute_with_graceful_cancel(
+                self._broker.ack_event(
+                    self._manager_uuid,
+                    self._process.uuid,
+                    self._worker.settings.name,
+                    event_identifier
+                ),
+                min_timeout=5
             )
+
+    async def _push_events(self, reader: AbstractReader) -> BaseException | None:
+        try:
+            batch = []
+
+            for event in reader:
+                batch.append(event)
+
+                if len(batch) >= self._worker.settings.event_publisher.max_batch_size:
+                    await self._execute_with_graceful_cancel(self._broker.push_event(batch), min_timeout=5)
+                    batch.clear()
+
+            if batch:
+                await self._execute_with_graceful_cancel(self._broker.push_event(batch), min_timeout=5)
+                batch.clear()
+        except Exception as error:
+            return error
+
+        return None
 
     async def _run_event_processing_loop(self) -> None:
         while not self._shutdown_event.is_set():
             if await self._get_worker_status() == 'off':
                 with suppress(OperationCancelled):
                     await wait_for_or_cancel(
-                        asyncio.sleep(self._worker.settings.worker_status_check_interval),
-                        self._shutdown_event
+                        asyncio.sleep(self._worker.settings.worker_status_check_interval), self._shutdown_event
                     )
 
                 continue
@@ -134,17 +179,27 @@ class ResourceHandler:
                     await self._requeue_event(event_identifier)
                     continue
 
-                error_answer = await self._transmitter.execute(self._worker.settings.name, kwargs)
+                await self._mark_worker_executor_as_busy(event_identifier)
 
-                if error_answer is not None:
-                    await self._reject_event(event_identifier, error_answer)
-                    continue
+                reader_or_error = await self._transmitter.execute(self._worker.settings.name, kwargs)
 
-                await self._ack_event(event_identifier)
+                if isinstance(reader_or_error, AbstractReader):
+                    error = await self._push_events(reader_or_error)
+                    reader_or_error.close()
+                else:
+                    error = reader_or_error
+
+                await self._mark_worker_executor_as_available()
+
+            if error is not None:
+                await self._reject_event(event_identifier, error)
+                continue
+
+            await self._ack_event(event_identifier)
 
     async def run(self) -> None:
-        logger.debug(f'({self._worker.settings.name}) Обработчик ресурсов запущен')
+        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.name}) Обработчик ресурсов запущен')
 
         await self._run_event_processing_loop()
 
-        logger.debug(f'({self._worker.settings.name}) Обработчик ресурсов завершил работ')
+        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.name}) Обработчик ресурсов завершил работ')
