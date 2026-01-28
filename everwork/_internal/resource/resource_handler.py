@@ -126,6 +126,8 @@ class ResourceHandler:
             )
 
     async def _return_event(self, event_id: str) -> None:
+        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.name}) Ивент будет возвращен, event_id={event_id}')
+
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
                 self._broker.return_event(
@@ -138,6 +140,8 @@ class ResourceHandler:
             )
 
     async def _reject_event(self, event_id: str) -> None:
+        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.name}) Ивент будет отменён, event_id={event_id}')
+
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
                 self._broker.reject_event(
@@ -149,7 +153,7 @@ class ResourceHandler:
                 min_timeout=5
             )
 
-    async def _push_events(self, reader: AbstractReader) -> BaseException | None:
+    async def _push_events(self, event_id: str, reader: AbstractReader) -> BaseException | None:
         try:
             batch = []
 
@@ -164,6 +168,10 @@ class ResourceHandler:
                 await self._execute_with_graceful_cancel(self._broker.push_event(batch), min_timeout=5)
                 batch.clear()
         except Exception as error:
+            logger.exception(
+                f'[{self._process.uuid}] ({self._worker.settings.name}) '
+                f'Не удалось сохранить ивенты, event_id={event_id}: {error}'
+            )
             return error
 
         return None
@@ -183,7 +191,7 @@ class ResourceHandler:
             except ValueError:
                 continue
 
-            if event_payload.expires < datetime.now(UTC):
+            if event_payload.expires is not None and event_payload.expires < datetime.now(UTC):
                 await self._reject_event(event_id)
                 continue
 
@@ -201,7 +209,7 @@ class ResourceHandler:
                 reader_or_error = await self._transmitter.execute(self._worker.settings.name, event_payload)
 
                 if isinstance(reader_or_error, AbstractReader):
-                    error = await self._push_events(reader_or_error)
+                    error = await self._push_events(event_id, reader_or_error)
                     reader_or_error.close()
                 else:
                     error = reader_or_error

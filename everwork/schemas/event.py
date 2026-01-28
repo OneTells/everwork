@@ -12,6 +12,6 @@ class EventPayload(BaseModel):
 
     stream: NameType
     kwargs: dict[str, Any] = Field(default_factory=dict)
-    expires: AwareDatetime
+    expires: AwareDatetime | None = None
 
     created_at: AwareDatetime = Field(default_factory=lambda: datetime.now(UTC))
