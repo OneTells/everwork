@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import suppress
+from datetime import datetime, UTC
 from typing import Any, Coroutine, Literal
 
 from loguru import logger
@@ -9,7 +10,7 @@ from everwork._internal.utils.event_storage import AbstractReader
 from everwork._internal.worker.utils.executor_channel import ExecutorTransmitter
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker
-from everwork.schemas import Process
+from everwork.schemas import EventPayload, Process
 from everwork.workers import AbstractWorker
 
 
@@ -85,7 +86,7 @@ class ResourceHandler:
 
         return 'off'
 
-    async def _fetch_event(self) -> tuple[dict[str, Any], str]:
+    async def _fetch_event(self) -> tuple[str, EventPayload]:
         with suppress(Exception):
             return await self._execute_with_graceful_cancel(
                 self._broker.fetch_event(
@@ -136,6 +137,18 @@ class ResourceHandler:
                 min_timeout=5
             )
 
+    async def _reject_event(self, event_id: str) -> None:
+        with suppress(Exception):
+            await self._execute_with_graceful_cancel(
+                self._broker.reject_event(
+                    self._manager_uuid,
+                    self._process.uuid,
+                    self._worker.settings.name,
+                    event_id
+                ),
+                min_timeout=5
+            )
+
     async def _push_events(self, reader: AbstractReader) -> BaseException | None:
         try:
             batch = []
@@ -166,8 +179,12 @@ class ResourceHandler:
                 continue
 
             try:
-                kwargs, event_id = await self._fetch_event()
+                event_id, event_payload = await self._fetch_event()
             except ValueError:
+                continue
+
+            if event_payload.expires < datetime.now(UTC):
+                await self._reject_event(event_id)
                 continue
 
             if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
@@ -181,7 +198,7 @@ class ResourceHandler:
 
                 await self._mark_worker_executor_as_busy(event_id)
 
-                reader_or_error = await self._transmitter.execute(self._worker.settings.name, kwargs)
+                reader_or_error = await self._transmitter.execute(self._worker.settings.name, event_payload.kwargs)
 
                 if isinstance(reader_or_error, AbstractReader):
                     error = await self._push_events(reader_or_error)
