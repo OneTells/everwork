@@ -202,4 +202,4 @@ class ResourceHandler:
 
         await self._run_event_processing_loop()
 
-        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.name}) Обработчик ресурсов завершил работ')
+        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.name}) Обработчик ресурсов завершил работу')
