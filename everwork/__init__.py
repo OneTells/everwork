@@ -3,14 +3,16 @@ from ._internal.worker.utils.event_collector import EventCollector
 from .backend import AbstractBackend
 from .broker import AbstractBroker
 from .schemas import (
+    CronTab,
+    EventPayload,
     EventPublisherSettings,
     EventStorageSettings,
+    Interval,
     Process,
     ProcessGroup,
-    EventPayload,
+    Trigger,
     WorkerSettings
 )
-from .trigger_utils import timer
 from .workers import AbstractWorker
 
 __all__ = (
@@ -23,7 +25,9 @@ __all__ = (
     'EventPublisherSettings',
     'EventPayload',
     'EventCollector',
-    'timer',
     'AbstractBackend',
-    'AbstractBroker'
+    'AbstractBroker',
+    'Trigger',
+    'CronTab',
+    'Interval',
 )

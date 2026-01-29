@@ -2,6 +2,8 @@ from typing import Annotated, final, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from everwork.schemas import Trigger
+
 type NameType = Annotated[str, Field(min_length=1, max_length=300, pattern=r'^[a-zA-Z0-9_\-:]+$')]
 
 
@@ -30,6 +32,8 @@ class WorkerSettings(BaseModel):
 
     event_storage: EventStorageSettings = Field(default_factory=EventStorageSettings)
     event_publisher: EventPublisherSettings = Field(default_factory=EventPublisherSettings)
+
+    triggers: list[Trigger] = Field(default_factory=list)
 
     @model_validator(mode='after')
     def _configure_stream_sources(self) -> Self:
