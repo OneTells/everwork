@@ -1,12 +1,12 @@
 from .event import EventPayload
 from .process import Process, ProcessGroup
-from .trigger import CronTab, Interval, Trigger
+from .trigger import Cron, Interval, Trigger
 from .worker import EventPublisherSettings, EventStorageSettings, WorkerSettings
 
 __all__ = (
     'Process',
     'ProcessGroup',
-    'CronTab',
+    'Cron',
     'Interval',
     'Trigger',
     'WorkerSettings',

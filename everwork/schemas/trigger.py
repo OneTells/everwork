@@ -1,8 +1,6 @@
-from datetime import timedelta
 from typing import Annotated, Any, final
 
-from croniter import croniter
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 @final
@@ -17,18 +15,18 @@ class Interval(BaseModel):
 
 
 @final
-class CronTab(BaseModel):
+class Cron(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    expression: Annotated[str, AfterValidator(lambda v: croniter.is_valid(v))]
+    expression: str
 
 
 @final
 class Trigger(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    schedule: Interval | CronTab
+    schedule: Interval | Cron
     kwargs: dict[str, Any] = Field(default_factory=dict)
 
     is_catchup: bool = True
-    lifetime: timedelta | None = None
+    lifetime: float | None = None
