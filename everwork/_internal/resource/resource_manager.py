@@ -48,7 +48,7 @@ class ResourceManager:
 
         try:
             async with self._backend_factory() as backend, self._broker_factory() as broker:
-                logger.debug(f'[{self._process.uuid}] Менеджеру ресурсов инициализировал backend / broker')
+                logger.debug(f'[{self._process.uuid}] Менеджер ресурсов инициализировал backend / broker')
 
                 await self._mark_worker_executor_as_available(backend)
                 logger.debug(f'[{self._process.uuid}] Исполнитель воркеров стал доступным')
@@ -78,7 +78,6 @@ class ResourceManager:
             f'Состав: {', '.join(worker.settings.name for worker in self._process.workers)}'
         )
 
-        logger.debug(f'[{self._process.uuid}] Менеджер ресурсов запустил обработчики ресурсов')
         await self._run_handlers()
         logger.debug(f'[{self._process.uuid}] Менеджер ресурсов завершил обработчики ресурсов')
 

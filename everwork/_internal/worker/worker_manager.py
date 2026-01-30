@@ -119,7 +119,6 @@ class WorkerManager:
         await self._start_resource_manager()
         logger.debug(f'[{self._process.uuid}] Менеджер воркеров запустил менеджер ресурсов')
 
-        logger.debug(f'[{self._process.uuid}] Менеджер воркеров запустил исполнитель воркеров')
         await self._run_worker_executor()
         logger.debug(f'[{self._process.uuid}] Менеджер воркеров завершил исполнитель воркеров')
 
