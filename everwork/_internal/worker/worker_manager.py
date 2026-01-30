@@ -23,18 +23,18 @@ class SignalHandler:
         shutdown_event: asyncio.Event,
         terminate_event: asyncio.Event,
         is_executing_callback: Callable[[], bool],
-        on_resource_runner_cancel: Callable[[], None],
+        on_resource_manager_cancel: Callable[[], None]
     ) -> None:
         self._shutdown_event = shutdown_event
         self._terminate_event = terminate_event
         self._is_executing_callback = is_executing_callback
-        self._on_resource_runner_cancel = on_resource_runner_cancel
+        self._on_resource_manager_cancel = on_resource_manager_cancel
 
     def _handle_shutdown_signal(self, *_: Any) -> None:
         loop = asyncio.get_running_loop()
         loop.call_soon_threadsafe(self._shutdown_event.set)  # type: ignore
 
-        self._on_resource_runner_cancel()
+        self._on_resource_manager_cancel()
 
     def _handle_terminate_signal(self, signal_num: int, frame: FrameType | None) -> None:
         loop = asyncio.get_running_loop()

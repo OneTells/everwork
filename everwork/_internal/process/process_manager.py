@@ -10,10 +10,13 @@ from loguru import logger
 from pydantic import AfterValidator, validate_call
 
 from everwork._internal.process.process_supervisor import ProcessSupervisor
+from everwork._internal.trigger.trigger_manager import TriggerManager
 from everwork._internal.utils.async_task import OperationCancelled, wait_for_or_cancel
+from everwork._internal.utils.async_thread import AsyncThread
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker
 from everwork.schemas import Process, ProcessGroup
+from everwork.utils import AbstractCronSchedule, CronSchedule
 from everwork.workers import AbstractWorker
 
 
@@ -92,12 +95,15 @@ def validate_processes(processes: list[Process]) -> list[Process]:
 
 class SignalHandler:
 
-    def __init__(self, shutdown_event: Event):
+    def __init__(self, shutdown_event: Event, on_trigger_manager_cancel: Callable[[], None]) -> None:
         self._shutdown_event = shutdown_event
+        self._on_trigger_manager_cancel = on_trigger_manager_cancel
 
     def _handle_signal(self, *_) -> None:
         loop = get_running_loop()
         loop.call_soon_threadsafe(self._shutdown_event.set)  # type: ignore
+
+        self._on_trigger_manager_cancel()
 
     def register(self) -> None:
         signal.signal(signal.SIGINT, self._handle_signal)
@@ -119,18 +125,35 @@ class ProcessManager:
             AfterValidator(validate_processes)
         ],
         backend_factory: Callable[[], AbstractBackend],
-        broker_factory: Callable[[], AbstractBroker]
+        broker_factory: Callable[[], AbstractBroker],
+        cron_schedule_factory: Callable[[str], AbstractCronSchedule] = CronSchedule
     ) -> None:
         self._manager_uuid = uuid
         self._processes: list[Process] = processes
         self._backend_factory = backend_factory
         self._broker_factory = broker_factory
+        self._cron_schedule_factory = cron_schedule_factory
 
         self._shutdown_event = asyncio.Event()
 
+        self._trigger_manager = AsyncThread(
+            target=lambda **kwargs: TriggerManager(**kwargs).run(),
+            kwargs={
+                'manager_uuid': self._manager_uuid,
+                'worker_settings': [{w.settings for p in self._processes for w in p.workers}],
+                'backend_factory': self._backend_factory,
+                'broker_factory': self._broker_factory,
+                'cron_schedule_factory': self._cron_schedule_factory
+            }
+        )
+
     async def _startup(self, backend: AbstractBackend) -> None:
         try:
-            return await wait_for_or_cancel(backend.startup_manager(self._manager_uuid, self._processes), self._shutdown_event)
+            return await wait_for_or_cancel(
+                backend.startup_manager(self._manager_uuid, self._processes),
+                self._shutdown_event,
+                min_timeout=5
+            )
         except OperationCancelled:
             logger.warning('Менеджер процессов прервал startup_manager')
         except Exception as error:
@@ -140,16 +163,25 @@ class ProcessManager:
 
     async def _shutdown(self, backend: AbstractBackend) -> None:
         try:
-            async with asyncio.timeout(5):
-                await backend.shutdown_manager(self._manager_uuid)
-        except asyncio.TimeoutError:
+            await wait_for_or_cancel(
+                backend.shutdown_manager(self._manager_uuid),
+                self._shutdown_event,
+                min_timeout=5
+            )
+        except OperationCancelled:
             logger.warning('Менеджер процессов прервал shutdown_manager')
         except Exception as error:
             logger.opt(exception=True).critical(f'Не удалось завершить менеджер: {error}')
 
         raise ValueError
 
-    async def _start_supervisors(self, backend: AbstractBackend) -> None:
+    async def _start_trigger_manager(self) -> None:
+        self._trigger_manager.start()
+
+    async def _join_trigger_manager(self) -> None:
+        self._trigger_manager.join()
+
+    async def _run_supervisors(self, backend: AbstractBackend) -> None:
         async with asyncio.TaskGroup() as task_group:
             for process in self._processes:
                 supervisor = ProcessSupervisor(
@@ -169,7 +201,7 @@ class ProcessManager:
         if not check_environment():
             return
 
-        SignalHandler(self._shutdown_event).register()
+        SignalHandler(self._shutdown_event, self._trigger_manager.cancel).register()
         logger.debug("Менеджер процессов зарегистрировал обработчик сигналов")
 
         try:
@@ -179,8 +211,14 @@ class ProcessManager:
                 await self._startup(backend)
                 logger.debug('Менеджер процессов выполнил startup')
 
-                await self._start_supervisors(backend)
+                await self._start_trigger_manager()
+                logger.debug(f'Менеджер процессов запустил менеджер триггеров')
+
+                await self._run_supervisors(backend)
                 logger.debug('Супервайзеры процессов завершены')
+
+                await self._join_trigger_manager()
+                logger.debug(f'Менеджер процессов дождался закрытия менеджера триггеров')
 
                 await self._shutdown(backend)
                 logger.debug('Менеджер процессов выполнил shutdown')
