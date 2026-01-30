@@ -13,7 +13,7 @@ class Process(BaseModel):
     uuid: Annotated[str, AfterValidator(lambda x: UUID(x) and x)] = Field(default_factory=lambda: str(uuid4()))
     workers: Annotated[list[type[AbstractWorker]], Field(min_length=1)]
 
-    shutdown_timeout: Annotated[float, Field(gt=0, lt=180)] = 20
+    shutdown_timeout: Annotated[float, Field(gt=0, lt=180)] = 30
 
     @model_validator(mode='after')
     def _validate_workers(self) -> Self:

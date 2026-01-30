@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Any, Literal, Self
 
+from pydantic import AwareDatetime
+
 from everwork.schemas import Process
 
 
@@ -73,5 +75,26 @@ class AbstractBackend(ABC):
         self,
         manager_uuid: str,
         process_uuid: str
+    ) -> None:
+        raise NotImplementedError
+
+    # Триггеры
+
+    @abstractmethod
+    async def get_last_time_point(
+        self,
+        manager_uuid: str,
+        worker_name: str,
+        trigger_hash: str
+    ) -> AwareDatetime | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def set_last_time_point(
+        self,
+        manager_uuid: str,
+        worker_name: str,
+        trigger_hash: str,
+        time_point: AwareDatetime
     ) -> None:
         raise NotImplementedError
