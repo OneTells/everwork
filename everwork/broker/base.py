@@ -36,7 +36,7 @@ class AbstractBroker(ABC):
         manager_uuid: str,
         process_uuid: str,
         worker_name: str,
-        source_streams: Iterable[str]
+        sources: Iterable[str]
     ) -> tuple[str, EventPayload]:
         raise NotImplementedError
 

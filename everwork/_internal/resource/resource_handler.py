@@ -93,7 +93,7 @@ class ResourceHandler:
                     self._manager_uuid,
                     self._process.uuid,
                     self._worker.settings.slug,
-                    self._worker.settings.source_streams
+                    self._worker.settings.sources
                 ),
                 min_timeout=5
             )

@@ -49,9 +49,6 @@ class TriggerHandler:
         self._cron_schedule_factory = cron_schedule_factory
         self._shutdown_event = shutdown_event
 
-        self._stream_name = f'{self._worker_settings.slug}:stream'
-        self._lifetime = timedelta(seconds=trigger.lifetime) if trigger.lifetime else None
-
         self._trigger_hash = hashlib.sha256(dumps(self._trigger.model_dump())).hexdigest()
         self._time_point_generator = _get_time_point_generator(self._trigger, self._cron_schedule_factory)
 
@@ -141,9 +138,9 @@ class TriggerHandler:
             await self._set_last_time_point(new_time_point)
             await self._push_event(
                 EventPayload(
-                    stream=self._stream_name,
+                    source=self._worker_settings.default_source,
                     kwargs={'time_point': new_time_point, 'trigger_hash': self._trigger_hash} | self._trigger.kwargs,
-                    expires=datetime.now(UTC) + self._lifetime if self._lifetime else None
+                    expires=datetime.now(UTC) + timedelta(seconds=self._trigger.lifetime) if self._trigger.lifetime else None
                 )
             )
 
