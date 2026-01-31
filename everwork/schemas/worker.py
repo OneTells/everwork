@@ -32,7 +32,7 @@ class WorkerSettings(BaseModel):
     @computed_field
     @cached_property
     def slug(self) -> str:
-        return slugify(self.title, separator='_', lowercase=True, regex_pattern=r'[^a-z0-9_]+')
+        return slugify(self.title, separator='_', regex_pattern=r'[^a-z0-9_]+')
 
     @computed_field
     @cached_property
