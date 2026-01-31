@@ -1,31 +1,30 @@
+from functools import cached_property
 from typing import Annotated, final, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, computed_field, Field, model_validator
+from slugify import slugify
 
 from everwork.schemas import Trigger
 
-type NameType = Annotated[str, Field(min_length=1, max_length=300, pattern=r'^[a-zA-Z0-9_\-:]+$')]
+type StreamNameType = Annotated[str, Field(min_length=1, max_length=300, pattern=r'^[a-zA-Z0-9_\-:]+$')]
 
 
 @final
 class EventStorageSettings(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
     max_events_in_memory: Annotated[int, Field(ge=1, le=10000)] = 5000
 
 
 @final
 class EventPublisherSettings(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
     max_batch_size: Annotated[int, Field(ge=1, le=10000)] = 500
 
 
 @final
 class WorkerSettings(BaseModel):
-    name: NameType
+    title: Annotated[str, Field(min_length=1, max_length=300)]
+    description: Annotated[str, Field(min_length=1, max_length=1000)]
 
-    source_streams: set[NameType] = Field(default_factory=set, max_length=100)
+    source_streams: set[StreamNameType] = Field(default_factory=set, max_length=100)
 
     execution_timeout: Annotated[float, Field(gt=0.1, lt=86400)] = 180
     worker_status_check_interval: Annotated[float, Field(gt=0.1, lt=3600)] = 60
@@ -35,7 +34,12 @@ class WorkerSettings(BaseModel):
 
     triggers: list[Trigger] = Field(default_factory=list)
 
+    @computed_field
+    @cached_property
+    def slug(self) -> str:
+        return slugify(self.title, separator='_', lowercase=True, regex_pattern=r'[^a-z0-9_]+')
+
     @model_validator(mode='after')
     def _configure_stream_sources(self) -> Self:
-        self.source_streams = {f'{self.name}:stream', *self.source_streams}
+        self.source_streams = {f'{self.slug}:stream', *self.source_streams}
         return self

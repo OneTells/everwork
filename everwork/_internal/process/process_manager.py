@@ -49,12 +49,12 @@ def validate_worker_names(processes: list[ProcessGroup | Process]) -> list[Proce
         process = item.process if isinstance(item, ProcessGroup) else item
 
         for worker in process.workers:
-            other_worker = workers.get(worker.settings.name, None)
+            other_worker = workers.get(worker.settings.slug, None)
 
             if other_worker is not None and other_worker is not worker:
-                raise ValueError(f"Имя воркера {worker.settings.name} не уникально")
+                raise ValueError(f"Имя воркера {worker.settings.slug} не уникально")
 
-            workers[worker.settings.name] = worker
+            workers[worker.settings.slug] = worker
 
     return processes
 

@@ -42,7 +42,7 @@ class WorkerExecutor:
         await self._worker_registry.shutdown_all()
 
     def _prepare_kwargs(self, worker: AbstractWorker, kwargs_raw: dict[str, Any]) -> dict[str, Any]:
-        worker_params = self._worker_registry.get_worker_params(worker.settings.name)
+        worker_params = self._worker_registry.get_worker_params(worker.settings.slug)
 
         kwargs = {k: v for k, v in kwargs_raw.items() if k in worker_params}
 
@@ -59,10 +59,10 @@ class WorkerExecutor:
             self._is_executing_event.set()
             await worker.__call__(**kwargs)
         except (KeyboardInterrupt, asyncio.CancelledError) as error:
-            logger.exception(f'[{self._process.uuid}] ({worker.settings.name}) Выполнение прервано по таймауту')
+            logger.exception(f'[{self._process.uuid}] ({worker.settings.slug}) Выполнение прервано по таймауту')
             return error
         except Exception as error:
-            logger.exception(f'[{self._process.uuid}] ({worker.settings.name}) Ошибка при обработке события: {error}')
+            logger.exception(f'[{self._process.uuid}] ({worker.settings.slug}) Ошибка при обработке события: {error}')
             return error
         finally:
             self._is_executing_event.clear()
@@ -88,7 +88,7 @@ class WorkerExecutor:
     async def run(self) -> None:
         logger.debug(
             f'[{self._process.uuid}] Исполнитель воркеров запущен. '
-            f'Состав: {', '.join(worker.settings.name for worker in self._process.workers)}'
+            f'Состав: {', '.join(worker.settings.slug for worker in self._process.workers)}'
         )
 
         await self._startup()

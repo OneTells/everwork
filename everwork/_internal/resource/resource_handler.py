@@ -41,13 +41,13 @@ class ResourceHandler:
             return await wait_for_or_cancel(coroutine, self._shutdown_event, min_timeout)
         except OperationCancelled:
             logger.debug(
-                f"[{self._process.uuid}] ({self._worker.settings.name}) "
+                f"[{self._process.uuid}] ({self._worker.settings.slug}) "
                 f"Обработчик ресурсов прервал '{coroutine.__name__}'"
             )
             raise
         except Exception as error:
             logger.opt(exception=True).critical(
-                f"[{self._process.uuid}] ({self._worker.settings.name}) "
+                f"[{self._process.uuid}] ({self._worker.settings.slug}) "
                 f"Не удалось выполнить '{coroutine.__name__}': {error}"
             )
             raise
@@ -68,7 +68,7 @@ class ResourceHandler:
                 self._backend.mark_worker_executor_as_busy(
                     self._manager_uuid,
                     self._process.uuid,
-                    self._worker.settings.name,
+                    self._worker.settings.slug,
                     event_id
                 ),
                 min_timeout=5
@@ -79,7 +79,7 @@ class ResourceHandler:
             return await self._execute_with_graceful_cancel(
                 self._backend.get_worker_status(
                     self._manager_uuid,
-                    self._worker.settings.name
+                    self._worker.settings.slug
                 ),
                 min_timeout=5
             )
@@ -92,7 +92,7 @@ class ResourceHandler:
                 self._broker.fetch_event(
                     self._manager_uuid,
                     self._process.uuid,
-                    self._worker.settings.name,
+                    self._worker.settings.slug,
                     self._worker.settings.source_streams
                 ),
                 min_timeout=5
@@ -106,7 +106,7 @@ class ResourceHandler:
                 self._broker.ack_event(
                     self._manager_uuid,
                     self._process.uuid,
-                    self._worker.settings.name,
+                    self._worker.settings.slug,
                     event_id
                 ),
                 min_timeout=5
@@ -118,7 +118,7 @@ class ResourceHandler:
                 self._broker.fail_event(
                     self._manager_uuid,
                     self._process.uuid,
-                    self._worker.settings.name,
+                    self._worker.settings.slug,
                     event_id,
                     error_answer
                 ),
@@ -126,28 +126,28 @@ class ResourceHandler:
             )
 
     async def _return_event(self, event_id: str) -> None:
-        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.name}) Ивент будет возвращен, event_id={event_id}')
+        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.slug}) Ивент будет возвращен, event_id={event_id}')
 
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
                 self._broker.return_event(
                     self._manager_uuid,
                     self._process.uuid,
-                    self._worker.settings.name,
+                    self._worker.settings.slug,
                     event_id
                 ),
                 min_timeout=5
             )
 
     async def _reject_event(self, event_id: str) -> None:
-        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.name}) Ивент будет отменён, event_id={event_id}')
+        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.slug}) Ивент будет отменён, event_id={event_id}')
 
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
                 self._broker.reject_event(
                     self._manager_uuid,
                     self._process.uuid,
-                    self._worker.settings.name,
+                    self._worker.settings.slug,
                     event_id
                 ),
                 min_timeout=5
@@ -169,7 +169,7 @@ class ResourceHandler:
                 batch.clear()
         except Exception as error:
             logger.exception(
-                f'[{self._process.uuid}] ({self._worker.settings.name}) '
+                f'[{self._process.uuid}] ({self._worker.settings.slug}) '
                 f'Не удалось сохранить ивенты, event_id={event_id}: {error}'
             )
             return error
@@ -206,7 +206,7 @@ class ResourceHandler:
 
                 await self._mark_worker_executor_as_busy(event_id)
 
-                reader_or_error = await self._transmitter.execute(self._worker.settings.name, event_payload)
+                reader_or_error = await self._transmitter.execute(self._worker.settings.slug, event_payload)
 
                 if isinstance(reader_or_error, AbstractReader):
                     error = await self._push_events(event_id, reader_or_error)
@@ -223,8 +223,8 @@ class ResourceHandler:
             await self._ack_event(event_id)
 
     async def run(self) -> None:
-        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.name}) Обработчик ресурсов запущен')
+        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.slug}) Обработчик ресурсов запущен')
 
         await self._run_event_processing_loop()
 
-        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.name}) Обработчик ресурсов завершил работу')
+        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.slug}) Обработчик ресурсов завершил работу')

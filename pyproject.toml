@@ -9,6 +9,7 @@ dependencies = [
     "loguru",
     "orjson>=3.11.4",
     "pydantic>=2.10.6",
+    "python-slugify>=8.0.4",
     "redis[hiredis]>=6.4.0",
     "uvloop>=0.21.0 ; sys_platform == 'linux'",
 ]

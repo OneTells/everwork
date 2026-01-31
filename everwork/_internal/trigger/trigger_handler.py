@@ -49,7 +49,7 @@ class TriggerHandler:
         self._cron_schedule_factory = cron_schedule_factory
         self._shutdown_event = shutdown_event
 
-        self._stream_name = f'{self._worker_settings.name}:stream'
+        self._stream_name = f'{self._worker_settings.slug}:stream'
         self._lifetime = timedelta(seconds=trigger.lifetime) if trigger.lifetime else None
 
         self._trigger_hash = hashlib.sha256(dumps(self._trigger.model_dump())).hexdigest()
@@ -60,13 +60,13 @@ class TriggerHandler:
             return await wait_for_or_cancel(coroutine, self._shutdown_event, min_timeout)
         except OperationCancelled:
             logger.debug(
-                f"({self._worker_settings.name}) ({self._trigger_hash}) "
+                f"({self._worker_settings.slug}) ({self._trigger_hash}) "
                 f"Обработчик триггера прервал '{coroutine.__name__}'"
             )
             raise
         except Exception as error:
             logger.opt(exception=True).critical(
-                f"({self._worker_settings.name}) ({self._trigger_hash}) "
+                f"({self._worker_settings.slug}) ({self._trigger_hash}) "
                 f"Обработчику триггера не удалось выполнить '{coroutine.__name__}': {error}"
             )
             raise
@@ -76,7 +76,7 @@ class TriggerHandler:
             return await self._execute_with_graceful_cancel(
                 self._backend.get_worker_status(
                     self._manager_uuid,
-                    self._worker_settings.name
+                    self._worker_settings.slug
                 ),
                 min_timeout=5
             )
@@ -86,7 +86,7 @@ class TriggerHandler:
     async def _get_last_time_point(self) -> AwareDatetime | None:
         with suppress(Exception):
             return await self._execute_with_graceful_cancel(
-                self._backend.get_time_point(self._manager_uuid, self._worker_settings.name, self._trigger_hash),
+                self._backend.get_time_point(self._manager_uuid, self._worker_settings.slug, self._trigger_hash),
                 min_timeout=5
             )
 
@@ -95,7 +95,7 @@ class TriggerHandler:
     async def _set_last_time_point(self, time_point: AwareDatetime) -> None:
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
-                self._backend.set_time_point(self._manager_uuid, self._worker_settings.name, self._trigger_hash, time_point),
+                self._backend.set_time_point(self._manager_uuid, self._worker_settings.slug, self._trigger_hash, time_point),
                 min_timeout=5
             )
 
@@ -107,7 +107,7 @@ class TriggerHandler:
             )
 
     async def run(self) -> None:
-        logger.debug(f"({self._worker_settings.name}) ({self._trigger_hash}) Обработчик триггера запущен")
+        logger.debug(f"({self._worker_settings.slug}) ({self._trigger_hash}) Обработчик триггера запущен")
 
         last_time_point = await self._get_last_time_point()
 
@@ -147,4 +147,4 @@ class TriggerHandler:
                 )
             )
 
-        logger.debug(f"({self._worker_settings.name}) ({self._trigger_hash}) Обработчик триггера завершил работу")
+        logger.debug(f"({self._worker_settings.slug}) ({self._trigger_hash}) Обработчик триггера завершил работу")

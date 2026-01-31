@@ -13,7 +13,7 @@ class HeartbeatNotifier:
 
     def notify_started(self, worker_settings: WorkerSettings) -> None:
         data = {
-            'worker_name': worker_settings.name,
+            'worker_name': worker_settings.slug,
             'end_time': time.time() + worker_settings.execution_timeout
         }
 

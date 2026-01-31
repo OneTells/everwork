@@ -1,15 +1,13 @@
 from typing import Annotated, final, Self
 from uuid import UUID, uuid4
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, BaseModel, Field, model_validator
 
 from everwork.workers import AbstractWorker
 
 
 @final
 class Process(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
     uuid: Annotated[str, AfterValidator(lambda x: UUID(x) and x)] = Field(default_factory=lambda: str(uuid4()))
     workers: Annotated[list[type[AbstractWorker]], Field(min_length=1)]
 
@@ -25,7 +23,5 @@ class Process(BaseModel):
 
 @final
 class ProcessGroup(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
     process: Process
     replicas: Annotated[int, Field(ge=1, lt=300)] = 1

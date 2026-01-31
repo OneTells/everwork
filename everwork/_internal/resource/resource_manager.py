@@ -75,7 +75,7 @@ class ResourceManager:
     async def run(self) -> None:
         logger.debug(
             f'[{self._process.uuid}] Менеджер ресурсов запущен. '
-            f'Состав: {', '.join(worker.settings.name for worker in self._process.workers)}'
+            f'Состав: {', '.join(worker.settings.slug for worker in self._process.workers)}'
         )
 
         await self._run_handlers()

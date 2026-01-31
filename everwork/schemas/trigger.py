@@ -1,12 +1,10 @@
 from typing import Annotated, Any, final
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
 @final
 class Interval(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
     weeks: Annotated[int, Field(ge=0)] = 0
     days: Annotated[int, Field(ge=0)] = 0
     hours: Annotated[int, Field(ge=0)] = 0
@@ -16,14 +14,13 @@ class Interval(BaseModel):
 
 @final
 class Cron(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
     expression: str
 
 
 @final
 class Trigger(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    title: Annotated[str, Field(min_length=1, max_length=300)]
+    description: Annotated[str, Field(min_length=1, max_length=1000)]
 
     schedule: Interval | Cron
     kwargs: dict[str, Any] = Field(default_factory=dict)
