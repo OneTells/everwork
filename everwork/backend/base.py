@@ -81,7 +81,7 @@ class AbstractBackend(ABC):
     # Триггеры
 
     @abstractmethod
-    async def get_last_time_point(
+    async def get_time_point(
         self,
         manager_uuid: str,
         worker_name: str,
@@ -90,7 +90,7 @@ class AbstractBackend(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def set_last_time_point(
+    async def set_time_point(
         self,
         manager_uuid: str,
         worker_name: str,

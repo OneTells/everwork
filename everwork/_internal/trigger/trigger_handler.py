@@ -86,11 +86,7 @@ class TriggerHandler:
     async def _get_last_time_point(self) -> AwareDatetime | None:
         with suppress(Exception):
             return await self._execute_with_graceful_cancel(
-                self._backend.get_last_time_point(
-                    self._manager_uuid,
-                    self._worker_settings.name,
-                    self._trigger_hash
-                ),
+                self._backend.get_time_point(self._manager_uuid, self._worker_settings.name, self._trigger_hash),
                 min_timeout=5
             )
 
@@ -99,12 +95,7 @@ class TriggerHandler:
     async def _set_last_time_point(self, time_point: AwareDatetime) -> None:
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
-                self._backend.set_last_time_point(
-                    self._manager_uuid,
-                    self._worker_settings.name,
-                    self._trigger_hash,
-                    time_point
-                ),
+                self._backend.set_time_point(self._manager_uuid, self._worker_settings.name, self._trigger_hash, time_point),
                 min_timeout=5
             )
 
