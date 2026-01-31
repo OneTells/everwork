@@ -1,7 +1,7 @@
 from .event import EventPayload
 from .process import Process, ProcessGroup
 from .trigger import Cron, Interval, Trigger
-from .worker import EventPublisherSettings, EventStorageSettings, WorkerSettings
+from .worker import EventSettings, WorkerSettings
 
 __all__ = (
     'Process',
@@ -10,7 +10,6 @@ __all__ = (
     'Interval',
     'Trigger',
     'WorkerSettings',
-    'EventStorageSettings',
-    'EventPublisherSettings',
+    'EventSettings',
     'EventPayload',
 )
