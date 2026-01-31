@@ -47,7 +47,7 @@ class WorkerExecutor:
         kwargs = {k: v for k, v in kwargs_raw.items() if k in worker_params}
 
         if 'collector' in worker_params:
-            self._storage.max_events_in_memory = worker.settings.event_storage.max_events_in_memory
+            self._storage.max_events_in_memory = worker.settings.event_settings.max_events_in_memory
             kwargs['collector'] = self._collector
 
         return kwargs

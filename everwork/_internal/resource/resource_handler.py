@@ -160,7 +160,7 @@ class ResourceHandler:
             for event in reader:
                 batch.append(event)
 
-                if len(batch) >= self._worker.settings.event_publisher.max_batch_size:
+                if len(batch) >= self._worker.settings.event_settings.max_batch_size:
                     await self._execute_with_graceful_cancel(self._broker.push_event(batch), min_timeout=5)
                     batch.clear()
 
