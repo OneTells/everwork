@@ -53,7 +53,7 @@ class AbstractBroker(ABC):
     @abstractmethod
     async def push(
         self,
-        event: EventPayload | list[EventPayload]
+        event_payload: EventPayload | list[EventPayload]
     ) -> None:
         raise NotImplementedError
 
