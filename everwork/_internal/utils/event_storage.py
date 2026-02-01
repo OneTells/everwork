@@ -159,6 +159,9 @@ class HybridStorage(AbstractStorage):
         return self._storage.export()
 
     def recreate(self) -> None:
+        if self._count == 0:
+            return
+
         self._count = 0
 
         if isinstance(self._storage, FileStorage):

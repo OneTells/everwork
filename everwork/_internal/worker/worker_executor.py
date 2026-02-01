@@ -8,7 +8,7 @@ from everwork._internal.worker.utils.event_collector import EventCollector
 from everwork._internal.worker.utils.executor_channel import ChannelClosed, ExecutorReceiver
 from everwork._internal.worker.utils.heartbeat_notifier import HeartbeatNotifier
 from everwork._internal.worker.worker_registry import WorkerRegistry
-from everwork.schemas import Process
+from everwork.schemas import Event, Process
 from everwork.workers import AbstractWorker
 
 
@@ -41,16 +41,23 @@ class WorkerExecutor:
     async def _shutdown(self) -> None:
         await self._worker_registry.shutdown_all()
 
-    def _prepare_kwargs(self, worker: AbstractWorker, kwargs_raw: dict[str, Any]) -> dict[str, Any]:
-        worker_params = self._worker_registry.get_worker_params(worker.settings.slug)
+    def _prepare_kwargs(self, worker: AbstractWorker, event: Event) -> dict[str, Any]:
+        filtered_kwargs, reserved_kwargs, default_kwargs = (
+            self._worker_registry
+            .get_resolver(worker.settings.slug)
+            .get_kwargs(
+                event.kwargs,
+                {
+                    'collector': self._collector,
+                    'event': event
+                }
+            )
+        )
 
-        kwargs = {k: v for k, v in kwargs_raw.items() if k in worker_params}
-
-        if 'collector' in worker_params:
+        if 'collector' in reserved_kwargs.keys():
             self._storage.max_events_in_memory = worker.settings.event_settings.max_events_in_memory
-            kwargs['collector'] = self._collector
 
-        return kwargs
+        return filtered_kwargs | reserved_kwargs | default_kwargs
 
     async def _execute(self, worker: AbstractWorker, kwargs: dict[str, Any]) -> AbstractReader | BaseException:
         self._notifier.notify_started(worker.settings)
@@ -73,14 +80,19 @@ class WorkerExecutor:
     async def _run_execute_loop(self) -> None:
         while True:
             try:
-                worker_name, event_payload = await self._receiver.get_response()
+                worker_name, event = await self._receiver.get_response()
             except ChannelClosed:
                 break
 
             worker = self._worker_registry.get_worker(worker_name)
-            kwargs = self._prepare_kwargs(worker, event_payload.kwargs)
 
-            answer = await self._execute(worker, kwargs)
+            try:
+                kwargs = self._prepare_kwargs(worker, event)
+            except TypeError as error:
+                answer = error
+            else:
+                answer = await self._execute(worker, kwargs)
+
             self._receiver.send_answer(answer)
 
             self._storage.recreate()
