@@ -96,10 +96,10 @@ class TriggerHandler:
                 min_timeout=5
             )
 
-    async def _push_event(self, event: EventPayload) -> None:
+    async def _push_event(self, event_payload: EventPayload) -> None:
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
-                self._broker.push_event(event),
+                self._broker.push(event_payload),
                 min_timeout=5
             )
 

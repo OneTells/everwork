@@ -10,7 +10,7 @@ from everwork._internal.utils.event_storage import AbstractReader
 from everwork._internal.worker.utils.executor_channel import ExecutorTransmitter
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker
-from everwork.schemas import EventPayload, Process
+from everwork.schemas import Event, Process
 from everwork.workers import AbstractWorker
 
 
@@ -62,14 +62,14 @@ class ResourceHandler:
                 min_timeout=5
             )
 
-    async def _mark_worker_executor_as_busy(self, event_id: str) -> None:
+    async def _mark_worker_executor_as_busy(self, event: Event) -> None:
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
                 self._backend.mark_worker_executor_as_busy(
                     self._manager_uuid,
                     self._process.uuid,
                     self._worker.settings.slug,
-                    event_id
+                    event
                 ),
                 min_timeout=5
             )
@@ -86,70 +86,46 @@ class ResourceHandler:
 
         return 'off'
 
-    async def _fetch_event(self) -> tuple[str, EventPayload]:
+    async def _fetch_event(self) -> Event:
         with suppress(Exception):
             return await self._execute_with_graceful_cancel(
-                self._broker.fetch_event(
-                    self._manager_uuid,
-                    self._process.uuid,
-                    self._worker.settings.slug,
-                    self._worker.settings.sources
+                self._broker.fetch(
+                    self._manager_uuid, self._process.uuid, self._worker.settings.slug, self._worker.settings.sources
                 ),
                 min_timeout=5
             )
 
         raise ValueError
 
-    async def _ack_event(self, event_id: str) -> None:
+    async def _ack_event(self, event: Event) -> None:
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
-                self._broker.ack_event(
-                    self._manager_uuid,
-                    self._process.uuid,
-                    self._worker.settings.slug,
-                    event_id
-                ),
+                self._broker.ack(self._manager_uuid, self._process.uuid, self._worker.settings.slug, event),
                 min_timeout=5
             )
 
-    async def _fail_event(self, event_id: str, error_answer: BaseException) -> None:
+    async def _fail_event(self, event: Event, error_answer: BaseException) -> None:
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
-                self._broker.fail_event(
-                    self._manager_uuid,
-                    self._process.uuid,
-                    self._worker.settings.slug,
-                    event_id,
-                    error_answer
-                ),
+                self._broker.fail(self._manager_uuid, self._process.uuid, self._worker.settings.slug, event, error_answer),
                 min_timeout=5
             )
 
-    async def _return_event(self, event_id: str) -> None:
-        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.slug}) Ивент будет возвращен, event_id={event_id}')
+    async def _retry_event(self, event: Event) -> None:
+        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.slug}) Ивент будет возвращен, event_id={event.id}')
 
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
-                self._broker.return_event(
-                    self._manager_uuid,
-                    self._process.uuid,
-                    self._worker.settings.slug,
-                    event_id
-                ),
+                self._broker.retry(self._manager_uuid, self._process.uuid, self._worker.settings.slug, event),
                 min_timeout=5
             )
 
-    async def _reject_event(self, event_id: str) -> None:
-        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.slug}) Ивент будет отменён, event_id={event_id}')
+    async def _reject_event(self, event: Event) -> None:
+        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.slug}) Ивент будет отменён, event_id={event.id}')
 
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
-                self._broker.reject_event(
-                    self._manager_uuid,
-                    self._process.uuid,
-                    self._worker.settings.slug,
-                    event_id
-                ),
+                self._broker.reject(self._manager_uuid, self._process.uuid, self._worker.settings.slug, event),
                 min_timeout=5
             )
 
@@ -161,11 +137,11 @@ class ResourceHandler:
                 batch.append(event)
 
                 if len(batch) >= self._worker.settings.event_settings.max_batch_size:
-                    await self._execute_with_graceful_cancel(self._broker.push_event(batch), min_timeout=5)
+                    await self._execute_with_graceful_cancel(self._broker.push(batch), min_timeout=5)
                     batch.clear()
 
             if batch:
-                await self._execute_with_graceful_cancel(self._broker.push_event(batch), min_timeout=5)
+                await self._execute_with_graceful_cancel(self._broker.push(batch), min_timeout=5)
                 batch.clear()
         except Exception as error:
             logger.exception(
@@ -187,29 +163,29 @@ class ResourceHandler:
                 continue
 
             try:
-                event_id, event_payload = await self._fetch_event()
+                event = await self._fetch_event()
             except ValueError:
                 continue
 
-            if event_payload.expires is not None and event_payload.expires < datetime.now(UTC):
-                await self._reject_event(event_id)
+            if event.expires is not None and event.expires < datetime.now(UTC):
+                await self._reject_event(event)
                 continue
 
             if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
-                await self._return_event(event_id)
+                await self._retry_event(event)
                 continue
 
             async with self._lock:
                 if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
-                    await self._return_event(event_id)
+                    await self._retry_event(event)
                     continue
 
-                await self._mark_worker_executor_as_busy(event_id)
+                await self._mark_worker_executor_as_busy(event)
 
-                reader_or_error = await self._transmitter.execute(self._worker.settings.slug, event_payload)
+                reader_or_error = await self._transmitter.execute(self._worker.settings.slug, event)
 
                 if isinstance(reader_or_error, AbstractReader):
-                    error = await self._push_events(event_id, reader_or_error)
+                    error = await self._push_events(event.id, reader_or_error)
                     reader_or_error.close()
                 else:
                     error = reader_or_error
@@ -217,10 +193,10 @@ class ResourceHandler:
                 await self._mark_worker_executor_as_available()
 
             if error is not None:
-                await self._fail_event(event_id, error)
+                await self._fail_event(event, error)
                 continue
 
-            await self._ack_event(event_id)
+            await self._ack_event(event)
 
     async def run(self) -> None:
         logger.debug(f'[{self._process.uuid}] ({self._worker.settings.slug}) Обработчик ресурсов запущен')
