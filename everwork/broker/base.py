@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Iterable, Self
 
-from everwork.schemas import Event, Process
+from everwork.schemas import Event, EventPayload, Process
 
 
 class AbstractBroker(ABC):
@@ -53,7 +53,7 @@ class AbstractBroker(ABC):
     @abstractmethod
     async def push(
         self,
-        event: Event | list[Event]
+        event: EventPayload | list[EventPayload]
     ) -> None:
         raise NotImplementedError
 
