@@ -5,6 +5,7 @@ from typing import Any, ClassVar
 from pydantic import ConfigDict, validate_call
 
 from everwork.schemas import WorkerSettings
+from .._internal.utils.typing import check_method_typing
 
 
 class AbstractWorker(ABC):
@@ -19,10 +20,12 @@ class AbstractWorker(ABC):
         settings = cls._get_settings()
 
         if not isinstance(settings, WorkerSettings):
-            raise TypeError(
-                f"Метод _get_settings() должен возвращать экземпляр WorkerSettings. "
-                f"Получено: {type(cls.settings)}"
-            )
+            raise TypeError(f"({cls.__name__}) Настройки должны возвращать экземпляр WorkerSettings")
+
+        error = check_method_typing(cls.__call__)
+
+        if error is not None:
+            raise TypeError(f"({cls.__name__}) Используются невалидные параметры: {error}")
 
         cls.settings = settings
         cls.__call__ = validate_call(config=ConfigDict(arbitrary_types_allowed=True))(cls.__call__)
