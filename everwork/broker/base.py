@@ -21,7 +21,7 @@ class AbstractBroker(ABC):
     async def __aexit__(self, _: Any) -> None:
         await self.close()
 
-    # Менеджер
+    # Создание / удаление структуры
 
     @abstractmethod
     async def build(
