@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Iterable, Self
 
-from everwork.schemas import EventPayload
+from everwork.schemas import Event, Process
 
 
 class AbstractBroker(ABC):
@@ -21,62 +21,81 @@ class AbstractBroker(ABC):
     async def __aexit__(self, _: Any) -> None:
         await self.close()
 
-    # Ивент
+    # Менеджер
 
     @abstractmethod
-    async def push_event(
+    async def startup_manager(
         self,
-        event: EventPayload | list[EventPayload]
+        manager_uuid: str,
+        processes: list[Process]
     ) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    async def fetch_event(
+    async def shutdown_manager(
+        self,
+        manager_uuid: str
+    ) -> None:
+        raise NotImplementedError
+
+    # Ивент
+
+    @abstractmethod
+    async def fetch(
         self,
         manager_uuid: str,
         process_uuid: str,
         worker_name: str,
         sources: Iterable[str]
-    ) -> tuple[str, EventPayload]:
+    ) -> Event:
         raise NotImplementedError
 
     @abstractmethod
-    async def ack_event(
+    async def push(
+        self,
+        event: Event | list[Event]
+    ) -> None:
+        raise NotImplementedError
+
+    # Обработка ивента
+
+    @abstractmethod
+    async def ack(
         self,
         manager_uuid: str,
         process_uuid: str,
         worker_name: str,
-        event_id: str
+        event: Event
     ) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    async def return_event(
+    async def fail(
         self,
         manager_uuid: str,
         process_uuid: str,
         worker_name: str,
-        event_id: str
-    ) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    async def fail_event(
-        self,
-        manager_uuid: str,
-        process_uuid: str,
-        worker_name: str,
-        event_id: str,
+        event: Event,
         error: BaseException
     ) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    async def reject_event(
+    async def reject(
         self,
         manager_uuid: str,
         process_uuid: str,
         worker_name: str,
-        event_id: str
+        event: Event
+    ) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def retry(
+        self,
+        manager_uuid: str,
+        process_uuid: str,
+        worker_name: str,
+        event: Event
     ) -> None:
         raise NotImplementedError
