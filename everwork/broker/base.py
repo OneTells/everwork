@@ -24,7 +24,7 @@ class AbstractBroker(ABC):
     # Менеджер
 
     @abstractmethod
-    async def startup_manager(
+    async def build(
         self,
         manager_uuid: str,
         processes: list[Process]
@@ -32,7 +32,7 @@ class AbstractBroker(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def shutdown_manager(
+    async def cleanup(
         self,
         manager_uuid: str
     ) -> None:

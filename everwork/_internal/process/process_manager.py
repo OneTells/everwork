@@ -150,12 +150,12 @@ class ProcessManager:
     async def _startup(self, backend: AbstractBackend) -> None:
         try:
             return await wait_for_or_cancel(
-                backend.startup_manager(self._manager_uuid, self._processes),
+                backend.build(self._manager_uuid, self._processes),
                 self._shutdown_event,
                 min_timeout=5
             )
         except OperationCancelled:
-            logger.warning('Менеджер процессов прервал startup_manager')
+            logger.warning('Менеджер процессов прервал build')
         except Exception as error:
             logger.opt(exception=True).critical(f'Не удалось инициализировать менеджер: {error}')
 
@@ -164,12 +164,12 @@ class ProcessManager:
     async def _shutdown(self, backend: AbstractBackend) -> None:
         try:
             await wait_for_or_cancel(
-                backend.shutdown_manager(self._manager_uuid),
+                backend.cleanup(self._manager_uuid),
                 self._shutdown_event,
                 min_timeout=5
             )
         except OperationCancelled:
-            logger.warning('Менеджер процессов прервал shutdown_manager')
+            logger.warning('Менеджер процессов прервал cleanup')
         except Exception as error:
             logger.opt(exception=True).critical(f'Не удалось завершить менеджер: {error}')
 
