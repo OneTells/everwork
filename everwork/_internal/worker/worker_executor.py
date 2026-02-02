@@ -8,8 +8,7 @@ from everwork._internal.worker.utils.executor_channel import ChannelClosed, Exec
 from everwork._internal.worker.utils.heartbeat_notifier import HeartbeatNotifier
 from everwork._internal.worker.worker_registry import WorkerRegistry
 from everwork.exceptions import RetryException
-from everwork.schemas import Process, Request, Response
-from everwork.schemas.messages import AckResponse, FailResponse, RetryResponse
+from everwork.schemas import AckResponse, FailResponse, Process, Request, Response, RetryResponse
 from everwork.utils import EventCollector
 from everwork.workers import AbstractWorker
 

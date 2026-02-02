@@ -6,11 +6,10 @@ from typing import Any, Coroutine, Literal
 from loguru import logger
 
 from everwork._internal.utils.async_task import OperationCancelled, wait_for_or_cancel
-from everwork._internal.utils.event_storage import AbstractReader
 from everwork._internal.worker.utils.executor_channel import ExecutorTransmitter
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker
-from everwork.schemas import Event, Process
+from everwork.schemas import AckResponse, FailResponse, Process, RejectResponse, Request, RetryResponse
 from everwork.workers import AbstractWorker
 
 
@@ -62,14 +61,14 @@ class ResourceHandler:
                 min_timeout=5
             )
 
-    async def _mark_worker_executor_as_busy(self, event: Event) -> None:
+    async def _mark_worker_executor_as_busy(self, request: Request) -> None:
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
                 self._backend.mark_worker_executor_as_busy(
                     self._manager_uuid,
                     self._process.uuid,
                     self._worker.settings.slug,
-                    event
+                    request
                 ),
                 min_timeout=5
             )
@@ -86,54 +85,25 @@ class ResourceHandler:
 
         return 'off'
 
-    async def _fetch_event(self) -> Event:
+    async def _fetch(self) -> Request:
         with suppress(Exception):
             return await self._execute_with_graceful_cancel(
                 self._broker.fetch(
-                    self._manager_uuid, self._process.uuid, self._worker.settings.slug, self._worker.settings.sources
+                    self._manager_uuid,
+                    self._process.uuid,
+                    self._worker.settings.slug,
+                    self._worker.settings.sources
                 ),
                 min_timeout=5
             )
 
         raise ValueError
 
-    async def _ack_event(self, event: Event) -> None:
-        with suppress(Exception):
-            await self._execute_with_graceful_cancel(
-                self._broker.ack(self._manager_uuid, self._process.uuid, self._worker.settings.slug, event),
-                min_timeout=5
-            )
-
-    async def _fail_event(self, event: Event, error_answer: BaseException) -> None:
-        with suppress(Exception):
-            await self._execute_with_graceful_cancel(
-                self._broker.fail(self._manager_uuid, self._process.uuid, self._worker.settings.slug, event, error_answer),
-                min_timeout=5
-            )
-
-    async def _retry_event(self, event: Event) -> None:
-        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.slug}) Ивент будет возвращен, event_id={event.id}')
-
-        with suppress(Exception):
-            await self._execute_with_graceful_cancel(
-                self._broker.retry(self._manager_uuid, self._process.uuid, self._worker.settings.slug, event),
-                min_timeout=5
-            )
-
-    async def _reject_event(self, event: Event) -> None:
-        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.slug}) Ивент будет отменён, event_id={event.id}')
-
-        with suppress(Exception):
-            await self._execute_with_graceful_cancel(
-                self._broker.reject(self._manager_uuid, self._process.uuid, self._worker.settings.slug, event),
-                min_timeout=5
-            )
-
-    async def _push_events(self, event_id: str, reader: AbstractReader) -> BaseException | None:
+    async def _push_events(self, request: Request, response: AckResponse) -> AckResponse | FailResponse:
         try:
             batch = []
 
-            for event in reader:
+            for event in response.reader:
                 batch.append(event)
 
                 if len(batch) >= self._worker.settings.event_settings.max_batch_size:
@@ -146,11 +116,69 @@ class ResourceHandler:
         except Exception as error:
             logger.exception(
                 f'[{self._process.uuid}] ({self._worker.settings.slug}) '
-                f'Не удалось сохранить ивенты, event_id={event_id}: {error}'
+                f'Не удалось сохранить ивенты, event_id={request.event_id}: {error}'
             )
-            return error
+            return FailResponse(description='Не удалось сохранить ивенты', error=error)
+        finally:
+            response.reader.close()
 
-        return None
+        return response
+
+    async def _ack(self, request: Request, response: AckResponse) -> None:
+        with suppress(Exception):
+            await self._execute_with_graceful_cancel(
+                self._broker.ack(
+                    self._manager_uuid,
+                    self._process.uuid,
+                    self._worker.settings.slug,
+                    request,
+                    response
+                ),
+                min_timeout=5
+            )
+
+    async def _fail(self, request: Request, response: FailResponse) -> None:
+        with suppress(Exception):
+            await self._execute_with_graceful_cancel(
+                self._broker.fail(
+                    self._manager_uuid,
+                    self._process.uuid,
+                    self._worker.settings.slug,
+                    request,
+                    response
+                ),
+                min_timeout=5
+            )
+
+    async def _reject(self, request: Request, response: RejectResponse) -> None:
+        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.slug}) Ивент будет отменён, event_id={request.event_id}')
+
+        with suppress(Exception):
+            await self._execute_with_graceful_cancel(
+                self._broker.reject(
+                    self._manager_uuid,
+                    self._process.uuid,
+                    self._worker.settings.slug,
+                    request,
+                    response
+                ),
+                min_timeout=5
+            )
+
+    async def _retry(self, request: Request, response: RetryResponse) -> None:
+        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.slug}) Ивент будет возвращен, event_id={request.event_id}')
+
+        with suppress(Exception):
+            await self._execute_with_graceful_cancel(
+                self._broker.retry(
+                    self._manager_uuid,
+                    self._process.uuid,
+                    self._worker.settings.slug,
+                    request,
+                    response
+                ),
+                min_timeout=5
+            )
 
     async def _run_event_processing_loop(self) -> None:
         while not self._shutdown_event.is_set():
@@ -163,40 +191,43 @@ class ResourceHandler:
                 continue
 
             try:
-                event = await self._fetch_event()
+                request = await self._fetch()
             except ValueError:
                 continue
 
-            if event.expires is not None and event.expires < datetime.now(UTC):
-                await self._reject_event(event)
+            if request.event.expires is not None and request.event.expires < datetime.now(UTC):
+                response = RejectResponse(description='Ивент отклонён из-за истёкшего срока действия')
+                await self._reject(request, response)
                 continue
 
             if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
-                await self._retry_event(event)
+                response = RetryResponse()
+                await self._retry(request, response)
                 continue
 
             async with self._lock:
                 if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
-                    await self._retry_event(event)
+                    response = RetryResponse()
+                    await self._retry(request, response)
                     continue
 
-                await self._mark_worker_executor_as_busy(event)
+                await self._mark_worker_executor_as_busy(request)
 
-                reader_or_error = await self._transmitter.execute(self._worker.settings.slug, event)
-
-                if isinstance(reader_or_error, AbstractReader):
-                    error = await self._push_events(event.id, reader_or_error)
-                    reader_or_error.close()
-                else:
-                    error = reader_or_error
+                response = await self._transmitter.execute(self._worker.settings.slug, request)
 
                 await self._mark_worker_executor_as_available()
 
-            if error is not None:
-                await self._fail_event(event, error)
-                continue
+            if isinstance(response, AckResponse):
+                response = await self._push_events(request, response)
 
-            await self._ack_event(event)
+            if isinstance(response, AckResponse):
+                await self._ack(request, response)
+            elif isinstance(response, FailResponse):
+                await self._fail(request, response)
+            elif isinstance(response, RejectResponse):
+                await self._reject(request, response)
+            elif isinstance(response, RetryResponse):
+                await self._retry(request, response)
 
     async def run(self) -> None:
         logger.debug(f'[{self._process.uuid}] ({self._worker.settings.slug}) Обработчик ресурсов запущен')
