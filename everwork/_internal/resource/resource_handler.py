@@ -9,7 +9,7 @@ from everwork._internal.utils.async_task import OperationCancelled, wait_for_or_
 from everwork._internal.worker.utils.executor_channel import ExecutorTransmitter
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker
-from everwork.schemas import AckResponse, FailResponse, Process, RejectResponse, Request, RetryResponse
+from everwork.schemas import AckResponse, FailResponse, Process, RejectResponse, Request, Response, RetryResponse
 from everwork.workers import AbstractWorker
 
 
@@ -39,7 +39,7 @@ class ResourceHandler:
         try:
             return await wait_for_or_cancel(coroutine, self._shutdown_event, min_timeout)
         except OperationCancelled:
-            logger.debug(
+            logger.error(
                 f"[{self._process.uuid}] ({self._worker.settings.slug}) "
                 f"Обработчик ресурсов прервал '{coroutine.__name__}'"
             )
@@ -99,7 +99,7 @@ class ResourceHandler:
 
         raise ValueError
 
-    async def _push_events(self, request: Request, response: AckResponse) -> AckResponse | FailResponse:
+    async def _push_events(self, request: Request, response: AckResponse) -> Response:
         try:
             batch = []
 

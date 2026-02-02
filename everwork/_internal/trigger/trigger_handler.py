@@ -56,7 +56,7 @@ class TriggerHandler:
         try:
             return await wait_for_or_cancel(coroutine, self._shutdown_event, min_timeout)
         except OperationCancelled:
-            logger.debug(
+            logger.error(
                 f"({self._worker_settings.slug}) ({self._trigger_hash}) "
                 f"Обработчик триггера прервал '{coroutine.__name__}'"
             )
