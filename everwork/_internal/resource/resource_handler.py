@@ -118,7 +118,7 @@ class ResourceHandler:
                 f'[{self._process.uuid}] ({self._worker.settings.slug}) '
                 f'Не удалось сохранить ивенты, event_id={request.event_id}: {error}'
             )
-            return FailResponse(description='Не удалось сохранить ивенты', error=error)
+            return FailResponse(details='Не удалось сохранить ивенты', error=error)
         finally:
             response.reader.close()
 
@@ -196,7 +196,7 @@ class ResourceHandler:
                 continue
 
             if request.event.expires is not None and request.event.expires < datetime.now(UTC):
-                response = RejectResponse(description='Ивент отклонён из-за истёкшего срока действия')
+                response = RejectResponse(details='Ивент отклонён из-за истёкшего срока действия')
                 await self._reject(request, response)
                 continue
 

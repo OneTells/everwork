@@ -6,27 +6,24 @@ from .._internal.utils.event_storage import AbstractReader
 
 
 class Response(BaseModel):
-    type: Literal['ack', 'fail', 'reject', 'retry']
+    status: Literal['ack', 'fail', 'reject', 'retry']
 
 
 class AckResponse(Response):
-    type: Literal['ack'] = 'ack'
-
+    status: Literal['ack'] = 'ack'
     reader: AbstractReader
 
 
 class FailResponse(Response):
-    type: Literal['fail'] = 'fail'
-
-    description: str
+    status: Literal['fail'] = 'fail'
+    details: str
     error: BaseException
 
 
 class RejectResponse(Response):
-    type: Literal['reject'] = 'reject'
-
-    description: str
+    status: Literal['reject'] = 'reject'
+    details: str
 
 
 class RetryResponse(Response):
-    type: Literal['retry'] = 'retry'
+    status: Literal['retry'] = 'retry'

@@ -70,10 +70,10 @@ class WorkerExecutor:
             return RetryResponse()
         except (KeyboardInterrupt, asyncio.CancelledError) as error:
             logger.exception(f'[{self._process.uuid}] ({worker.settings.slug}) Выполнение прервано по таймауту: {error}')
-            return FailResponse(description='Выполнение прервано по таймауту', error=error)
+            return FailResponse(details='Выполнение прервано по таймауту', error=error)
         except Exception as error:
             logger.exception(f'[{self._process.uuid}] ({worker.settings.slug}) Ошибка при обработке события: {error}')
-            return FailResponse(description='Ошибка при обработке события', error=error)
+            return FailResponse(details='Ошибка при обработке события', error=error)
         finally:
             self._is_executing_event.clear()
             self._notifier.notify_completed()
@@ -94,7 +94,7 @@ class WorkerExecutor:
             except TypeError as error:
                 logger.exception(f'[{self._process.uuid}] ({worker.settings.slug}) {error}')
 
-                response = FailResponse(description='Не удалось подготовить аргументы', error=error)
+                response = FailResponse(details='Не удалось подготовить аргументы', error=error)
                 self._receiver.send_response(response)
                 return
 
