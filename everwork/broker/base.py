@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Iterable, Self
 
-from everwork.schemas import Event, Request, Response, WorkerSettings
+from everwork.schemas import AckResponse, Event, FailResponse, RejectResponse, Request, RetryResponse, WorkerSettings
 
 
 class AbstractBroker(ABC):
@@ -66,7 +66,7 @@ class AbstractBroker(ABC):
         process_uuid: str,
         worker_name: str,
         request: Request,
-        response: Response
+        response: AckResponse
     ) -> None:
         raise NotImplementedError
 
@@ -77,7 +77,7 @@ class AbstractBroker(ABC):
         process_uuid: str,
         worker_name: str,
         request: Request,
-        response: Response
+        response: FailResponse
     ) -> None:
         raise NotImplementedError
 
@@ -88,7 +88,7 @@ class AbstractBroker(ABC):
         process_uuid: str,
         worker_name: str,
         request: Request,
-        response: Response
+        response: RejectResponse
     ) -> None:
         raise NotImplementedError
 
@@ -99,6 +99,6 @@ class AbstractBroker(ABC):
         process_uuid: str,
         worker_name: str,
         request: Request,
-        response: Response
+        response: RetryResponse
     ) -> None:
         raise NotImplementedError
