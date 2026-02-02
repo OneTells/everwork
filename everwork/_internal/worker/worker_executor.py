@@ -3,12 +3,14 @@ from typing import Any
 
 from loguru import logger
 
-from everwork._internal.utils.event_storage import AbstractReader, HybridStorage
-from everwork._internal.worker.utils.event_collector import EventCollector
+from everwork._internal.utils.event_storage import HybridStorage
 from everwork._internal.worker.utils.executor_channel import ChannelClosed, ExecutorReceiver
 from everwork._internal.worker.utils.heartbeat_notifier import HeartbeatNotifier
 from everwork._internal.worker.worker_registry import WorkerRegistry
-from everwork.schemas import Event, Process
+from everwork.exceptions import RetryException
+from everwork.schemas import Process, Request, Response
+from everwork.schemas.messages import AckResponse, FailResponse, RetryResponse
+from everwork.utils import EventCollector
 from everwork.workers import AbstractWorker
 
 
@@ -41,15 +43,15 @@ class WorkerExecutor:
     async def _shutdown(self) -> None:
         await self._worker_registry.shutdown_all()
 
-    def _prepare_kwargs(self, worker: AbstractWorker, event: Event) -> dict[str, Any]:
+    def _prepare_kwargs(self, worker: AbstractWorker, request: Request) -> dict[str, Any]:
         filtered_kwargs, reserved_kwargs, default_kwargs = (
             self._worker_registry
             .get_resolver(worker.settings.slug)
             .get_kwargs(
-                event.kwargs,
+                request.event.kwargs,
                 {
                     'collector': self._collector,
-                    'event': event
+                    'request': request
                 }
             )
         )
@@ -59,41 +61,46 @@ class WorkerExecutor:
 
         return filtered_kwargs | reserved_kwargs | default_kwargs
 
-    async def _execute(self, worker: AbstractWorker, kwargs: dict[str, Any]) -> AbstractReader | BaseException:
+    async def _execute(self, worker: AbstractWorker, kwargs: dict[str, Any]) -> Response:
         self._notifier.notify_started(worker.settings)
 
         try:
             self._is_executing_event.set()
             await worker.__call__(**kwargs)
+        except RetryException:
+            return RetryResponse()
         except (KeyboardInterrupt, asyncio.CancelledError) as error:
-            logger.exception(f'[{self._process.uuid}] ({worker.settings.slug}) Выполнение прервано по таймауту')
-            return error
+            logger.exception(f'[{self._process.uuid}] ({worker.settings.slug}) Выполнение прервано по таймауту: {error}')
+            return FailResponse(description='Выполнение прервано по таймауту', error=error)
         except Exception as error:
             logger.exception(f'[{self._process.uuid}] ({worker.settings.slug}) Ошибка при обработке события: {error}')
-            return error
+            return FailResponse(description='Ошибка при обработке события', error=error)
         finally:
             self._is_executing_event.clear()
             self._notifier.notify_completed()
 
-        return self._storage.export()
+        return AckResponse(reader=self._storage.export())
 
     async def _run_execute_loop(self) -> None:
         while True:
             try:
-                worker_name, event = await self._receiver.get_response()
+                worker_name, request = await self._receiver.get_request()
             except ChannelClosed:
                 break
 
             worker = self._worker_registry.get_worker(worker_name)
 
             try:
-                kwargs = self._prepare_kwargs(worker, event)
+                kwargs = self._prepare_kwargs(worker, request)
             except TypeError as error:
-                answer = error
-            else:
-                answer = await self._execute(worker, kwargs)
+                logger.exception(f'[{self._process.uuid}] ({worker.settings.slug}) {error}')
 
-            self._receiver.send_answer(answer)
+                response = FailResponse(description='Не удалось подготовить аргументы', error=error)
+                self._receiver.send_response(response)
+                return
+
+            response = await self._execute(worker, kwargs)
+            self._receiver.send_response(response)
 
             self._storage.recreate()
 
