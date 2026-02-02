@@ -65,51 +65,51 @@ class SingleValueChannel[T]:
             loop.call_soon_threadsafe(lambda: None if self._waiter.done() else self._waiter.cancel())  # type: ignore
 
 
-type ResponseType = tuple[str, Request]
-type AnswerType = Response
+type RequestType = tuple[str, Request]
+type ResponseType = Response
 
 
 class ExecutorTransmitter:
 
     def __init__(
         self,
-        response_channel: SingleValueChannel[ResponseType],
-        answer_channel: SingleValueChannel[AnswerType]
+        request_channel: SingleValueChannel[RequestType],
+        response_channel: SingleValueChannel[ResponseType]
     ) -> None:
+        self._request_channel = request_channel
         self._response_channel = response_channel
-        self._answer_channel = answer_channel
 
-    async def execute(self, worker_name: str, request: Request) -> AnswerType:
-        self._response_channel.send((worker_name, request))
-        return await self._answer_channel.receive()
+    async def execute(self, worker_name: str, request: Request) -> ResponseType:
+        self._request_channel.send((worker_name, request))
+        return await self._response_channel.receive()
 
     def close(self) -> None:
+        self._request_channel.close()
         self._response_channel.close()
-        self._answer_channel.close()
 
 
 class ExecutorReceiver:
 
     def __init__(
         self,
-        response_channel: SingleValueChannel[ResponseType],
-        answer_channel: SingleValueChannel[AnswerType]
+        request_channel: SingleValueChannel[RequestType],
+        response_channel: SingleValueChannel[ResponseType]
     ) -> None:
+        self._request_channel = request_channel
         self._response_channel = response_channel
-        self._answer_channel = answer_channel
 
-    async def get_response(self) -> ResponseType:
-        return await self._response_channel.receive()
+    async def get_request(self) -> RequestType:
+        return await self._request_channel.receive()
 
-    def send_answer(self, response: Response) -> None:
-        self._answer_channel.send(response)
+    def send_response(self, response: Response) -> None:
+        self._response_channel.send(response)
 
 
 def create_executor_channel() -> tuple[ExecutorTransmitter, ExecutorReceiver]:
+    request_channel = SingleValueChannel[RequestType]()
     response_channel = SingleValueChannel[ResponseType]()
-    answer_channel = SingleValueChannel[AnswerType]()
 
-    transmitter = ExecutorTransmitter(response_channel, answer_channel)
-    receiver = ExecutorReceiver(response_channel, answer_channel)
+    transmitter = ExecutorTransmitter(request_channel, response_channel)
+    receiver = ExecutorReceiver(request_channel, response_channel)
 
     return transmitter, receiver
