@@ -65,6 +65,7 @@ class AbstractBroker(ABC):
         manager_uuid: str,
         process_uuid: str,
         worker_name: str,
+        request: Request,
         response: Response
     ) -> None:
         raise NotImplementedError
@@ -75,6 +76,7 @@ class AbstractBroker(ABC):
         manager_uuid: str,
         process_uuid: str,
         worker_name: str,
+        request: Request,
         response: Response
     ) -> None:
         raise NotImplementedError
@@ -85,6 +87,7 @@ class AbstractBroker(ABC):
         manager_uuid: str,
         process_uuid: str,
         worker_name: str,
+        request: Request,
         response: Response
     ) -> None:
         raise NotImplementedError
@@ -95,6 +98,7 @@ class AbstractBroker(ABC):
         manager_uuid: str,
         process_uuid: str,
         worker_name: str,
+        request: Request,
         response: Response
     ) -> None:
         raise NotImplementedError
