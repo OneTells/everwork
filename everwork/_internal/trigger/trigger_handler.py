@@ -11,7 +11,7 @@ from pydantic import AwareDatetime
 from everwork._internal.utils.async_task import OperationCancelled, wait_for_or_cancel
 from everwork.backend import AbstractBackend
 from everwork.broker import AbstractBroker
-from everwork.schemas import Cron, EventPayload, Interval, Trigger, WorkerSettings
+from everwork.schemas import Cron, Event, Interval, Trigger, WorkerSettings
 from everwork.utils import AbstractCronSchedule
 
 
@@ -96,10 +96,10 @@ class TriggerHandler:
                 min_timeout=5
             )
 
-    async def _push_event(self, event_payload: EventPayload) -> None:
+    async def _push_event(self, event: Event) -> None:
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
-                self._broker.push(event_payload),
+                self._broker.push(event),
                 min_timeout=5
             )
 
@@ -137,7 +137,7 @@ class TriggerHandler:
 
             await self._set_last_time_point(new_time_point)
             await self._push_event(
-                EventPayload(
+                Event(
                     source=self._worker_settings.default_source,
                     kwargs={'time_point': new_time_point, 'trigger_hash': self._trigger_hash} | self._trigger.kwargs,
                     expires=datetime.now(UTC) + timedelta(seconds=self._trigger.lifetime) if self._trigger.lifetime else None
