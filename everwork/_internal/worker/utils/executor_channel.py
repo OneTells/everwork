@@ -2,8 +2,7 @@ import asyncio
 from asyncio import get_running_loop
 from threading import Lock
 
-from everwork._internal.utils.event_storage import AbstractReader
-from everwork.schemas import Request
+from everwork.schemas import Request, Response
 
 
 class ChannelClosed(Exception):
@@ -67,7 +66,7 @@ class SingleValueChannel[T]:
 
 
 type ResponseType = tuple[str, Request]
-type AnswerType = AbstractReader | BaseException
+type AnswerType = Response
 
 
 class ExecutorTransmitter:
@@ -102,8 +101,8 @@ class ExecutorReceiver:
     async def get_response(self) -> ResponseType:
         return await self._response_channel.receive()
 
-    def send_answer(self, answer: AnswerType) -> None:
-        self._answer_channel.send(answer)
+    def send_answer(self, response: Response) -> None:
+        self._answer_channel.send(response)
 
 
 def create_executor_channel() -> tuple[ExecutorTransmitter, ExecutorReceiver]:
