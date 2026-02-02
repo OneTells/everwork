@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Iterable, Self
 
-from everwork.schemas import Event, EventPayload, Process
+from everwork.schemas import Event, EventPayload, WorkerSettings
 
 
 class AbstractBroker(ABC):
@@ -27,7 +27,7 @@ class AbstractBroker(ABC):
     async def build(
         self,
         manager_uuid: str,
-        processes: list[Process]
+        worker_settings: list[WorkerSettings]
     ) -> None:
         raise NotImplementedError
 
