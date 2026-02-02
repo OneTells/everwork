@@ -3,7 +3,7 @@ from typing import Any, Literal, Self
 
 from pydantic import AwareDatetime
 
-from everwork.schemas import Event, Process
+from everwork.schemas import Process, Request
 
 
 class AbstractBackend(ABC):
@@ -58,7 +58,7 @@ class AbstractBackend(ABC):
         manager_uuid: str,
         process_uuid: str,
         worker_name: str,
-        event: Event
+        request: Request
     ) -> None:
         raise NotImplementedError
 
