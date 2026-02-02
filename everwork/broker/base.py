@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Iterable, Self
 
-from everwork.schemas import Event, EventPayload, WorkerSettings
+from everwork.schemas import Event, Request, Response, WorkerSettings
 
 
 class AbstractBroker(ABC):
@@ -47,13 +47,13 @@ class AbstractBroker(ABC):
         process_uuid: str,
         worker_name: str,
         sources: Iterable[str]
-    ) -> Event:
+    ) -> Request:
         raise NotImplementedError
 
     @abstractmethod
     async def push(
         self,
-        event_payload: EventPayload | list[EventPayload]
+        event: Event | list[Event]
     ) -> None:
         raise NotImplementedError
 
@@ -65,7 +65,7 @@ class AbstractBroker(ABC):
         manager_uuid: str,
         process_uuid: str,
         worker_name: str,
-        event: Event
+        response: Response
     ) -> None:
         raise NotImplementedError
 
@@ -75,8 +75,7 @@ class AbstractBroker(ABC):
         manager_uuid: str,
         process_uuid: str,
         worker_name: str,
-        event: Event,
-        error: BaseException
+        response: Response
     ) -> None:
         raise NotImplementedError
 
@@ -86,7 +85,7 @@ class AbstractBroker(ABC):
         manager_uuid: str,
         process_uuid: str,
         worker_name: str,
-        event: Event
+        response: Response
     ) -> None:
         raise NotImplementedError
 
@@ -96,6 +95,6 @@ class AbstractBroker(ABC):
         manager_uuid: str,
         process_uuid: str,
         worker_name: str,
-        event: Event
+        response: Response
     ) -> None:
         raise NotImplementedError
