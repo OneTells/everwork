@@ -1,4 +1,5 @@
-from .event import Event, EventPayload
+from .event import Event
+from .messages import Request, Response
 from .process import Process, ProcessGroup
 from .trigger import Cron, Interval, Trigger
 from .worker import EventSettings, WorkerSettings
@@ -11,6 +12,7 @@ __all__ = (
     'Trigger',
     'WorkerSettings',
     'EventSettings',
-    'EventPayload',
     'Event',
+    'Request',
+    'Response'
 )

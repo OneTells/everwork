@@ -12,13 +12,4 @@ class Event(BaseModel):
     expires: AwareDatetime | None = None
 
     retries: int = 0
-
     created_at: AwareDatetime = Field(default_factory=lambda: datetime.now(UTC))
-
-
-class Request(BaseModel):
-    pass
-
-
-class Response(BaseModel):
-    pass

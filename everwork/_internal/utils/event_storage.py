@@ -4,13 +4,13 @@ from typing import Any, Iterable, Iterator, Self
 
 from orjson import dumps, loads
 
-from everwork.schemas import EventPayload
+from everwork.schemas import Event
 
 
 class AbstractReader(ABC):
 
     @abstractmethod
-    def __iter__(self) -> Iterator[EventPayload]:
+    def __iter__(self) -> Iterator[Event]:
         raise NotImplementedError
 
     @abstractmethod
@@ -21,7 +21,7 @@ class AbstractReader(ABC):
 class AbstractStorage(ABC):
 
     @abstractmethod
-    def write(self, event: EventPayload | list[EventPayload]) -> None:
+    def write(self, event: Event | list[Event]) -> None:
         raise NotImplementedError
 
     @abstractmethod
@@ -45,10 +45,10 @@ class AbstractStorage(ABC):
 
 class MemoryReader(AbstractReader):
 
-    def __init__(self, events: list[EventPayload]) -> None:
+    def __init__(self, events: list[Event]) -> None:
         self._events = events
 
-    def __iter__(self) -> Iterator[EventPayload]:
+    def __iter__(self) -> Iterator[Event]:
         for event in self._events:
             yield event
 
@@ -59,10 +59,10 @@ class MemoryReader(AbstractReader):
 class MemoryStorage(AbstractStorage):
 
     def __init__(self) -> None:
-        self._events: list[EventPayload] = []
+        self._events: list[Event] = []
 
-    def write(self, event: EventPayload | list[EventPayload]) -> None:
-        if isinstance(event, EventPayload):
+    def write(self, event: Event | list[Event]) -> None:
+        if isinstance(event, Event):
             self._events.append(event)
         else:
             self._events.extend(event)
@@ -82,7 +82,7 @@ class FileReader(AbstractReader):
     def __init__(self, file: tempfile._TemporaryFileWrapper[bytes]) -> None:
         self._file = file
 
-    def __iter__(self) -> Iterator[EventPayload]:
+    def __iter__(self) -> Iterator[Event]:
         self._file.seek(0)
 
         for line in self._file:
@@ -92,7 +92,7 @@ class FileReader(AbstractReader):
                 continue
 
             obj = loads(payload)
-            event = EventPayload.model_validate(obj)
+            event = Event.model_validate(obj)
 
             yield event
 
@@ -105,8 +105,8 @@ class FileStorage(AbstractStorage):
     def __init__(self) -> None:
         self._file = tempfile.TemporaryFile(mode="w+b")
 
-    def write(self, event: EventPayload | Iterable[EventPayload]) -> None:
-        events = [event] if isinstance(event, EventPayload) else event
+    def write(self, event: Event | Iterable[Event]) -> None:
+        events = [event] if isinstance(event, Event) else event
 
         if not events:
             return
@@ -143,8 +143,8 @@ class HybridStorage(AbstractStorage):
         self._storage.close()
         self._storage = file_storage
 
-    def write(self, event: EventPayload | list[EventPayload]) -> None:
-        events = [event] if isinstance(event, EventPayload) else event
+    def write(self, event: Event | list[Event]) -> None:
+        events = [event] if isinstance(event, Event) else event
 
         if not events:
             return

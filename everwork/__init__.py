@@ -1,10 +1,9 @@
 from ._internal.process.process_manager import ProcessManager
-from ._internal.worker.utils.event_collector import EventCollector
 from .backend import AbstractBackend
 from .broker import AbstractBroker
 from .schemas import (
     Cron,
-    EventPayload,
+    Event,
     EventSettings,
     Interval,
     Process,
@@ -12,7 +11,7 @@ from .schemas import (
     Trigger,
     WorkerSettings
 )
-from .utils import AbstractCronSchedule, CronSchedule, to_seconds
+from .utils import AbstractCronSchedule, CronSchedule, EventCollector, to_seconds
 from .workers import AbstractWorker
 
 __all__ = (
@@ -22,7 +21,7 @@ __all__ = (
     'AbstractWorker',
     'WorkerSettings',
     'EventSettings',
-    'EventPayload',
+    'Event',
     'EventCollector',
     'AbstractBackend',
     'AbstractBroker',
