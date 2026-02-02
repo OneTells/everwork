@@ -16,13 +16,11 @@ class EventCollector:
         self,
         source: str,
         kwargs: dict[str, Any],
-        headers: dict[str, Any] | None = None,
         expires: AwareDatetime | None = None
     ) -> None:
         event = Event(
             source=source,
             kwargs=kwargs,
-            headers=headers,
             expires=expires
         )
         self._storage.write(event)
