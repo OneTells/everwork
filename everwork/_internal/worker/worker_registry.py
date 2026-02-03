@@ -1,6 +1,6 @@
 from loguru import logger
 
-from everwork._internal.worker.utils.argument_resolver import TypedArgumentResolver
+from everwork._internal.worker.utils.argument_resolver import ArgumentResolver
 from everwork.schemas import Process
 from everwork.workers import AbstractWorker
 
@@ -11,7 +11,7 @@ class WorkerRegistry:
         self._process = process
 
         self._instances: dict[str, AbstractWorker] = {}
-        self._resolvers: dict[str, TypedArgumentResolver] = {}
+        self._resolvers: dict[str, ArgumentResolver] = {}
 
     async def initialize(self) -> None:
         for worker_cls in self._process.workers:
@@ -22,7 +22,7 @@ class WorkerRegistry:
                 continue
 
             self._instances[worker.settings.slug] = worker
-            self._resolvers[worker.settings.slug] = TypedArgumentResolver(worker.__call__)
+            self._resolvers[worker.settings.slug] = ArgumentResolver(worker.__call__)
 
     async def startup_all(self) -> None:
         for worker in self._instances.values():
@@ -41,5 +41,5 @@ class WorkerRegistry:
     def get_worker(self, name: str) -> AbstractWorker:
         return self._instances[name]
 
-    def get_resolver(self, name: str) -> TypedArgumentResolver:
+    def get_resolver(self, name: str) -> ArgumentResolver:
         return self._resolvers[name]

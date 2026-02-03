@@ -2,7 +2,7 @@ import inspect
 from typing import Any, Callable, get_type_hints
 
 
-class TypedArgumentResolver:
+class ArgumentResolver:
 
     def __init__(self, function: Callable[..., Any]):
         self._typed_params = get_type_hints(function)
@@ -34,13 +34,6 @@ class TypedArgumentResolver:
                 if param_type is None or isinstance(reserved_obj, param_type):
                     reserved_kwargs[param_name] = reserved_obj
                     continue
-
-                if param_name in kwargs:
-                    filtered_kwargs[param_name] = kwargs[param_name]
-                    continue
-
-                reserved_kwargs[param_name] = reserved_obj
-                continue
 
             if param_name in kwargs:
                 filtered_kwargs[param_name] = kwargs[param_name]
