@@ -10,20 +10,23 @@ class ArgumentResolver:
         self._param_names = []
         self._defaults = {}
 
+        self._has_var_keyword = False
+
         for param_name, param in inspect.signature(function).parameters.items():
+            if param.kind == param.VAR_KEYWORD:
+                self._has_var_keyword = True
+                continue
+
             self._param_names.append(param_name)
 
             if param.default != inspect.Parameter.empty:
                 self._defaults[param_name] = param.default
 
-    def get_kwargs(
-        self,
-        kwargs: dict[str, Any],
-        reserved_objects: dict[str, Any]
-    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    def get_kwargs(self, kwargs: dict[str, Any], reserved_objects: dict[str, Any]) -> tuple[dict[str, Any], ...]:
         filtered_kwargs: dict[str, Any] = {}
         reserved_kwargs: dict[str, Any] = {}
         default_kwargs: dict[str, Any] = {}
+        extra_kwargs: dict[str, Any] = {}
 
         for param_name in self._param_names:
             reserved_obj = reserved_objects.get(param_name)
@@ -45,4 +48,9 @@ class ArgumentResolver:
 
             raise TypeError(f"Отсутствует необходимый аргумент: '{param_name}'")
 
-        return filtered_kwargs, reserved_kwargs, default_kwargs
+        if self._has_var_keyword:
+            for key, value in kwargs.items():
+                if key not in self._param_names:
+                    extra_kwargs[key] = value
+
+        return filtered_kwargs, reserved_kwargs, default_kwargs, extra_kwargs

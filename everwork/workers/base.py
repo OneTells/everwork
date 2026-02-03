@@ -22,12 +22,13 @@ class AbstractWorker(ABC):
         if not isinstance(settings, WorkerSettings):
             raise TypeError(f"({cls.__name__}) Настройки должны возвращать экземпляр WorkerSettings")
 
-        problems = check_method_typing(cls.__call__)
-
-        if problems is not None:
-            raise TypeError(f"({cls.__name__}) Используются невалидные параметры: {problems}")
-
         cls.settings = settings
+
+        try:
+            check_method_typing(cls.__call__)
+        except TypeError as error:
+            raise TypeError(f"({cls.__name__}) {error}")
+
         cls.__call__ = validate_call(config=ConfigDict(arbitrary_types_allowed=True))(cls.__call__)
 
     @classmethod
