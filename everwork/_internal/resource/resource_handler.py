@@ -191,22 +191,28 @@ class ResourceHandler:
             try:
                 request = await self._fetch()
             except ValueError:
-                continue
+                break
 
             if request.event.expires is not None and request.event.expires < datetime.now(UTC):
                 response = RejectResponse(detail='Ивент отклонён из-за истёкшего срока действия')
                 await self._reject(request, response)
+
+                del request, response
                 continue
 
             if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
                 response = RetryResponse()
                 await self._retry(request, response)
+
+                del request, response
                 continue
 
             async with self._lock:
                 if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
                     response = RetryResponse()
                     await self._retry(request, response)
+
+                    del request, response
                     continue
 
                 await self._mark_worker_executor_as_busy(request)
@@ -216,6 +222,7 @@ class ResourceHandler:
                 await self._mark_worker_executor_as_available()
 
             if isinstance(response, AckResponse):
+                # noinspection PyUnboundLocalVariable
                 response = await self._push_events(request, response)
 
             if isinstance(response, AckResponse):
@@ -226,6 +233,8 @@ class ResourceHandler:
                 await self._reject(request, response)
             elif isinstance(response, RetryResponse):
                 await self._retry(request, response)
+
+            del request, response
 
     async def run(self) -> None:
         logger.debug(f'[{self._process.uuid}] ({self._worker.settings.slug}) Обработчик ресурсов запущен')

@@ -99,12 +99,16 @@ class WorkerExecutor:
 
                 response = FailResponse(detail='Не удалось подготовить аргументы', error=error)
                 self._receiver.send_response(response)
+
+                del worker_name, request, worker, response
                 return
 
             response = await self._execute(worker, kwargs)
             self._receiver.send_response(response)
 
             self._storage.recreate()
+
+            del worker_name, request, kwargs, worker, response
 
     async def run(self) -> None:
         logger.debug(
