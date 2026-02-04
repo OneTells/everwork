@@ -80,6 +80,19 @@ class TriggerHandler:
 
         return 'off'
 
+    async def _get_trigger_status(self) -> Literal['on', 'off']:
+        with suppress(Exception):
+            return await self._execute_with_graceful_cancel(
+                self._backend.get_trigger_status(
+                    self._manager_uuid,
+                    self._worker_settings.slug,
+                    self._trigger_hash
+                ),
+                min_timeout=5
+            )
+
+        return 'off'
+
     async def _get_last_time_point(self) -> AwareDatetime | None:
         with suppress(Exception):
             return await self._execute_with_graceful_cancel(
@@ -115,7 +128,16 @@ class TriggerHandler:
             if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
                 with suppress(OperationCancelled):
                     await wait_for_or_cancel(
-                        asyncio.sleep(self._worker_settings.worker_status_check_interval),
+                        asyncio.sleep(self._worker_settings.status_check_interval),
+                        self._shutdown_event
+                    )
+
+                continue
+
+            if self._shutdown_event.is_set() or (await self._get_trigger_status() == 'off'):
+                with suppress(OperationCancelled):
+                    await wait_for_or_cancel(
+                        asyncio.sleep(self._trigger.status_check_interval),
                         self._shutdown_event
                     )
 
@@ -131,6 +153,9 @@ class TriggerHandler:
                     )
 
                 if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
+                    continue
+
+                if self._shutdown_event.is_set() or (await self._get_trigger_status() == 'off'):
                     continue
             elif self._trigger.is_catchup:
                 continue
