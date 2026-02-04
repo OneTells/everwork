@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Any, Iterable, Self
 
-from everwork.schemas import AckResponse, Event, FailResponse, RejectResponse, Request, RetryResponse, WorkerSettings
+from everwork._internal.schemas import AckResponse, FailResponse, RejectResponse, Request, RetryResponse
+from everwork.schemas import Event, WorkerSettings
 
 
 class AbstractBroker(ABC):
