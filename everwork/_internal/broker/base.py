@@ -46,7 +46,7 @@ class AbstractBroker(ABC):
         self,
         manager_uuid: str,
         process_uuid: str,
-        worker_name: str,
+        worker_slug: str,
         sources: Iterable[str]
     ) -> Request:
         raise NotImplementedError
@@ -65,7 +65,7 @@ class AbstractBroker(ABC):
         self,
         manager_uuid: str,
         process_uuid: str,
-        worker_name: str,
+        worker_slug: str,
         request: Request,
         response: AckResponse
     ) -> None:
@@ -76,7 +76,7 @@ class AbstractBroker(ABC):
         self,
         manager_uuid: str,
         process_uuid: str,
-        worker_name: str,
+        worker_slug: str,
         request: Request,
         response: FailResponse
     ) -> None:
@@ -87,7 +87,7 @@ class AbstractBroker(ABC):
         self,
         manager_uuid: str,
         process_uuid: str,
-        worker_name: str,
+        worker_slug: str,
         request: Request,
         response: RejectResponse
     ) -> None:
@@ -98,7 +98,7 @@ class AbstractBroker(ABC):
         self,
         manager_uuid: str,
         process_uuid: str,
-        worker_name: str,
+        worker_slug: str,
         request: Request,
         response: RetryResponse
     ) -> None:

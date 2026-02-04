@@ -79,8 +79,8 @@ class ExecutorTransmitter:
         self._request_channel = request_channel
         self._response_channel = response_channel
 
-    async def execute(self, worker_name: str, request: Request) -> ResponseType:
-        self._request_channel.send((worker_name, request))
+    async def execute(self, worker_slug: str, request: Request) -> ResponseType:
+        self._request_channel.send((worker_slug, request))
         return await self._response_channel.receive()
 
     def close(self) -> None:

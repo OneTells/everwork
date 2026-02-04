@@ -42,7 +42,7 @@ def check_environment() -> bool:
     return True
 
 
-def validate_worker_names(processes: list[ProcessGroup | Process]) -> list[ProcessGroup | Process]:
+def validate_worker_slugs(processes: list[ProcessGroup | Process]) -> list[ProcessGroup | Process]:
     workers: dict[str, type[AbstractWorker]] = dict()
 
     for item in processes:
@@ -120,7 +120,7 @@ class ProcessManager:
         uuid: Annotated[str, AfterValidator(lambda x: UUID(x) and x)],
         processes: Annotated[
             list[ProcessGroup | Process],
-            AfterValidator(validate_worker_names),
+            AfterValidator(validate_worker_slugs),
             AfterValidator(expand_groups),
             AfterValidator(validate_processes)
         ],

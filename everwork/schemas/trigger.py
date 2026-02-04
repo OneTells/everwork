@@ -27,3 +27,5 @@ class Trigger(BaseModel):
 
     is_catchup: bool = True
     lifetime: float | None = None
+
+    status_check_interval: Annotated[float, Field(gt=0.1, lt=3600)] = 60

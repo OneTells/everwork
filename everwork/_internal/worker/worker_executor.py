@@ -86,11 +86,11 @@ class WorkerExecutor:
     async def _run_execute_loop(self) -> None:
         while True:
             try:
-                worker_name, request = await self._receiver.get_request()
+                worker_slug, request = await self._receiver.get_request()
             except ChannelClosed:
                 break
 
-            worker = self._worker_registry.get_worker(worker_name)
+            worker = self._worker_registry.get_worker(worker_slug)
 
             try:
                 kwargs = self._prepare_kwargs(worker, request)
@@ -100,7 +100,7 @@ class WorkerExecutor:
                 response = FailResponse(detail='Не удалось подготовить аргументы', error=error)
                 self._receiver.send_response(response)
 
-                del worker_name, request, worker, response
+                del worker_slug, request, worker, response
                 return
 
             response = await self._execute(worker, kwargs)
@@ -108,7 +108,7 @@ class WorkerExecutor:
 
             self._storage.recreate()
 
-            del worker_name, request, worker, kwargs, response
+            del worker_slug, request, worker, kwargs, response
 
     async def run(self) -> None:
         logger.debug(

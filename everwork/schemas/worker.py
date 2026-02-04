@@ -23,7 +23,7 @@ class WorkerSettings(BaseModel):
     sources: set[SourceType] = Field(default_factory=set, max_length=100)
 
     execution_timeout: Annotated[float, Field(gt=0.1, lt=86400)] = 180
-    worker_status_check_interval: Annotated[float, Field(gt=0.1, lt=3600)] = 60
+    status_check_interval: Annotated[float, Field(gt=0.1, lt=3600)] = 60
 
     event_settings: EventSettings = Field(default_factory=EventSettings)
 

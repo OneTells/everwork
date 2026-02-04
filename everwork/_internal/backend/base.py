@@ -46,7 +46,7 @@ class AbstractBackend(ABC):
     async def get_worker_status(
         self,
         manager_uuid: str,
-        worker_name: str
+        worker_slug: str
     ) -> Literal['on', 'off']:
         raise NotImplementedError
 
@@ -57,7 +57,7 @@ class AbstractBackend(ABC):
         self,
         manager_uuid: str,
         process_uuid: str,
-        worker_name: str,
+        worker_slug: str,
         event_id: str
     ) -> None:
         raise NotImplementedError
@@ -81,10 +81,19 @@ class AbstractBackend(ABC):
     # Триггеры
 
     @abstractmethod
+    async def get_trigger_status(
+        self,
+        manager_uuid: str,
+        worker_slug: str,
+        trigger_hash: str
+    ) -> Literal['on', 'off']:
+        raise NotImplementedError
+
+    @abstractmethod
     async def get_time_point(
         self,
         manager_uuid: str,
-        worker_name: str,
+        worker_slug: str,
         trigger_hash: str
     ) -> AwareDatetime | None:
         raise NotImplementedError
@@ -93,7 +102,7 @@ class AbstractBackend(ABC):
     async def set_time_point(
         self,
         manager_uuid: str,
-        worker_name: str,
+        worker_slug: str,
         trigger_hash: str,
         time_point: AwareDatetime
     ) -> None:
