@@ -2,7 +2,7 @@ import asyncio
 from asyncio import get_running_loop
 from threading import Lock
 
-from everwork.schemas import Request, Response
+from everwork._internal.schemas import Request, Response
 
 
 class ChannelClosed(Exception):
