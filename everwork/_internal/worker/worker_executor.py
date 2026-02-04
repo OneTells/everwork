@@ -108,7 +108,7 @@ class WorkerExecutor:
 
             self._storage.recreate()
 
-            del worker_name, request, kwargs, worker, response
+            del worker_name, request, worker, kwargs, response
 
     async def run(self) -> None:
         logger.debug(
