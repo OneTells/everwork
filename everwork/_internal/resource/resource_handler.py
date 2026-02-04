@@ -182,7 +182,8 @@ class ResourceHandler:
             if await self._get_worker_status() == 'off':
                 with suppress(OperationCancelled):
                     await wait_for_or_cancel(
-                        asyncio.sleep(self._worker.settings.worker_status_check_interval), self._shutdown_event
+                        asyncio.sleep(self._worker.settings.worker_status_check_interval),
+                        self._shutdown_event
                     )
 
                 continue
