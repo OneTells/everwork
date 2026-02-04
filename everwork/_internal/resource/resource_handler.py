@@ -5,11 +5,12 @@ from typing import Any, Coroutine, Literal
 
 from loguru import logger
 
+from everwork._internal.backend import AbstractBackend
+from everwork._internal.broker import AbstractBroker
+from everwork._internal.schemas import AckResponse, FailResponse, RejectResponse, Request, RetryResponse
 from everwork._internal.utils.async_task import OperationCancelled, wait_for_or_cancel
 from everwork._internal.worker.utils.executor_channel import ExecutorTransmitter
-from everwork.backend import AbstractBackend
-from everwork.broker import AbstractBroker
-from everwork.schemas import AckResponse, FailResponse, Process, RejectResponse, Request, Response, RetryResponse
+from everwork.schemas import Process
 from everwork.workers import AbstractWorker
 
 
@@ -68,7 +69,7 @@ class ResourceHandler:
                     self._manager_uuid,
                     self._process.uuid,
                     self._worker.settings.slug,
-                    request
+                    request.event_id
                 ),
                 min_timeout=5
             )
@@ -99,7 +100,7 @@ class ResourceHandler:
 
         raise ValueError
 
-    async def _push_events(self, request: Request, response: AckResponse) -> Response:
+    async def _push_events(self, request: Request, response: AckResponse) -> AckResponse | FailResponse:
         try:
             batch = []
 
@@ -118,7 +119,7 @@ class ResourceHandler:
                 f'[{self._process.uuid}] ({self._worker.settings.slug}) '
                 f'Не удалось сохранить ивенты, event_id={request.event_id}: {error}'
             )
-            return FailResponse(details='Не удалось сохранить ивенты', error=error)
+            return FailResponse(detail='Не удалось сохранить ивенты', error=error)
         finally:
             response.reader.close()
 
@@ -151,8 +152,6 @@ class ResourceHandler:
             )
 
     async def _reject(self, request: Request, response: RejectResponse) -> None:
-        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.slug}) Ивент будет отменён, event_id={request.event_id}')
-
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
                 self._broker.reject(
@@ -166,8 +165,6 @@ class ResourceHandler:
             )
 
     async def _retry(self, request: Request, response: RetryResponse) -> None:
-        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.slug}) Ивент будет возвращен, event_id={request.event_id}')
-
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
                 self._broker.retry(
@@ -196,7 +193,7 @@ class ResourceHandler:
                 continue
 
             if request.event.expires is not None and request.event.expires < datetime.now(UTC):
-                response = RejectResponse(details='Ивент отклонён из-за истёкшего срока действия')
+                response = RejectResponse(detail='Ивент отклонён из-за истёкшего срока действия')
                 await self._reject(request, response)
                 continue
 

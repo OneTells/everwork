@@ -3,12 +3,13 @@ from typing import Any
 
 from loguru import logger
 
+from everwork._internal.schemas import AckResponse, FailResponse, RejectResponse, Request, Response, RetryResponse
 from everwork._internal.utils.event_storage import HybridStorage
 from everwork._internal.worker.utils.executor_channel import ChannelClosed, ExecutorReceiver
 from everwork._internal.worker.utils.heartbeat_notifier import HeartbeatNotifier
 from everwork._internal.worker.worker_registry import WorkerRegistry
-from everwork.exceptions import RetryException
-from everwork.schemas import AckResponse, FailResponse, Process, Request, Response, RetryResponse
+from everwork.exceptions import Reject, Retry
+from everwork.schemas import Process
 from everwork.utils import EventCollector
 from everwork.workers import AbstractWorker
 
@@ -43,7 +44,7 @@ class WorkerExecutor:
         await self._worker_registry.shutdown_all()
 
     def _prepare_kwargs(self, worker: AbstractWorker, request: Request) -> dict[str, Any]:
-        filtered_kwargs, reserved_kwargs, default_kwargs = (
+        filtered_kwargs, reserved_kwargs, default_kwargs, extra_kwargs = (
             self._worker_registry
             .get_resolver(worker.settings.slug)
             .get_kwargs(
@@ -58,7 +59,7 @@ class WorkerExecutor:
         if 'collector' in reserved_kwargs.keys():
             self._storage.max_events_in_memory = worker.settings.event_settings.max_events_in_memory
 
-        return filtered_kwargs | reserved_kwargs | default_kwargs
+        return filtered_kwargs | reserved_kwargs | default_kwargs | extra_kwargs
 
     async def _execute(self, worker: AbstractWorker, kwargs: dict[str, Any]) -> Response:
         self._notifier.notify_started(worker.settings)
@@ -66,14 +67,16 @@ class WorkerExecutor:
         try:
             self._is_executing_event.set()
             await worker.__call__(**kwargs)
-        except RetryException:
+        except Retry:
             return RetryResponse()
+        except Reject as error:
+            return RejectResponse(detail=error.detail)
         except (KeyboardInterrupt, asyncio.CancelledError) as error:
             logger.exception(f'[{self._process.uuid}] ({worker.settings.slug}) Выполнение прервано по таймауту: {error}')
-            return FailResponse(details='Выполнение прервано по таймауту', error=error)
+            return FailResponse(detail='Выполнение прервано по таймауту', error=error)
         except Exception as error:
             logger.exception(f'[{self._process.uuid}] ({worker.settings.slug}) Ошибка при обработке события: {error}')
-            return FailResponse(details='Ошибка при обработке события', error=error)
+            return FailResponse(detail='Ошибка при обработке события', error=error)
         finally:
             self._is_executing_event.clear()
             self._notifier.notify_completed()
@@ -94,7 +97,7 @@ class WorkerExecutor:
             except TypeError as error:
                 logger.exception(f'[{self._process.uuid}] ({worker.settings.slug}) {error}')
 
-                response = FailResponse(details='Не удалось подготовить аргументы', error=error)
+                response = FailResponse(detail='Не удалось подготовить аргументы', error=error)
                 self._receiver.send_response(response)
                 return
 

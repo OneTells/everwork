@@ -3,9 +3,9 @@ from typing import Callable
 
 from loguru import logger
 
+from everwork._internal.backend import AbstractBackend
+from everwork._internal.broker import AbstractBroker
 from everwork._internal.trigger.trigger_handler import TriggerHandler
-from everwork.backend import AbstractBackend
-from everwork.broker import AbstractBroker
 from everwork.schemas import WorkerSettings
 from everwork.utils import AbstractCronSchedule
 

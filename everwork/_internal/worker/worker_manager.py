@@ -5,14 +5,14 @@ from typing import Any, Callable
 
 from loguru import logger
 
+from everwork._internal.backend import AbstractBackend
+from everwork._internal.broker import AbstractBroker
 from everwork._internal.resource.resource_manager import ResourceManager
 from everwork._internal.utils.async_thread import AsyncThread
 from everwork._internal.utils.event_storage import HybridStorage
 from everwork._internal.worker.utils.executor_channel import create_executor_channel
 from everwork._internal.worker.utils.heartbeat_notifier import HeartbeatNotifier
 from everwork._internal.worker.worker_executor import WorkerExecutor
-from everwork.backend import AbstractBackend
-from everwork.broker import AbstractBroker
 from everwork.schemas import Process
 
 

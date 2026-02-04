@@ -3,11 +3,11 @@ from typing import Callable
 
 from loguru import logger
 
+from everwork._internal.backend import AbstractBackend
+from everwork._internal.broker import AbstractBroker
 from everwork._internal.resource.resource_handler import ResourceHandler
 from everwork._internal.utils.async_task import OperationCancelled, wait_for_or_cancel
 from everwork._internal.worker.utils.executor_channel import ExecutorTransmitter
-from everwork.backend import AbstractBackend
-from everwork.broker import AbstractBroker
 from everwork.schemas import Process
 
 
