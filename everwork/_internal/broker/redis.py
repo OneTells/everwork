@@ -67,7 +67,7 @@ class RedisBroker(AbstractBroker):
         return
 
     async def fetch(self, process_uuid: str, worker_slug: str, sources: Iterable[str]) -> Request:
-        data = self._redis.xreadgroup(
+        data = await self._redis.xreadgroup(
             groupname=worker_slug,
             consumername=process_uuid,
             streams={source: '>' for source in sources},
