@@ -17,13 +17,13 @@ from everwork.utils import AbstractCronSchedule
 
 def _get_time_point_generator(
     trigger: Trigger,
-    cron_schedule_factory: Callable[[str], AbstractCronSchedule]
+    cron_schedule: type[AbstractCronSchedule]
 ) -> Callable[[AwareDatetime], AwareDatetime]:
     if isinstance(trigger.schedule, Interval):
         interval = timedelta(**trigger.schedule.model_dump())
         return lambda x: x + interval
     elif isinstance(trigger.schedule, Cron):
-        cron = cron_schedule_factory(trigger.schedule.expression)
+        cron = cron_schedule(trigger.schedule.expression)
         return lambda x: cron.get_next(x)
     else:
         raise ValueError(f"Неизвестный тип графика триггеров: {type(trigger.schedule)}")
@@ -38,7 +38,7 @@ class TriggerHandler:
         trigger: Trigger,
         backend: AbstractBackend,
         broker: AbstractBroker,
-        cron_schedule_factory: Callable[[str], AbstractCronSchedule],
+        cron_schedule: type[AbstractCronSchedule],
         shutdown_event: asyncio.Event
     ) -> None:
         self._manager_uuid = manager_uuid
@@ -46,11 +46,11 @@ class TriggerHandler:
         self._trigger = trigger
         self._backend = backend
         self._broker = broker
-        self._cron_schedule_factory = cron_schedule_factory
+        self._cron_schedule = cron_schedule
         self._shutdown_event = shutdown_event
 
         self._trigger_hash = hashlib.sha256(dumps(self._trigger.model_dump())).hexdigest()
-        self._time_point_generator = _get_time_point_generator(self._trigger, self._cron_schedule_factory)
+        self._time_point_generator = _get_time_point_generator(self._trigger, self._cron_schedule)
 
     async def _execute_with_graceful_cancel[T](self, coroutine: Coroutine[Any, Any, T], min_timeout: int = 0) -> T:
         try:

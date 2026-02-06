@@ -18,14 +18,14 @@ class TriggerManager:
         worker_settings: list[WorkerSettings],
         backend_factory: Callable[[], AbstractBackend],
         broker_factory: Callable[[], AbstractBroker],
-        cron_schedule_factory: Callable[[str], AbstractCronSchedule],
+        cron_schedule: type[AbstractCronSchedule],
         shutdown_event: asyncio.Event
     ) -> None:
         self._manager_uuid = manager_uuid
         self._worker_settings = worker_settings
         self._backend_factory = backend_factory
         self._broker_factory = broker_factory
-        self._cron_schedule_factory = cron_schedule_factory
+        self._cron_schedule = cron_schedule
         self._shutdown_event = shutdown_event
 
     async def _run_handlers(self) -> None:
@@ -42,7 +42,7 @@ class TriggerManager:
                                 trigger,
                                 backend,
                                 broker,
-                                self._cron_schedule_factory,
+                                self._cron_schedule,
                                 self._shutdown_event
                             )
 

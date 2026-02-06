@@ -126,13 +126,13 @@ class ProcessManager:
         ],
         backend_factory: Callable[[], AbstractBackend],
         broker_factory: Callable[[], AbstractBroker],
-        cron_schedule_factory: Callable[[str], AbstractCronSchedule] = CronSchedule
+        cron_schedule: type[AbstractCronSchedule] = CronSchedule
     ) -> None:
         self._manager_uuid = uuid
         self._processes: list[Process] = processes
         self._backend_factory = backend_factory
         self._broker_factory = broker_factory
-        self._cron_schedule_factory = cron_schedule_factory
+        self._cron_schedule = cron_schedule
 
         self._shutdown_event = asyncio.Event()
 
@@ -143,7 +143,7 @@ class ProcessManager:
                 'worker_settings': list({w.settings.slug: w.settings for p in self._processes for w in p.workers}.values()),
                 'backend_factory': self._backend_factory,
                 'broker_factory': self._broker_factory,
-                'cron_schedule_factory': self._cron_schedule_factory
+                'cron_schedule': self._cron_schedule
             }
         )
 
