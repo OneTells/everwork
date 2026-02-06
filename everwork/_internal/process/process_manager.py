@@ -165,7 +165,7 @@ class ProcessManager:
 
         try:
             await wait_for_or_cancel(
-                broker.build(self._manager_uuid, worker_settings),
+                broker.build(worker_settings),
                 self._shutdown_event,
                 min_timeout=5
             )
@@ -183,7 +183,7 @@ class ProcessManager:
 
         try:
             await wait_for_or_cancel(
-                backend.cleanup(self._manager_uuid),
+                backend.cleanup(self._manager_uuid, self._processes),
                 self._shutdown_event,
                 min_timeout=5
             )
@@ -194,9 +194,11 @@ class ProcessManager:
             logger.opt(exception=True).critical(f'Не удалось очистить backend: {error}')
             is_error = True
 
+        worker_settings = list({w.settings for p in self._processes for w in p.workers})
+
         try:
             await wait_for_or_cancel(
-                broker.cleanup(self._manager_uuid),
+                broker.cleanup(worker_settings),
                 self._shutdown_event,
                 min_timeout=5
             )

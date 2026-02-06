@@ -25,81 +25,37 @@ class AbstractBroker(ABC):
     # Создание / удаление структуры
 
     @abstractmethod
-    async def build(
-        self,
-        manager_uuid: str,
-        worker_settings: list[WorkerSettings]
-    ) -> None:
+    async def build(self, worker_settings: list[WorkerSettings]) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    async def cleanup(
-        self,
-        manager_uuid: str
-    ) -> None:
+    async def cleanup(self, worker_settings: list[WorkerSettings]) -> None:
         raise NotImplementedError
 
     # Ивент
 
     @abstractmethod
-    async def fetch(
-        self,
-        manager_uuid: str,
-        process_uuid: str,
-        worker_slug: str,
-        sources: Iterable[str]
-    ) -> Request:
+    async def fetch(self, process_uuid: str, worker_slug: str, sources: Iterable[str]) -> Request:
         raise NotImplementedError
 
     @abstractmethod
-    async def push(
-        self,
-        event: Event | list[Event]
-    ) -> None:
+    async def push(self, event: Event | list[Event]) -> None:
         raise NotImplementedError
 
     # Обработка ивента
 
     @abstractmethod
-    async def ack(
-        self,
-        manager_uuid: str,
-        process_uuid: str,
-        worker_slug: str,
-        request: Request,
-        response: AckResponse
-    ) -> None:
+    async def ack(self, worker_slug: str, request: Request, response: AckResponse) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    async def fail(
-        self,
-        manager_uuid: str,
-        process_uuid: str,
-        worker_slug: str,
-        request: Request,
-        response: FailResponse
-    ) -> None:
+    async def fail(self, worker_slug: str, request: Request, response: FailResponse) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    async def reject(
-        self,
-        manager_uuid: str,
-        process_uuid: str,
-        worker_slug: str,
-        request: Request,
-        response: RejectResponse
-    ) -> None:
+    async def reject(self, worker_slug: str, request: Request, response: RejectResponse) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    async def retry(
-        self,
-        manager_uuid: str,
-        process_uuid: str,
-        worker_slug: str,
-        request: Request,
-        response: RetryResponse
-    ) -> None:
+    async def retry(self, worker_slug: str, request: Request, response: RetryResponse) -> None:
         raise NotImplementedError

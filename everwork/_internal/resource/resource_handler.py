@@ -90,7 +90,6 @@ class ResourceHandler:
         with suppress(Exception):
             return await self._execute_with_graceful_cancel(
                 self._broker.fetch(
-                    self._manager_uuid,
                     self._process.uuid,
                     self._worker.settings.slug,
                     self._worker.settings.sources
@@ -129,8 +128,6 @@ class ResourceHandler:
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
                 self._broker.ack(
-                    self._manager_uuid,
-                    self._process.uuid,
                     self._worker.settings.slug,
                     request,
                     response
@@ -142,8 +139,6 @@ class ResourceHandler:
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
                 self._broker.fail(
-                    self._manager_uuid,
-                    self._process.uuid,
                     self._worker.settings.slug,
                     request,
                     response
@@ -155,8 +150,6 @@ class ResourceHandler:
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
                 self._broker.reject(
-                    self._manager_uuid,
-                    self._process.uuid,
                     self._worker.settings.slug,
                     request,
                     response
@@ -168,8 +161,6 @@ class ResourceHandler:
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
                 self._broker.retry(
-                    self._manager_uuid,
-                    self._process.uuid,
                     self._worker.settings.slug,
                     request,
                     response
