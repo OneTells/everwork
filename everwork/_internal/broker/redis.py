@@ -70,7 +70,7 @@ class RedisBroker(AbstractBroker):
         data = self._redis.xreadgroup(
             groupname=worker_slug,
             consumername=process_uuid,
-            streams=sources,
+            streams={source: '>' for source in sources},
             count=1,
             block=0
         )
