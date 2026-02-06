@@ -3,7 +3,7 @@ from datetime import datetime, UTC
 from typing import Literal
 
 from orjson import dumps
-from pydantic import AwareDatetime, RedisDsn
+from pydantic import AwareDatetime
 from pydantic_core import to_jsonable_python
 from redis.asyncio import Redis
 from redis.asyncio.retry import Retry
@@ -15,9 +15,9 @@ from everwork.schemas import Process
 
 class RedisBackend(AbstractBackend):
 
-    def __init__(self, redis_dsn: RedisDsn) -> None:
+    def __init__(self, redis_dsn: str) -> None:
         self._redis = Redis.from_url(
-            redis_dsn.encoded_string(),
+            redis_dsn,
             retry=Retry(ConstantBackoff(0), 0),
             protocol=3,
             decode_responses=True
