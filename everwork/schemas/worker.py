@@ -18,7 +18,7 @@ class EventSettings(BaseModel):
 @final
 class WorkerSettings(BaseModel):
     title: Annotated[str, Field(min_length=1, max_length=300)]
-    description: Annotated[str, Field(min_length=1, max_length=1000)] = ''
+    description: Annotated[str, Field(max_length=1000)] = ''
 
     sources: set[SourceType] = Field(default_factory=set, max_length=100)
 

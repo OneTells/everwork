@@ -20,7 +20,7 @@ class Cron(BaseModel):
 @final
 class Trigger(BaseModel):
     title: Annotated[str, Field(min_length=1, max_length=300)]
-    description: Annotated[str, Field(min_length=1, max_length=1000)]
+    description: Annotated[str, Field(max_length=1000)] = ''
 
     schedule: Interval | Cron
     kwargs: dict[str, Any] = Field(default_factory=dict)
