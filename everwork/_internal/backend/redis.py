@@ -53,7 +53,9 @@ class RedisBackend(AbstractBackend):
             | {
                 f'manager:{manager_uuid}': dumps(
                     {
-                        'processes': to_jsonable_python([{**p, 'workers': [w.settings for w in p.workers]} for p in processes]),
+                        'processes': to_jsonable_python(
+                            [{**p.model_dump(), 'workers': [w.settings for w in p.workers]} for p in processes]
+                        ),
                         'started_at': datetime.now(UTC)
                     }
                 )
