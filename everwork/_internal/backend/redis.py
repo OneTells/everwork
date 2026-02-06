@@ -10,7 +10,6 @@ from redis.asyncio.retry import Retry
 from redis.backoff import ConstantBackoff
 
 from everwork._internal.backend.base import AbstractBackend
-from everwork._internal.utils.lazy_wrapper import lazy_init
 from everwork.schemas import Process
 
 
@@ -32,6 +31,9 @@ class RedisBackend(AbstractBackend):
         await self._redis.aclose()
 
     async def build(self, manager_uuid: str, processes: list[Process]) -> None:
+        async for key in self._redis.scan_iter(match=f'worker_executor:{manager_uuid}:*', count=100):
+            await self._redis.delete(key)
+
         worker_statuses: list[str | None] = await self._redis.mget(
             worker_statuses_keys := {
                 f'worker:{worker.settings.slug}:status'
@@ -49,9 +51,12 @@ class RedisBackend(AbstractBackend):
             }
         )
 
+        worker_executor_status = dumps({'status': 'initializing', 'content': {}, 'set_at': datetime.now(UTC).isoformat()})
+
         await self._redis.mset(
             {key: 'off' for key, value in zip(worker_statuses_keys, worker_statuses) if value is None}
             | {key: 'on' for key, value in zip(trigger_statuses_keys, trigger_statuses) if value is None}
+            | {f'worker_executor:{manager_uuid}:{p.uuid}:status': worker_executor_status for p in processes}
             | {
                 f'manager:{manager_uuid}': dumps(
                     {
