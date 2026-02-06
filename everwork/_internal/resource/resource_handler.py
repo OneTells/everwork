@@ -170,6 +170,16 @@ class ResourceHandler:
 
     async def _run_event_processing_loop(self) -> None:
         while not self._shutdown_event.is_set():
+            logger.debug(
+                f'[{self._process.uuid}] ({self._worker.settings.slug}) '
+                f'Запуск цикла обработки ивентов'
+            )
+
+            logger.debug(
+                f'[{self._process.uuid}] ({self._worker.settings.slug}) '
+                f'{await self._get_worker_status()}'
+            )
+
             if await self._get_worker_status() == 'off':
                 with suppress(OperationCancelled):
                     await wait_for_or_cancel(
