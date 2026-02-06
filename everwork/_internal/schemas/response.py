@@ -1,34 +1,36 @@
+from dataclasses import dataclass
 from typing import Literal
-
-from pydantic import BaseModel, ConfigDict
 
 from everwork._internal.utils.event_storage import AbstractReader
 
 
-class Response(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
+@dataclass(slots=True, frozen=True)
+class Response:
     status: Literal['ack', 'fail', 'reject', 'retry']
 
 
+@dataclass(slots=True, frozen=True)
 class AckResponse(Response):
-    status: Literal['ack'] = 'ack'
-
     reader: AbstractReader
 
+    status: Literal['ack'] = 'ack'
 
+
+@dataclass(slots=True, frozen=True)
 class FailResponse(Response):
-    status: Literal['fail'] = 'fail'
-
     detail: str
     error: BaseException
 
+    status: Literal['fail'] = 'fail'
 
+
+@dataclass(slots=True, frozen=True)
 class RejectResponse(Response):
-    status: Literal['reject'] = 'reject'
-
     detail: str
 
+    status: Literal['reject'] = 'reject'
 
+
+@dataclass(slots=True, frozen=True)
 class RetryResponse(Response):
     status: Literal['retry'] = 'retry'
