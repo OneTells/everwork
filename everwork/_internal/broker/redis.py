@@ -2,6 +2,7 @@ import traceback
 from itertools import chain
 from typing import Iterable
 
+from loguru import logger
 from orjson import dumps, loads
 from pydantic import RedisDsn
 from pydantic_core import to_jsonable_python
@@ -76,6 +77,8 @@ class RedisBroker(AbstractBroker):
         )
 
         event_id, event_kwargs = list(data.items())[0][1][0][0]
+
+        logger.info(f'{event_kwargs}')
 
         return Request(event_id=event_id, event=Event.model_validate(**loads(event_kwargs['payload'])))
 

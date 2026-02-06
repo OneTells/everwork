@@ -146,8 +146,6 @@ class TriggerHandler:
             time_point = self._time_point_generator(time_point)
 
             if time_point >= datetime.now(UTC):
-                logger.debug(f"{(datetime.now(UTC) - time_point).total_seconds()}")
-
                 try:
                     await wait_for_or_cancel(
                         asyncio.sleep((time_point - datetime.now(UTC)).total_seconds()),
@@ -163,7 +161,7 @@ class TriggerHandler:
                     continue
             elif self._trigger.is_catchup:
                 continue
-            logger.debug(f"5")
+
             await self._set_last_time_point(time_point)
             await self._push_event(
                 Event(
