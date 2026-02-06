@@ -4,7 +4,7 @@ from typing import Annotated, final, Self
 from pydantic import BaseModel, computed_field, Field, model_validator
 from slugify import slugify
 
-from everwork.schemas import Trigger
+from everwork.schemas.trigger import Trigger
 
 type SourceType = Annotated[str, Field(min_length=1, max_length=300, pattern=r'^[a-zA-Z0-9_\-:]+$')]
 
