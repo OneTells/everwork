@@ -3,6 +3,7 @@ from itertools import chain
 from typing import Iterable
 
 from orjson import dumps, loads
+from pydantic import RedisDsn
 from pydantic_core import to_jsonable_python
 from redis.asyncio import Redis
 from redis.asyncio.retry import Retry
@@ -16,9 +17,9 @@ from everwork._internal.schemas import AckResponse, FailResponse, RejectResponse
 
 class RedisBroker(AbstractBroker):
 
-    def __init__(self, redis_dsn: str) -> None:
+    def __init__(self, redis_dsn: RedisDsn) -> None:
         self._redis = Redis.from_url(
-            redis_dsn,
+            redis_dsn.encoded_string(),
             retry=Retry(ConstantBackoff(0), 0),
             protocol=3,
             decode_responses=True
