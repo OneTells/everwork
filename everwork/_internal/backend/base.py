@@ -3,9 +3,11 @@ from typing import Any, Literal, Self
 
 from pydantic import AwareDatetime
 
+from everwork._internal.utils.lazy_wrapper import lazy_init
 from everwork.schemas import Process
 
 
+@lazy_init
 class AbstractBackend(ABC):
 
     @abstractmethod

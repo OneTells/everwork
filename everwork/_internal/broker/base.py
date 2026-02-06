@@ -2,9 +2,11 @@ from abc import ABC, abstractmethod
 from typing import Any, Iterable, Self
 
 from everwork._internal.schemas import AckResponse, FailResponse, RejectResponse, Request, RetryResponse
+from everwork._internal.utils.lazy_wrapper import lazy_init
 from everwork.schemas import Event, WorkerSettings
 
 
+@lazy_init
 class AbstractBroker(ABC):
 
     @abstractmethod
