@@ -16,7 +16,7 @@ from everwork._internal.utils.lazy_wrapper import lazy_init
 from everwork.schemas import Event, WorkerSettings
 
 
-@lazy_init
+# @lazy_init
 class RedisBroker(AbstractBroker):
 
     def __init__(self, redis_dsn: RedisDsn) -> None:
