@@ -50,7 +50,14 @@ class RedisBackend(AbstractBackend):
         await self._redis.mset(
             {key: 'off' for key, value in zip(worker_statuses_keys, worker_statuses) if value is None}
             | {key: 'off' for key, value in zip(trigger_statuses_keys, trigger_statuses) if value is None}
-            | {f'manager:{manager_uuid}': dumps({'processes': to_jsonable_python(processes), 'started_at': datetime.now(UTC)})}
+            | {
+                f'manager:{manager_uuid}': dumps(
+                    {
+                        'processes': to_jsonable_python([{**p, 'workers': [w.settings for w in p.workers]} for p in processes]),
+                        'started_at': datetime.now(UTC)
+                    }
+                )
+            }
             | {f'manager:{manager_uuid}:status': 'on'}
         )
 
