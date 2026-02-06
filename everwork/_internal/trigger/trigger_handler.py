@@ -150,7 +150,7 @@ class TriggerHandler:
 
                 try:
                     await wait_for_or_cancel(
-                        asyncio.sleep((datetime.now(UTC) - time_point).total_seconds()),
+                        asyncio.sleep((time_point - datetime.now(UTC)).total_seconds()),
                         self._shutdown_event
                     )
                 except OperationCancelled:
