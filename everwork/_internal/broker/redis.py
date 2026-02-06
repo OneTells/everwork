@@ -10,9 +10,9 @@ from redis.asyncio.retry import Retry
 from redis.backoff import ConstantBackoff
 from redis.exceptions import NoScriptError
 
-from everwork import Event, WorkerSettings
 from everwork._internal.broker.base import AbstractBroker
 from everwork._internal.schemas import AckResponse, FailResponse, RejectResponse, Request, RetryResponse
+from everwork.schemas import Event, WorkerSettings
 
 
 class RedisBroker(AbstractBroker):
