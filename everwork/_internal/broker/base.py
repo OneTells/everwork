@@ -19,7 +19,7 @@ class AbstractBroker(ABC):
         await self.initialize()
         return self
 
-    async def __aexit__(self, _: Any) -> None:
+    async def __aexit__(self, *_: Any) -> None:
         await self.close()
 
     # Создание / удаление структуры
