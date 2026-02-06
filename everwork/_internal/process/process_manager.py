@@ -140,7 +140,7 @@ class ProcessManager:
             target=lambda **kwargs: TriggerManager(**kwargs).run(),
             kwargs={
                 'manager_uuid': self._manager_uuid,
-                'worker_settings': list({w.settings for p in self._processes for w in p.workers}),
+                'worker_settings': list({w.settings.slug: w.settings for p in self._processes for w in p.workers}.values()),
                 'backend_factory': self._backend_factory,
                 'broker_factory': self._broker_factory,
                 'cron_schedule_factory': self._cron_schedule_factory
@@ -161,7 +161,7 @@ class ProcessManager:
             logger.opt(exception=True).critical(f'Не удалось построить backend: {error}')
             raise ValueError
 
-        worker_settings = list({w.settings for p in self._processes for w in p.workers})
+        worker_settings = list({w.settings.slug: w.settings for p in self._processes for w in p.workers}.values())
 
         try:
             await wait_for_or_cancel(
@@ -194,7 +194,7 @@ class ProcessManager:
             logger.opt(exception=True).critical(f'Не удалось очистить backend: {error}')
             is_error = True
 
-        worker_settings = list({w.settings for p in self._processes for w in p.workers})
+        worker_settings = list({w.settings.slug: w.settings for p in self._processes for w in p.workers}.values())
 
         try:
             await wait_for_or_cancel(
