@@ -37,7 +37,7 @@ class WorkerSettings(BaseModel):
     @computed_field
     @cached_property
     def default_source(self) -> str:
-        return f'{self.slug}:source'
+        return f'worker:{self.slug}:source'
 
     @model_validator(mode='after')
     def _configure_sources(self) -> Self:
