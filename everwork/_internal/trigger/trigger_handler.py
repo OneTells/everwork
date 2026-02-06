@@ -125,8 +125,6 @@ class TriggerHandler:
             time_point = datetime.now(UTC)
 
         while not self._shutdown_event.is_set():
-            logger.debug(f"1")
-
             if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
                 with suppress(OperationCancelled):
                     await wait_for_or_cancel(
@@ -135,8 +133,6 @@ class TriggerHandler:
                     )
 
                 continue
-
-            logger.debug(f"2")
 
             if self._shutdown_event.is_set() or (await self._get_trigger_status() == 'off'):
                 with suppress(OperationCancelled):
@@ -147,15 +143,18 @@ class TriggerHandler:
 
                 continue
 
-            logger.debug(f"3")
             time_point = self._time_point_generator(time_point)
-            logger.debug(f"4")
+
             if time_point >= datetime.now(UTC):
-                with suppress(OperationCancelled):
+                logger.debug(f"{(datetime.now(UTC) - time_point).total_seconds()}")
+
+                try:
                     await wait_for_or_cancel(
                         asyncio.sleep((datetime.now(UTC) - time_point).total_seconds()),
                         self._shutdown_event
                     )
+                except OperationCancelled:
+                    continue
 
                 if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
                     continue
