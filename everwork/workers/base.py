@@ -4,7 +4,7 @@ from typing import Any, ClassVar
 
 from pydantic import ConfigDict, validate_call
 
-from everwork.schemas import WorkerSettings
+from everwork.schemas.worker import WorkerSettings
 from .._internal.utils.typing_checker import check_method_typing
 
 
