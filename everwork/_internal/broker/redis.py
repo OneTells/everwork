@@ -111,7 +111,7 @@ class RedisBroker(AbstractBroker):
             dumps(
                 {
                     'worker_slug': worker_slug,
-                    'request': request,
+                    'request': request.model_dump(mode='json'),
                     'response': {
                         'detail': response.detail,
                         'exception': "".join(
@@ -143,7 +143,7 @@ class RedisBroker(AbstractBroker):
             dumps(
                 {
                     'worker_slug': worker_slug,
-                    'request': request,
+                    'request': request.model_dump(mode='json'),
                     'response': {
                         'detail': response.detail,
                     }
