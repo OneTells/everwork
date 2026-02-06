@@ -119,10 +119,10 @@ class TriggerHandler:
     async def run(self) -> None:
         logger.debug(f"({self._worker_settings.slug}) ({self._trigger_hash}) Обработчик триггера запущен")
 
-        last_time_point = await self._get_last_time_point()
+        time_point = await self._get_last_time_point()
 
-        if last_time_point is None:
-            last_time_point = datetime.now(UTC)
+        if time_point is None:
+            time_point = datetime.now(UTC)
 
         while not self._shutdown_event.is_set():
             logger.debug(f"1")
@@ -148,12 +148,12 @@ class TriggerHandler:
                 continue
 
             logger.debug(f"3")
-            new_time_point = self._time_point_generator(last_time_point)
+            time_point = self._time_point_generator(time_point)
             logger.debug(f"4")
-            if new_time_point >= datetime.now(UTC):
+            if time_point >= datetime.now(UTC):
                 with suppress(OperationCancelled):
                     await wait_for_or_cancel(
-                        asyncio.sleep((datetime.now(UTC) - new_time_point).total_seconds()),
+                        asyncio.sleep((datetime.now(UTC) - time_point).total_seconds()),
                         self._shutdown_event
                     )
 
@@ -165,11 +165,11 @@ class TriggerHandler:
             elif self._trigger.is_catchup:
                 continue
             logger.debug(f"5")
-            await self._set_last_time_point(new_time_point)
+            await self._set_last_time_point(time_point)
             await self._push_event(
                 Event(
                     source=self._worker_settings.default_source,
-                    kwargs={'time_point': new_time_point, 'trigger_hash': self._trigger_hash} | self._trigger.kwargs,
+                    kwargs={'time_point': time_point, 'trigger_hash': self._trigger_hash} | self._trigger.kwargs,
                     expires=datetime.now(UTC) + timedelta(seconds=self._trigger.lifetime) if self._trigger.lifetime else None
                 )
             )
