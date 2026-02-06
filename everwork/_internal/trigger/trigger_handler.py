@@ -125,6 +125,8 @@ class TriggerHandler:
             last_time_point = datetime.now(UTC)
 
         while not self._shutdown_event.is_set():
+            logger.debug(f"1")
+
             if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
                 with suppress(OperationCancelled):
                     await wait_for_or_cancel(
@@ -133,6 +135,8 @@ class TriggerHandler:
                     )
 
                 continue
+
+            logger.debug(f"2")
 
             if self._shutdown_event.is_set() or (await self._get_trigger_status() == 'off'):
                 with suppress(OperationCancelled):
@@ -143,8 +147,9 @@ class TriggerHandler:
 
                 continue
 
+            logger.debug(f"3")
             new_time_point = self._time_point_generator(last_time_point)
-
+            logger.debug(f"4")
             if new_time_point >= datetime.now(UTC):
                 with suppress(OperationCancelled):
                     await wait_for_or_cancel(
@@ -159,7 +164,7 @@ class TriggerHandler:
                     continue
             elif self._trigger.is_catchup:
                 continue
-
+            logger.debug(f"5")
             await self._set_last_time_point(new_time_point)
             await self._push_event(
                 Event(
