@@ -78,9 +78,7 @@ class RedisBroker(AbstractBroker):
 
         event_id, event_kwargs = list(data.items())[0][1][0][0]
 
-        logger.info(f'{event_kwargs}')
-
-        return Request(event_id=event_id, event=Event.model_validate(**loads(event_kwargs['payload'])))
+        return Request(event_id=event_id, event=Event.model_validate(loads(event_kwargs['payload'])))
 
     async def push(self, event: Event | list[Event]) -> None:
         events = [event] if isinstance(event, Event) else event
