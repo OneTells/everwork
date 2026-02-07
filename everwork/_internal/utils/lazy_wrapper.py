@@ -1,24 +1,16 @@
-from typing import Any, Callable, Type
+from typing import Callable, ParamSpec, Type, TypeVar
+
+T = TypeVar("T")
+P = ParamSpec("P")
 
 
-class _LazyFactory[T]:
-    __slots__ = ("_cls", "_args", "_kwargs")
+def lazy_init(cls: Type[T]) -> Callable[P, Callable[[], T]]:
 
-    def __init__(self, cls: Type[T], args: tuple[Any, ...], kwargs: dict[str, Any]) -> None:
-        self._cls = cls
-        self._args = args
-        self._kwargs = kwargs
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> Callable[[], T]:
 
-    def __call__(self) -> T:
-        return self._cls(*self._args, **self._kwargs)
+        def create_instance() -> T:
+            return cls(*args, **kwargs)
 
-    def __reduce__(self) -> tuple[Callable, tuple]:
-        return _LazyFactory, (self._cls, self._args, self._kwargs)
-
-
-def lazy_init[T, **P](cls: Type[T]) -> Callable[P, _LazyFactory]:
-
-    def wrapper(*args: P.args, **kwargs: P.kwargs) -> _LazyFactory:
-        return _LazyFactory(cls, args, kwargs)
+        return create_instance
 
     return wrapper

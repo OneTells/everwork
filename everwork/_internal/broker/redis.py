@@ -12,10 +12,11 @@ from redis.exceptions import NoScriptError
 
 from everwork._internal.broker.base import AbstractBroker
 from everwork._internal.schemas import AckResponse, FailResponse, RejectResponse, Request, RetryResponse
+from everwork._internal.utils.lazy_wrapper import lazy_init
 from everwork.schemas import Event, WorkerSettings
 
 
-# @lazy_init
+@lazy_init
 class RedisBroker(AbstractBroker):
 
     def __init__(self, redis_dsn: RedisDsn) -> None:

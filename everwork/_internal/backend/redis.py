@@ -10,10 +10,11 @@ from redis.asyncio.retry import Retry
 from redis.backoff import ConstantBackoff
 
 from everwork._internal.backend.base import AbstractBackend
+from everwork._internal.utils.lazy_wrapper import lazy_init
 from everwork.schemas import Process
 
 
-# @lazy_init
+@lazy_init
 class RedisBackend(AbstractBackend):
 
     def __init__(self, redis_dsn: RedisDsn) -> None:

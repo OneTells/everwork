@@ -6,6 +6,7 @@ requires-python = ">=3.12,<4.0"
 
 dependencies = [
     "croniter>=6.0.0",
+    "dill>=0.4.1",
     "loguru",
     "orjson>=3.11.7",
     "pydantic>=2.10.6",

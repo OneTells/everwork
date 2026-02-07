@@ -7,6 +7,7 @@ import time
 from multiprocessing import connection, Pipe, Process as BaseProcess
 from typing import Any, Callable, TYPE_CHECKING
 
+import dill
 from loguru import logger
 
 from everwork._internal.backend import AbstractBackend
@@ -60,8 +61,8 @@ class WorkerProcess:
             kwargs={
                 'manager_uuid': self._manager_uuid,
                 'process': self._process,
-                'backend_factory': self._backend_factory,
-                'broker_factory': self._broker_factory,
+                'backend_factory': dill.dumps(self._backend_factory),
+                'broker_factory': dill.dumps(self._broker_factory),
                 'notifier': HeartbeatNotifier(self._pipe_writer),
                 'logger_': logger
             }
@@ -124,6 +125,9 @@ class WorkerProcess:
     def _run(logger_: Logger, **kwargs: Any) -> None:
         logger.remove()
         logger_.reinstall()
+
+        kwargs['backend_factory'] = dill.loads(kwargs['backend_factory'])
+        kwargs['broker_factory'] = dill.loads(kwargs['broker_factory'])
 
         with asyncio.Runner(loop_factory=new_event_loop) as runner:
             runner.run(WorkerManager(**kwargs).run())
