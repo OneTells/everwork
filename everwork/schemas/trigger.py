@@ -1,6 +1,8 @@
+import hashlib
+from functools import cached_property
 from typing import Annotated, Any, final
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, computed_field, Field
 
 
 @final
@@ -29,3 +31,8 @@ class Trigger(BaseModel):
     lifetime: float | None = None
 
     status_check_interval: Annotated[float, Field(gt=0.1, lt=3600)] = 60
+
+    @computed_field
+    @cached_property
+    def id(self) -> str:
+        return hashlib.sha256(self.title.encode()).hexdigest()[:16]

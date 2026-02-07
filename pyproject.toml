@@ -1,6 +1,6 @@
 [project]
 name = "everwork"
-version = "2.0.4"
+version = "2.0.0"
 
 requires-python = ">=3.12,<4.0"
 
@@ -10,7 +10,6 @@ dependencies = [
     "loguru",
     "orjson>=3.11.7",
     "pydantic>=2.10.6",
-    "python-slugify>=8.0.4",
     "redis[hiredis]>=6.4.0",
     "uvloop>=0.21.0 ; sys_platform == 'linux'",
 ]

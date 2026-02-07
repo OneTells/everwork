@@ -37,7 +37,7 @@ class RedisBroker(AbstractBroker):
 
     async def build(self, worker_settings: list[WorkerSettings]) -> None:
         stream_groups = {
-            (source, settings.slug)
+            (source, settings.id)
             for settings in worker_settings
             for source in settings.sources
         }
@@ -66,9 +66,9 @@ class RedisBroker(AbstractBroker):
     async def cleanup(self, worker_settings: list[WorkerSettings]) -> None:
         return
 
-    async def fetch(self, process_uuid: str, worker_slug: str, sources: Iterable[str]) -> Request:
+    async def fetch(self, process_uuid: str, worker_id: str, sources: Iterable[str]) -> Request:
         data = await self._redis.xreadgroup(
-            groupname=worker_slug,
+            groupname=worker_id,
             consumername=process_uuid,
             streams={source: '>' for source in sources},
             count=1,
@@ -96,20 +96,20 @@ class RedisBroker(AbstractBroker):
             await self._load_push_script()
             await self._redis.evalsha(self._scripts['push'], 0, *args)
 
-    async def ack(self, worker_slug: str, request: Request, response: AckResponse) -> None:
-        await self._redis.xack(request.event.source, worker_slug, request.event_id)
+    async def ack(self, worker_id: str, request: Request, response: AckResponse) -> None:
+        await self._redis.xack(request.event.source, worker_id, request.event_id)
 
-    async def fail(self, worker_slug: str, request: Request, response: FailResponse) -> None:
+    async def fail(self, worker_id: str, request: Request, response: FailResponse) -> None:
         if self._scripts.get('fail') is None:
             await self._load_fail_script()
 
         keys_and_args = [
             request.event.source,
-            worker_slug,
+            worker_id,
             request.event_id,
             dumps(
                 {
-                    'worker_slug': worker_slug,
+                    'worker_id': worker_id,
                     'request': request.model_dump(mode='json'),
                     'response': {
                         'detail': response.detail,
@@ -131,11 +131,11 @@ class RedisBroker(AbstractBroker):
             await self._load_fail_script()
             await self._redis.evalsha(self._scripts['fail'], 1, *keys_and_args)
 
-    async def reject(self, worker_slug: str, request: Request, response: RejectResponse) -> None:
+    async def reject(self, worker_id: str, request: Request, response: RejectResponse) -> None:
         if self._scripts.get('reject') is None:
             await self._load_reject_script()
 
-        keys_and_args = [request.event.source, worker_slug, request.event_id]
+        keys_and_args = [request.event.source, worker_id, request.event_id]
 
         try:
             await self._redis.evalsha(self._scripts['reject'], 1, *keys_and_args)
@@ -143,14 +143,14 @@ class RedisBroker(AbstractBroker):
             await self._load_reject_script()
             await self._redis.evalsha(self._scripts['reject'], 1, *keys_and_args)
 
-    async def retry(self, worker_slug: str, request: Request, response: RetryResponse) -> None:
+    async def retry(self, worker_id: str, request: Request, response: RetryResponse) -> None:
         if self._scripts.get('retry') is None:
             await self._load_retry_script()
 
         keys_and_args = [
-            f'worker:{worker_slug}:source',
+            f'worker:{worker_id}:source',
             request.event.source,
-            worker_slug,
+            worker_id,
             request.event_id,
             dumps(to_jsonable_python(request.event))
         ]

@@ -35,7 +35,7 @@ class AbstractBroker(ABC):
     # Ивент
 
     @abstractmethod
-    async def fetch(self, process_uuid: str, worker_slug: str, sources: Iterable[str]) -> Request:
+    async def fetch(self, process_uuid: str, worker_id: str, sources: Iterable[str]) -> Request:
         raise NotImplementedError
 
     @abstractmethod
@@ -45,17 +45,17 @@ class AbstractBroker(ABC):
     # Обработка ивента
 
     @abstractmethod
-    async def ack(self, worker_slug: str, request: Request, response: AckResponse) -> None:
+    async def ack(self, worker_id: str, request: Request, response: AckResponse) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    async def fail(self, worker_slug: str, request: Request, response: FailResponse) -> None:
+    async def fail(self, worker_id: str, request: Request, response: FailResponse) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    async def reject(self, worker_slug: str, request: Request, response: RejectResponse) -> None:
+    async def reject(self, worker_id: str, request: Request, response: RejectResponse) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    async def retry(self, worker_slug: str, request: Request, response: RetryResponse) -> None:
+    async def retry(self, worker_id: str, request: Request, response: RetryResponse) -> None:
         raise NotImplementedError

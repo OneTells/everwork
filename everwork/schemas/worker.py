@@ -1,8 +1,8 @@
+import hashlib
 from functools import cached_property
 from typing import Annotated, final, Self
 
 from pydantic import BaseModel, computed_field, Field, model_validator
-from slugify import slugify
 
 from everwork.schemas.trigger import Trigger
 
@@ -31,13 +31,13 @@ class WorkerSettings(BaseModel):
 
     @computed_field
     @cached_property
-    def slug(self) -> str:
-        return slugify(self.title, separator='_', regex_pattern=r'[^a-z0-9_]+')
+    def id(self) -> str:
+        return hashlib.sha256(self.title.encode()).hexdigest()[:16]
 
     @computed_field
     @cached_property
     def default_source(self) -> str:
-        return f'worker:{self.slug}:source'
+        return f'worker:{self.id}:source'
 
     @model_validator(mode='after')
     def _configure_sources(self) -> Self:

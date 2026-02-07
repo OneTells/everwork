@@ -36,13 +36,13 @@ class AbstractBackend(ABC):
     # Воркер
 
     @abstractmethod
-    async def get_worker_status(self, manager_uuid: str, worker_slug: str) -> Literal['on', 'off']:
+    async def get_worker_status(self, manager_uuid: str, worker_id: str) -> Literal['on', 'off']:
         raise NotImplementedError
 
     # Исполнитель воркера
 
     @abstractmethod
-    async def mark_worker_executor_as_busy(self, manager_uuid: str, process_uuid: str, worker_slug: str, event_id: str) -> None:
+    async def mark_worker_executor_as_busy(self, manager_uuid: str, process_uuid: str, worker_id: str, event_id: str) -> None:
         raise NotImplementedError
 
     @abstractmethod
@@ -56,13 +56,13 @@ class AbstractBackend(ABC):
     # Триггеры
 
     @abstractmethod
-    async def get_trigger_status(self, manager_uuid: str, worker_slug: str, trigger_hash: str) -> Literal['on', 'off']:
+    async def get_trigger_status(self, manager_uuid: str, worker_id: str, trigger_id: str) -> Literal['on', 'off']:
         raise NotImplementedError
 
     @abstractmethod
-    async def get_time_point(self, manager_uuid: str, worker_slug: str, trigger_hash: str) -> AwareDatetime | None:
+    async def get_time_point(self, manager_uuid: str, worker_id: str, trigger_id: str) -> AwareDatetime | None:
         raise NotImplementedError
 
     @abstractmethod
-    async def set_time_point(self, manager_uuid: str, worker_slug: str, trigger_hash: str, time_point: AwareDatetime) -> None:
+    async def set_time_point(self, manager_uuid: str, worker_id: str, trigger_id: str, time_point: AwareDatetime) -> None:
         raise NotImplementedError
