@@ -124,14 +124,14 @@ class ProcessManager:
             AfterValidator(expand_groups),
             AfterValidator(validate_processes)
         ],
-        backend_factory: Callable[[], AbstractBackend],
-        broker_factory: Callable[[], AbstractBroker],
+        backend: Callable[[], AbstractBackend],
+        broker: Callable[[], AbstractBroker],
         cron_schedule: type[AbstractCronSchedule] = CronSchedule
     ) -> None:
         self._manager_uuid = uuid
         self._processes: list[Process] = processes
-        self._backend_factory = backend_factory
-        self._broker_factory = broker_factory
+        self._backend_factory = backend
+        self._broker_factory = broker
         self._cron_schedule = cron_schedule
 
         self._shutdown_event = asyncio.Event()
