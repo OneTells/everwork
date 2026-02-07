@@ -3,7 +3,7 @@ import signal
 from asyncio import Event, get_running_loop
 from multiprocessing import get_start_method
 from platform import system
-from typing import Annotated, Callable, final
+from typing import Annotated, Any, Callable, final
 from uuid import UUID, uuid4
 
 from loguru import logger
@@ -42,19 +42,19 @@ def check_environment() -> bool:
     return True
 
 
-def validate_worker_slugs(processes: list[ProcessGroup | Process]) -> list[ProcessGroup | Process]:
+def validate_worker_titles(processes: list[ProcessGroup | Process]) -> list[ProcessGroup | Process]:
     workers: dict[str, type[AbstractWorker]] = dict()
 
     for item in processes:
         process = item.process if isinstance(item, ProcessGroup) else item
 
         for worker in process.workers:
-            other_worker = workers.get(worker.settings.slug, None)
+            other_worker = workers.get(worker.settings.id, None)
 
             if other_worker is not None and other_worker is not worker:
-                raise ValueError(f"Имя воркера {worker.settings.slug} не уникально")
+                raise ValueError(f"Имя воркера '{worker.settings.title}' не уникально")
 
-            workers[worker.settings.slug] = worker
+            workers[worker.settings.id] = worker
 
     return processes
 
@@ -93,6 +93,23 @@ def validate_processes(processes: list[Process]) -> list[Process]:
     return result
 
 
+def get_structure(processes: list[Process]) -> Any:
+    return {
+        p.uuid: [
+            {
+                'id': w.settings.id,
+                'title': w.settings.title,
+                'triggers': [
+                    {'id': trigger.id, 'title': trigger.title}
+                    for trigger in w.settings.triggers
+                ]
+            }
+            for w in p.workers
+        ]
+        for p in processes
+    }
+
+
 class SignalHandler:
 
     def __init__(self, shutdown_event: Event, on_trigger_manager_cancel: Callable[[], None]) -> None:
@@ -120,7 +137,7 @@ class ProcessManager:
         uuid: Annotated[str, AfterValidator(lambda x: UUID(x) and x)],
         processes: Annotated[
             list[ProcessGroup | Process],
-            AfterValidator(validate_worker_slugs),
+            AfterValidator(validate_worker_titles),
             AfterValidator(expand_groups),
             AfterValidator(validate_processes)
         ],
@@ -140,7 +157,7 @@ class ProcessManager:
             target=lambda **kwargs: TriggerManager(**kwargs).run(),
             kwargs={
                 'manager_uuid': self._manager_uuid,
-                'worker_settings': list({w.settings.slug: w.settings for p in self._processes for w in p.workers}.values()),
+                'worker_settings': list({w.settings.id: w.settings for p in self._processes for w in p.workers}.values()),
                 'backend_factory': self._backend_factory,
                 'broker_factory': self._broker_factory,
                 'cron_schedule': self._cron_schedule
@@ -161,7 +178,7 @@ class ProcessManager:
             logger.opt(exception=True).critical(f'Не удалось построить backend: {error}')
             raise ValueError
 
-        worker_settings = list({w.settings.slug: w.settings for p in self._processes for w in p.workers}.values())
+        worker_settings = list({w.settings.id: w.settings for p in self._processes for w in p.workers}.values())
 
         try:
             await wait_for_or_cancel(
@@ -194,7 +211,7 @@ class ProcessManager:
             logger.opt(exception=True).critical(f'Не удалось очистить backend: {error}')
             is_error = True
 
-        worker_settings = list({w.settings.slug: w.settings for p in self._processes for w in p.workers}.values())
+        worker_settings = list({w.settings.id: w.settings for p in self._processes for w in p.workers}.values())
 
         try:
             await wait_for_or_cancel(
@@ -239,6 +256,8 @@ class ProcessManager:
 
         if not check_environment():
             return
+
+        logger.debug(f'Структура менеджера: {get_structure(self._processes)}')
 
         SignalHandler(self._shutdown_event, self._trigger_manager.cancel).register()
         logger.debug("Менеджер процессов зарегистрировал обработчик сигналов")

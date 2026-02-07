@@ -18,25 +18,25 @@ class WorkerRegistry:
             try:
                 worker = worker_cls()
             except Exception as error:
-                logger.exception(f'[{self._process.uuid}] ({worker_cls.settings.slug}) Ошибка при инициализации: {error}')
+                logger.exception(f'[{self._process.uuid}] ({worker_cls.settings.id}) Ошибка при инициализации: {error}')
                 continue
 
-            self._instances[worker.settings.slug] = worker
-            self._resolvers[worker.settings.slug] = ArgumentResolver(worker.__call__)
+            self._instances[worker.settings.id] = worker
+            self._resolvers[worker.settings.id] = ArgumentResolver(worker.__call__)
 
     async def startup_all(self) -> None:
         for worker in self._instances.values():
             try:
                 await worker.startup()
             except Exception as error:
-                logger.exception(f'[{self._process.uuid}] ({worker.settings.slug}) Ошибка при startup: {error}')
+                logger.exception(f'[{self._process.uuid}] ({worker.settings.id}) Ошибка при startup: {error}')
 
     async def shutdown_all(self) -> None:
         for worker in self._instances.values():
             try:
                 await worker.shutdown()
             except Exception as error:
-                logger.exception(f'[{self._process.uuid}] ({worker.settings.slug}) Ошибка при shutdown: {error}')
+                logger.exception(f'[{self._process.uuid}] ({worker.settings.id}) Ошибка при shutdown: {error}')
 
     def get_worker(self, name: str) -> AbstractWorker:
         return self._instances[name]

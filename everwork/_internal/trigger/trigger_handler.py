@@ -1,11 +1,9 @@
 import asyncio
-import hashlib
 from contextlib import suppress
 from datetime import datetime, timedelta, UTC
 from typing import Any, Callable, Coroutine, Literal
 
 from loguru import logger
-from orjson import dumps
 from pydantic import AwareDatetime
 
 from everwork._internal.backend import AbstractBackend
@@ -49,7 +47,6 @@ class TriggerHandler:
         self._cron_schedule = cron_schedule
         self._shutdown_event = shutdown_event
 
-        self._trigger_hash = hashlib.sha256(dumps(self._trigger.model_dump())).hexdigest()
         self._time_point_generator = _get_time_point_generator(self._trigger, self._cron_schedule)
 
     async def _execute_with_graceful_cancel[T](self, coroutine: Coroutine[Any, Any, T], min_timeout: int = 0) -> T:
@@ -57,13 +54,13 @@ class TriggerHandler:
             return await wait_for_or_cancel(coroutine, self._shutdown_event, min_timeout)
         except OperationCancelled:
             logger.error(
-                f"({self._worker_settings.slug}) ({self._trigger_hash}) "
+                f"({self._worker_settings.id}) '{self._trigger.id}' "
                 f"Обработчик триггера прервал '{coroutine.__name__}'"
             )
             raise
         except Exception as error:
             logger.opt(exception=True).critical(
-                f"({self._worker_settings.slug}) ({self._trigger_hash}) "
+                f"({self._worker_settings.id}) '{self._trigger.id}' "
                 f"Обработчику триггера не удалось выполнить '{coroutine.__name__}': {error}"
             )
             raise
@@ -73,7 +70,7 @@ class TriggerHandler:
             return await self._execute_with_graceful_cancel(
                 self._backend.get_worker_status(
                     self._manager_uuid,
-                    self._worker_settings.slug
+                    self._worker_settings.id
                 ),
                 min_timeout=5
             )
@@ -85,8 +82,8 @@ class TriggerHandler:
             return await self._execute_with_graceful_cancel(
                 self._backend.get_trigger_status(
                     self._manager_uuid,
-                    self._worker_settings.slug,
-                    self._trigger_hash
+                    self._worker_settings.id,
+                    self._trigger.id
                 ),
                 min_timeout=5
             )
@@ -96,7 +93,7 @@ class TriggerHandler:
     async def _get_last_time_point(self) -> AwareDatetime | None:
         with suppress(Exception):
             return await self._execute_with_graceful_cancel(
-                self._backend.get_time_point(self._manager_uuid, self._worker_settings.slug, self._trigger_hash),
+                self._backend.get_time_point(self._manager_uuid, self._worker_settings.id, self._trigger.id),
                 min_timeout=5
             )
 
@@ -105,7 +102,7 @@ class TriggerHandler:
     async def _set_last_time_point(self, time_point: AwareDatetime) -> None:
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
-                self._backend.set_time_point(self._manager_uuid, self._worker_settings.slug, self._trigger_hash, time_point),
+                self._backend.set_time_point(self._manager_uuid, self._worker_settings.id, self._trigger.id, time_point),
                 min_timeout=5
             )
 
@@ -117,7 +114,7 @@ class TriggerHandler:
             )
 
     async def run(self) -> None:
-        logger.debug(f"({self._worker_settings.slug}) ({self._trigger_hash}) Обработчик триггера запущен")
+        logger.debug(f"({self._worker_settings.id}) '{self._trigger.id}' Обработчик триггера запущен")
 
         time_point = await self._get_last_time_point()
 
@@ -166,9 +163,9 @@ class TriggerHandler:
             await self._push_event(
                 Event(
                     source=self._worker_settings.default_source,
-                    kwargs={'time_point': time_point, 'trigger_hash': self._trigger_hash} | self._trigger.kwargs,
+                    kwargs={'time_point': time_point, 'trigger_id': self._trigger.id} | self._trigger.kwargs,
                     expires=datetime.now(UTC) + timedelta(seconds=self._trigger.lifetime) if self._trigger.lifetime else None
                 )
             )
 
-        logger.debug(f"({self._worker_settings.slug}) ({self._trigger_hash}) Обработчик триггера завершил работу")
+        logger.debug(f"({self._worker_settings.id}) '{self._trigger.id}' Обработчик триггера завершил работу")

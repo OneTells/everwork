@@ -104,10 +104,7 @@ class WorkerManager:
             await executor.run()
 
     async def run(self) -> None:
-        logger.debug(
-            f'[{self._process.uuid}] Менеджер воркеров запущен. '
-            f'Состав: {', '.join(worker.settings.slug for worker in self._process.workers)}'
-        )
+        logger.debug(f'[{self._process.uuid}] Менеджер воркеров запущен')
 
         SignalHandler(
             self._shutdown_event,

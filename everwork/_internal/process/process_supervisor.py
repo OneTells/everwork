@@ -16,7 +16,7 @@ from everwork.schemas import Process
 
 
 class StartEvent(BaseModel):
-    worker_slug: str
+    worker_id: str
     end_time: float
 
 
@@ -38,7 +38,7 @@ class ProcessSupervisor:
 
         self._worker_process = WorkerProcess(manager_uuid, process, backend_factory, broker_factory)
 
-    async def _mark_worker_executor_for_reboot(self, worker_slug: str) -> None:
+    async def _mark_worker_executor_for_reboot(self, worker_id: str) -> None:
         try:
             await wait_for_or_cancel(
                 self._backend.mark_worker_executor_for_reboot(self._manager_uuid, self._process.uuid),
@@ -46,18 +46,18 @@ class ProcessSupervisor:
                 max_timeout=5
             )
         except (OperationCancelled, asyncio.TimeoutError):
-            logger.debug(f'[{self._process.uuid}] ({worker_slug}) Супервайзер процесса прервал mark_worker_executor_for_reboot')
+            logger.debug(f'[{self._process.uuid}] ({worker_id}) Супервайзер процесса прервал mark_worker_executor_for_reboot')
         except Exception as error:
             logger.opt(exception=True).critical(
-                f'[{self._process.uuid}] ({worker_slug}) Не удалось установить метку перезапуска исполнителя: {error}'
+                f'[{self._process.uuid}] ({worker_id}) Не удалось установить метку перезапуска исполнителя: {error}'
             )
         else:
-            logger.debug(f'[{self._process.uuid}] ({worker_slug}) Установлена метка о перезапуске процесса')
+            logger.debug(f'[{self._process.uuid}] ({worker_id}) Установлена метка о перезапуске процесса')
 
-    async def _restart_worker_process(self, worker_slug: str) -> None:
-        logger.warning(f'[{self._process.uuid}] ({worker_slug}) Процесс завис и будет перезапущен')
+    async def _restart_worker_process(self, worker_id: str) -> None:
+        logger.warning(f'[{self._process.uuid}] ({worker_id}) Процесс завис и будет перезапущен')
 
-        await self._mark_worker_executor_for_reboot(worker_slug)
+        await self._mark_worker_executor_for_reboot(worker_id)
 
         await self._worker_process.close()
         await self._worker_process.start()
@@ -85,13 +85,10 @@ class ProcessSupervisor:
                     self._worker_process.pipe_reader.recv_bytes()
                     continue
 
-                await self._restart_worker_process(state.worker_slug)
+                await self._restart_worker_process(state.worker_id)
 
     async def run(self) -> None:
-        logger.debug(
-            f'[{self._process.uuid}] Супервайзер процесса запущен. '
-            f'Состав: {', '.join(worker.settings.slug for worker in self._process.workers)}'
-        )
+        logger.debug(f'[{self._process.uuid}] Супервайзер процесса запущен')
 
         await self._worker_process.start()
 

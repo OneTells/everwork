@@ -46,7 +46,7 @@ class WorkerExecutor:
     def _prepare_kwargs(self, worker: AbstractWorker, request: Request) -> dict[str, Any]:
         filtered_kwargs, reserved_kwargs, default_kwargs, extra_kwargs = (
             self._worker_registry
-            .get_resolver(worker.settings.slug)
+            .get_resolver(worker.settings.id)
             .get_kwargs(
                 request.event.kwargs,
                 {
@@ -74,10 +74,10 @@ class WorkerExecutor:
         except Retry:
             return RetryResponse()
         except (KeyboardInterrupt, asyncio.CancelledError) as error:
-            logger.exception(f'[{self._process.uuid}] ({worker.settings.slug}) Выполнение прервано по таймауту: {error}')
+            logger.exception(f'[{self._process.uuid}] ({worker.settings.id}) Выполнение прервано по таймауту: {error}')
             return FailResponse(detail='Выполнение прервано по таймауту', error=error)
         except Exception as error:
-            logger.exception(f'[{self._process.uuid}] ({worker.settings.slug}) Ошибка при обработке события: {error}')
+            logger.exception(f'[{self._process.uuid}] ({worker.settings.id}) Ошибка при обработке события: {error}')
             return FailResponse(detail='Ошибка при обработке события', error=error)
         finally:
             self._is_executing_event.clear()
@@ -88,21 +88,21 @@ class WorkerExecutor:
     async def _run_execute_loop(self) -> None:
         while True:
             try:
-                worker_slug, request = await self._receiver.get_request()
+                worker_id, request = await self._receiver.get_request()
             except ChannelClosed:
                 break
 
-            worker = self._worker_registry.get_worker(worker_slug)
+            worker = self._worker_registry.get_worker(worker_id)
 
             try:
                 kwargs = self._prepare_kwargs(worker, request)
             except TypeError as error:
-                logger.exception(f'[{self._process.uuid}] ({worker.settings.slug}) {error}')
+                logger.exception(f'[{self._process.uuid}] ({worker.settings.id}) {error}')
 
                 response = FailResponse(detail='Не удалось подготовить аргументы', error=error)
                 self._receiver.send_response(response)
 
-                del worker_slug, request, worker, response
+                del worker_id, request, worker, response
                 return
 
             response = await self._execute(worker, kwargs)
@@ -110,13 +110,10 @@ class WorkerExecutor:
 
             self._storage.recreate()
 
-            del worker_slug, request, worker, kwargs, response
+            del worker_id, request, worker, kwargs, response
 
     async def run(self) -> None:
-        logger.debug(
-            f'[{self._process.uuid}] Исполнитель воркеров запущен. '
-            f'Состав: {', '.join(worker.settings.slug for worker in self._process.workers)}'
-        )
+        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров запущен')
 
         await self._startup()
         logger.debug(f'[{self._process.uuid}] Исполнитель воркеров выполнил startup')
