@@ -94,20 +94,21 @@ def validate_processes(processes: list[Process]) -> list[Process]:
 
 
 def get_structure(processes: list[Process]) -> Any:
-    return {
-        p.uuid: [
-            {
-                'id': w.settings.id,
-                'title': w.settings.title,
-                'triggers': [
-                    {'id': trigger.id, 'title': trigger.title}
-                    for trigger in w.settings.triggers
-                ]
-            }
-            for w in p.workers
-        ]
-        for p in processes
-    }
+    return [
+        {
+            'uuid': p.uuid,
+            'workers': [
+                {
+                    'id': w.settings.id,
+                    'title': w.settings.title,
+                    'triggers': [
+                        {'id': trigger.id, 'title': trigger.title}
+                        for trigger in w.settings.triggers
+                    ]
+                } for w in p.workers
+            ]
+        } for p in processes
+    ]
 
 
 class SignalHandler:
