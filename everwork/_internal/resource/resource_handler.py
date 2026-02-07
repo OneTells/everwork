@@ -185,7 +185,7 @@ class ResourceHandler:
                 break
 
             if request.event.expires is not None and request.event.expires < datetime.now(UTC):
-                response = RejectResponse(detail='Ивент отклонён из-за истёкшего срока действия')
+                response = RejectResponse()
                 await self._reject(request, response)
 
                 del request, response

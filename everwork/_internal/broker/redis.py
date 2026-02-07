@@ -2,7 +2,6 @@ import traceback
 from itertools import chain
 from typing import Iterable
 
-from loguru import logger
 from orjson import dumps, loads
 from pydantic import RedisDsn
 from pydantic_core import to_jsonable_python
@@ -13,7 +12,6 @@ from redis.exceptions import NoScriptError
 
 from everwork._internal.broker.base import AbstractBroker
 from everwork._internal.schemas import AckResponse, FailResponse, RejectResponse, Request, RetryResponse
-from everwork._internal.utils.lazy_wrapper import lazy_init
 from everwork.schemas import Event, WorkerSettings
 
 
@@ -136,20 +134,7 @@ class RedisBroker(AbstractBroker):
         if self._scripts.get('reject') is None:
             await self._load_reject_script()
 
-        keys_and_args = [
-            request.event.source,
-            worker_slug,
-            request.event_id,
-            dumps(
-                {
-                    'worker_slug': worker_slug,
-                    'request': request.model_dump(mode='json'),
-                    'response': {
-                        'detail': response.detail,
-                    }
-                }
-            )
-        ]
+        keys_and_args = [request.event.source, worker_slug, request.event_id]
 
         try:
             await self._redis.evalsha(self._scripts['reject'], 1, *keys_and_args)
@@ -197,7 +182,6 @@ class RedisBroker(AbstractBroker):
     async def _load_reject_script(self) -> None:
         self._scripts['reject'] = await self._redis.script_load(
             """
-            redis.call('RPUSH', 'everwork:rejects', ARGV[3])
             redis.call('XACK', KEYS[1], ARGV[1], ARGV[2])
             """
         )

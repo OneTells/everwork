@@ -27,8 +27,6 @@ class FailResponse(Response):
 class RejectResponse(Response):
     status: Literal['reject'] = 'reject'
 
-    detail: str
-
 
 class RetryResponse(Response):
     status: Literal['retry'] = 'retry'

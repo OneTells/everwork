@@ -6,10 +6,14 @@ class TaskError(EverworkError):
     ...
 
 
-class Reject(TaskError):
+class Fail(TaskError):
 
     def __init__(self, detail: str) -> None:
         self.detail = detail
+
+
+class Reject(TaskError):
+    ...
 
 
 class Retry(TaskError):

@@ -8,7 +8,7 @@ from everwork._internal.utils.event_storage import HybridStorage
 from everwork._internal.worker.utils.executor_channel import ChannelClosed, ExecutorReceiver
 from everwork._internal.worker.utils.heartbeat_notifier import HeartbeatNotifier
 from everwork._internal.worker.worker_registry import WorkerRegistry
-from everwork.exceptions import Reject, Retry
+from everwork.exceptions import Fail, Reject, Retry
 from everwork.schemas import Process
 from everwork.utils import EventCollector
 from everwork.workers import AbstractWorker
@@ -67,10 +67,12 @@ class WorkerExecutor:
         try:
             self._is_executing_event.set()
             await worker.__call__(**kwargs)
+        except Fail as error:
+            return FailResponse(detail=error.detail, error=error)
+        except Reject:
+            return RejectResponse()
         except Retry:
             return RetryResponse()
-        except Reject as error:
-            return RejectResponse(detail=error.detail)
         except (KeyboardInterrupt, asyncio.CancelledError) as error:
             logger.exception(f'[{self._process.uuid}] ({worker.settings.slug}) Выполнение прервано по таймауту: {error}')
             return FailResponse(detail='Выполнение прервано по таймауту', error=error)
