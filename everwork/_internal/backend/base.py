@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Literal, Self
+from typing import Any, Literal, Self, Sequence
 
 from pydantic import AwareDatetime
 
@@ -26,11 +26,11 @@ class AbstractBackend(ABC):
     # Создание / удаление структуры
 
     @abstractmethod
-    async def build(self, manager_uuid: str, processes: list[Process]) -> None:
+    async def build(self, manager_uuid: str, processes: Sequence[Process]) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    async def cleanup(self, manager_uuid: str, processes: list[Process]) -> None:
+    async def cleanup(self, manager_uuid: str, processes: Sequence[Process]) -> None:
         raise NotImplementedError
 
     # Воркер

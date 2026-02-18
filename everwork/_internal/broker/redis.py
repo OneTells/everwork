@@ -1,6 +1,6 @@
 import traceback
 from itertools import chain
-from typing import Iterable
+from typing import Sequence
 
 from orjson import dumps, loads
 from pydantic import RedisDsn
@@ -13,7 +13,7 @@ from redis.exceptions import NoScriptError
 from everwork._internal.broker.base import AbstractBroker
 from everwork._internal.schemas import AckResponse, FailResponse, RejectResponse, Request, RetryResponse
 from everwork._internal.utils.lazy_wrapper import lazy_init
-from everwork.schemas import Event, WorkerSettings
+from everwork.schemas import Event, Process
 
 
 @lazy_init
@@ -35,11 +35,12 @@ class RedisBroker(AbstractBroker):
     async def close(self) -> None:
         await self._redis.aclose()
 
-    async def build(self, worker_settings: list[WorkerSettings]) -> None:
+    async def build(self, processes: Sequence[Process]) -> None:
         stream_groups = {
-            (source, settings.id)
-            for settings in worker_settings
-            for source in settings.sources
+            (source, worker.settings.id)
+            for process in processes
+            for worker in process.workers
+            for source in worker.settings.sources
         }
 
         existing_groups: dict[str, set[str]] = {}
@@ -63,10 +64,10 @@ class RedisBroker(AbstractBroker):
 
             await pipe.execute()
 
-    async def cleanup(self, worker_settings: list[WorkerSettings]) -> None:
+    async def cleanup(self, processes: Sequence[Process]) -> None:
         return
 
-    async def fetch(self, process_uuid: str, worker_id: str, sources: Iterable[str]) -> Request:
+    async def fetch(self, process_uuid: str, worker_id: str, sources: Sequence[str]) -> Request:
         data = await self._redis.xreadgroup(
             groupname=worker_id,
             consumername=process_uuid,
@@ -75,11 +76,11 @@ class RedisBroker(AbstractBroker):
             block=0
         )
 
-        event_id, event_kwargs = list(data.items())[0][1][0][0]
+        event_id, event_kwargs = tuple(data.items())[0][1][0][0]
 
         return Request(event_id=event_id, event=Event.model_validate(loads(event_kwargs['payload'])))
 
-    async def push(self, event: Event | list[Event]) -> None:
+    async def push(self, event: Event | Sequence[Event]) -> None:
         events = [event] if isinstance(event, Event) else event
 
         if not events:
@@ -88,7 +89,7 @@ class RedisBroker(AbstractBroker):
         if self._scripts.get('push') is None:
             await self._load_push_script()
 
-        args = list(chain.from_iterable((event.source, dumps(to_jsonable_python(event))) for event in events))
+        args = tuple(chain.from_iterable((event.source, dumps(to_jsonable_python(event))) for event in events))
 
         try:
             await self._redis.evalsha(self._scripts['push'], 0, *args)

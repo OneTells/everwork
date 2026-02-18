@@ -1,6 +1,6 @@
 import hashlib
 from functools import cached_property
-from typing import Annotated, final, Self
+from typing import Annotated, final, Self, Sequence
 
 from pydantic import BaseModel, computed_field, Field, model_validator
 
@@ -27,7 +27,7 @@ class WorkerSettings(BaseModel):
 
     event_settings: EventSettings = Field(default_factory=EventSettings)
 
-    triggers: list[Trigger] = Field(default_factory=list)
+    triggers: Sequence[Trigger] = Field(default_factory=tuple)
 
     @computed_field
     @cached_property

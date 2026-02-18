@@ -1,4 +1,4 @@
-from typing import Any, final
+from typing import Any, final, Sequence
 
 from pydantic import AwareDatetime
 
@@ -28,5 +28,5 @@ class EventCollector:
     def add_event(self, event: Event) -> None:
         self._storage.write(event)
 
-    def add_events(self, events: list[Event]) -> None:
+    def add_events(self, events: Sequence[Event]) -> None:
         self._storage.write(events)

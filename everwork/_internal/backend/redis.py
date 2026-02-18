@@ -1,5 +1,5 @@
 from datetime import datetime, UTC
-from typing import Literal
+from typing import Literal, Sequence
 
 from orjson import dumps
 from pydantic import AwareDatetime, RedisDsn
@@ -30,7 +30,7 @@ class RedisBackend(AbstractBackend):
     async def close(self) -> None:
         await self._redis.aclose()
 
-    async def build(self, manager_uuid: str, processes: list[Process]) -> None:
+    async def build(self, manager_uuid: str, processes: Sequence[Process]) -> None:
         async for key in self._redis.scan_iter(match=f'worker_executor:{manager_uuid}:*', count=100):
             await self._redis.delete(key)
 
@@ -72,7 +72,7 @@ class RedisBackend(AbstractBackend):
 
         await self._redis.sadd('managers', manager_uuid)
 
-    async def cleanup(self, manager_uuid: str, processes: list[Process]) -> None:
+    async def cleanup(self, manager_uuid: str, processes: Sequence[Process]) -> None:
         await self._redis.mset({f'manager:{manager_uuid}:status': 'off'})
 
     async def get_worker_status(self, manager_uuid: str, worker_id: str) -> Literal['on', 'off']:

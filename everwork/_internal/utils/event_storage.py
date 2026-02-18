@@ -1,6 +1,6 @@
 import tempfile
 from abc import ABC, abstractmethod
-from typing import Any, Iterable, Iterator, Self
+from typing import Any, Iterator, Self, Sequence
 
 from orjson import dumps, loads
 
@@ -21,7 +21,7 @@ class AbstractReader(ABC):
 class AbstractStorage(ABC):
 
     @abstractmethod
-    def write(self, event: Event | list[Event]) -> None:
+    def write(self, event: Event | Sequence[Event]) -> None:
         raise NotImplementedError
 
     @abstractmethod
@@ -61,7 +61,7 @@ class MemoryStorage(AbstractStorage):
     def __init__(self) -> None:
         self._events: list[Event] = []
 
-    def write(self, event: Event | list[Event]) -> None:
+    def write(self, event: Event | Sequence[Event]) -> None:
         if isinstance(event, Event):
             self._events.append(event)
         else:
@@ -105,8 +105,8 @@ class FileStorage(AbstractStorage):
     def __init__(self) -> None:
         self._file = tempfile.TemporaryFile(mode="w+b")
 
-    def write(self, event: Event | Iterable[Event]) -> None:
-        events = [event] if isinstance(event, Event) else event
+    def write(self, event: Event | Sequence[Event]) -> None:
+        events = (event,) if isinstance(event, Event) else event
 
         if not events:
             return
@@ -143,8 +143,8 @@ class HybridStorage(AbstractStorage):
         self._storage.close()
         self._storage = file_storage
 
-    def write(self, event: Event | list[Event]) -> None:
-        events = [event] if isinstance(event, Event) else event
+    def write(self, event: Event | Sequence[Event]) -> None:
+        events = (event,) if isinstance(event, Event) else event
 
         if not events:
             return

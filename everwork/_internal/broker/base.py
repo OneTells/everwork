@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import Any, Iterable, Self
+from typing import Any, Self, Sequence
 
 from everwork._internal.schemas import AckResponse, FailResponse, RejectResponse, Request, RetryResponse
-from everwork.schemas import Event, WorkerSettings
+from everwork.schemas import Event, Process
 
 
 class AbstractBroker(ABC):
@@ -25,21 +25,21 @@ class AbstractBroker(ABC):
     # Создание / удаление структуры
 
     @abstractmethod
-    async def build(self, worker_settings: list[WorkerSettings]) -> None:
+    async def build(self, processes: Sequence[Process]) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    async def cleanup(self, worker_settings: list[WorkerSettings]) -> None:
+    async def cleanup(self, processes: Sequence[Process]) -> None:
         raise NotImplementedError
 
     # Ивент
 
     @abstractmethod
-    async def fetch(self, process_uuid: str, worker_id: str, sources: Iterable[str]) -> Request:
+    async def fetch(self, process_uuid: str, worker_id: str, sources: Sequence[str]) -> Request:
         raise NotImplementedError
 
     @abstractmethod
-    async def push(self, event: Event | list[Event]) -> None:
+    async def push(self, event: Event | Sequence[Event]) -> None:
         raise NotImplementedError
 
     # Обработка ивента

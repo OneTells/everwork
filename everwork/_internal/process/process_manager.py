@@ -3,7 +3,7 @@ import signal
 from asyncio import Event, get_running_loop
 from multiprocessing import get_start_method
 from platform import system
-from typing import Annotated, Any, Callable, final
+from typing import Annotated, Any, Callable, final, Sequence
 from uuid import UUID, uuid4
 
 from loguru import logger
@@ -42,7 +42,7 @@ def check_environment() -> bool:
     return True
 
 
-def validate_worker_titles(processes: list[ProcessGroup | Process]) -> list[ProcessGroup | Process]:
+def validate_worker_titles(processes: Sequence[ProcessGroup | Process]) -> Sequence[ProcessGroup | Process]:
     workers: dict[str, type[AbstractWorker]] = dict()
 
     for item in processes:
@@ -59,7 +59,7 @@ def validate_worker_titles(processes: list[ProcessGroup | Process]) -> list[Proc
     return processes
 
 
-def expand_groups(processes: list[ProcessGroup | Process]) -> list[Process]:
+def expand_groups(processes: Sequence[ProcessGroup | Process]) -> Sequence[Process]:
     result: list[Process] = []
 
     for item in processes:
@@ -73,7 +73,7 @@ def expand_groups(processes: list[ProcessGroup | Process]) -> list[Process]:
     return result
 
 
-def validate_processes(processes: list[Process]) -> list[Process]:
+def validate_processes(processes: Sequence[Process]) -> Sequence[Process]:
     result: list[Process] = []
     uuids: set[str] = set()
 
@@ -93,7 +93,7 @@ def validate_processes(processes: list[Process]) -> list[Process]:
     return result
 
 
-def get_structure(processes: list[Process]) -> Any:
+def get_structure(processes: Sequence[Process]) -> Any:
     return [
         {
             'uuid': p.uuid,
@@ -137,7 +137,7 @@ class ProcessManager:
         *,
         uuid: Annotated[str, AfterValidator(lambda x: UUID(x) and x)],
         processes: Annotated[
-            list[ProcessGroup | Process],
+            Sequence[ProcessGroup | Process],
             AfterValidator(validate_worker_titles),
             AfterValidator(expand_groups),
             AfterValidator(validate_processes)
@@ -147,7 +147,7 @@ class ProcessManager:
         cron_schedule: type[AbstractCronSchedule] = CronSchedule
     ) -> None:
         self._manager_uuid = uuid
-        self._processes: list[Process] = processes
+        self._processes: Sequence[Process] = tuple(processes)
         self._backend_factory = backend
         self._broker_factory = broker
         self._cron_schedule = cron_schedule
@@ -158,7 +158,7 @@ class ProcessManager:
             target=lambda **kwargs: TriggerManager(**kwargs).run(),
             kwargs={
                 'manager_uuid': self._manager_uuid,
-                'worker_settings': list({w.settings.id: w.settings for p in self._processes for w in p.workers}.values()),
+                'processes': self._processes,
                 'backend_factory': self._backend_factory,
                 'broker_factory': self._broker_factory,
                 'cron_schedule': self._cron_schedule
@@ -179,11 +179,9 @@ class ProcessManager:
             logger.opt(exception=True).critical(f'Не удалось построить backend: {error}')
             raise ValueError
 
-        worker_settings = list({w.settings.id: w.settings for p in self._processes for w in p.workers}.values())
-
         try:
             await wait_for_or_cancel(
-                broker.build(worker_settings),
+                broker.build(self._processes),
                 self._shutdown_event,
                 min_timeout=5
             )
@@ -212,11 +210,9 @@ class ProcessManager:
             logger.opt(exception=True).critical(f'Не удалось очистить backend: {error}')
             is_error = True
 
-        worker_settings = list({w.settings.id: w.settings for p in self._processes for w in p.workers}.values())
-
         try:
             await wait_for_or_cancel(
-                broker.cleanup(worker_settings),
+                broker.cleanup(self._processes),
                 self._shutdown_event,
                 min_timeout=5
             )
