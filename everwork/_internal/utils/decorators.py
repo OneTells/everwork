@@ -9,10 +9,6 @@ P = ParamSpec('P')
 A = Callable[P, Coroutine[Any, Any, T]]
 
 
-class CacheSettings(TypedDict):
-    ttl: Required[float | None]
-
-
 #
 # def limit_in_time(
 #     *,
@@ -51,6 +47,9 @@ class CacheSettings(TypedDict):
 #         return wrapper
 #
 #     return decorator
+
+class CacheSettings(TypedDict):
+    ttl: Required[float | None]
 
 
 def ttl_cache(function: A) -> A:
