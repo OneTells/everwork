@@ -3,8 +3,6 @@ import time
 from functools import wraps
 from typing import Any, Callable, Coroutine, ParamSpec, Required, TypedDict, TypeVar
 
-from loguru import logger
-
 T = TypeVar('T')
 P = ParamSpec('P')
 

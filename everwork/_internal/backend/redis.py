@@ -119,7 +119,7 @@ class RedisBackend(AbstractBackend):
 
     @ttl_cache
     async def get_trigger_status(self, worker_id: str, trigger_id: str, **kwargs: Unpack[CacheSettings]) -> Literal['on', 'off']:
-        logger.debug(f'1')
+        print(f'1')
         return await self._redis.get(f'trigger:{worker_id}:{trigger_id}:status')
 
     async def get_time_point(self, worker_id: str, trigger_id: str) -> AwareDatetime | None:
