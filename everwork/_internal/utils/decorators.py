@@ -70,6 +70,7 @@ def ttl_cache(function: A) -> A:
             if key in cache:
                 result, timestamp = cache[key]
 
+                print(f'222 {time.monotonic(), timestamp}')
                 if (time.monotonic() - timestamp) < ttl:
                     return result
 
