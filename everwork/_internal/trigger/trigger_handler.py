@@ -54,13 +54,13 @@ class TriggerHandler:
             return await wait_for_or_cancel(coroutine, self._shutdown_event, min_timeout)
         except OperationCancelled:
             logger.error(
-                f"({self._worker_settings.id}) '{self._trigger.id}' "
+                f"({self._worker_settings.id}) |{self._trigger.id}| "
                 f"Обработчик триггера прервал '{coroutine.__name__}'"
             )
             raise
         except Exception as error:
             logger.opt(exception=True).critical(
-                f"({self._worker_settings.id}) '{self._trigger.id}' "
+                f"({self._worker_settings.id}) |{self._trigger.id}| "
                 f"Обработчику триггера не удалось выполнить '{coroutine.__name__}': {error}"
             )
             raise
@@ -114,58 +114,57 @@ class TriggerHandler:
             )
 
     async def run(self) -> None:
-        logger.debug(f"({self._worker_settings.id}) '{self._trigger.id}' Обработчик триггера запущен")
+        logger.debug(f"({self._worker_settings.id}) |{self._trigger.id}| Обработчик триггера запущен")
 
-        time_point = await self._get_last_time_point()
+        with suppress(OperationCancelled):
+            time_point = await self._get_last_time_point()
 
-        if time_point is None:
-            time_point = datetime.now(UTC)
+            if time_point is None:
+                time_point = datetime.now(UTC)
 
-        while not self._shutdown_event.is_set():
-            if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
-                with suppress(OperationCancelled):
+            while not self._shutdown_event.is_set():
+                logger.debug(f'1')
+                if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
+                    logger.debug(f'1.1')
                     await wait_for_or_cancel(
                         asyncio.sleep(self._worker_settings.status_check_interval),
                         self._shutdown_event
                     )
 
-                continue
-
-            if self._shutdown_event.is_set() or (await self._get_trigger_status() == 'off'):
-                with suppress(OperationCancelled):
+                    continue
+                logger.debug(f'2')
+                if self._shutdown_event.is_set() or (await self._get_trigger_status() == 'off'):
+                    logger.debug(f'2.1')
                     await wait_for_or_cancel(
                         asyncio.sleep(self._trigger.status_check_interval),
                         self._shutdown_event
                     )
 
-                continue
+                    continue
+                logger.debug(f'3')
+                time_point = self._time_point_generator(time_point)
 
-            time_point = self._time_point_generator(time_point)
-
-            if time_point >= datetime.now(UTC):
-                try:
+                if time_point >= datetime.now(UTC):
                     await wait_for_or_cancel(
                         asyncio.sleep((time_point - datetime.now(UTC)).total_seconds()),
                         self._shutdown_event
                     )
-                except OperationCancelled:
+
+                    if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
+                        continue
+
+                    if self._shutdown_event.is_set() or (await self._get_trigger_status() == 'off'):
+                        continue
+                elif self._trigger.is_catchup:
                     continue
 
-                if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
-                    continue
-
-                if self._shutdown_event.is_set() or (await self._get_trigger_status() == 'off'):
-                    continue
-            elif self._trigger.is_catchup:
-                continue
-
-            await self._set_last_time_point(time_point)
-            await self._push_event(
-                Event(
-                    source=self._worker_settings.default_source,
-                    kwargs={'time_point': time_point, 'trigger_id': self._trigger.id} | self._trigger.kwargs,
-                    expires=datetime.now(UTC) + timedelta(seconds=self._trigger.lifetime) if self._trigger.lifetime else None
+                await self._set_last_time_point(time_point)
+                await self._push_event(
+                    Event(
+                        source=self._worker_settings.default_source,
+                        kwargs={'time_point': time_point, 'trigger_id': self._trigger.id} | self._trigger.kwargs,
+                        expires=datetime.now(UTC) + timedelta(seconds=self._trigger.lifetime) if self._trigger.lifetime else None
+                    )
                 )
-            )
 
-        logger.debug(f"({self._worker_settings.id}) '{self._trigger.id}' Обработчик триггера завершил работу")
+        logger.debug(f"({self._worker_settings.id}) |{self._trigger.id}| Обработчик триггера завершил работу")
