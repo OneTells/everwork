@@ -60,7 +60,7 @@ def ttl_cache(function: A) -> A:
     @wraps(function)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
         ttl = kwargs.pop('ttl', None)
-        print(f'111 {ttl}')
+
         if ttl is None:
             return await function(*args, **kwargs)
 
@@ -70,7 +70,6 @@ def ttl_cache(function: A) -> A:
             if key in cache:
                 result, timestamp = cache[key]
 
-                print(f'222 {time.monotonic(), timestamp}')
                 if (time.monotonic() - timestamp) < ttl:
                     return result
 

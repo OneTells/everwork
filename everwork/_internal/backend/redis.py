@@ -1,7 +1,6 @@
 from datetime import datetime, UTC
 from typing import Literal, Sequence, Unpack
 
-from loguru import logger
 from orjson import dumps
 from pydantic import AwareDatetime, RedisDsn
 from pydantic_core import to_jsonable_python
@@ -119,7 +118,6 @@ class RedisBackend(AbstractBackend):
 
     @ttl_cache
     async def get_trigger_status(self, worker_id: str, trigger_id: str, **kwargs: Unpack[CacheSettings]) -> Literal['on', 'off']:
-        print(f'1')
         return await self._redis.get(f'trigger:{worker_id}:{trigger_id}:status')
 
     async def get_time_point(self, worker_id: str, trigger_id: str) -> AwareDatetime | None:
