@@ -1,12 +1,16 @@
 import asyncio
 import time
 from functools import wraps
-from typing import Any, Callable, Coroutine, ParamSpec, TypeVar
+from typing import Any, Callable, Coroutine, ParamSpec, Required, TypedDict, TypeVar
 
 T = TypeVar('T')
 P = ParamSpec('P')
 
 A = Callable[P, Coroutine[Any, Any, T]]
+
+
+class CacheSettings(TypedDict):
+    ttl: Required[float | None]
 
 
 #

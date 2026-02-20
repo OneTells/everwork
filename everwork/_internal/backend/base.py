@@ -1,13 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import Any, Literal, Required, Self, Sequence, TypedDict, Unpack
+from typing import Any, Literal, Self, Sequence, Unpack
 
 from pydantic import AwareDatetime
 
+from everwork._internal.utils.decorators import CacheSettings
 from everwork.schemas import Process
-
-
-class CacheSettings(TypedDict):
-    ttl: Required[float | None]
 
 
 class AbstractBackend(ABC):

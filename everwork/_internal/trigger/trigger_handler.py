@@ -67,19 +67,13 @@ class TriggerHandler:
 
     async def _get_worker_status(self) -> Literal['on', 'off']:
         with suppress(Exception):
-            try:
-                return await self._execute_with_graceful_cancel(
-                    self._backend.get_worker_status(
-                        self._worker_settings.id,
-                        ttl=self._worker_settings.status_cache_ttl
-                    ),
-                    min_timeout=5
-                )
-            except Exception:
-                logger.opt(exception=True).critical(
-                    f"({self._worker_settings.id}) |{self._trigger.id}| "
-                    f"Обработчику триггера не удалось получить статус работы"
-                )
+            return await self._execute_with_graceful_cancel(
+                self._backend.get_worker_status(
+                    self._worker_settings.id,
+                    ttl=self._worker_settings.status_cache_ttl
+                ),
+                min_timeout=5
+            )
 
         return 'off'
 
@@ -129,25 +123,23 @@ class TriggerHandler:
                 time_point = datetime.now(UTC)
 
             while not self._shutdown_event.is_set():
-                logger.debug(f'1')
                 if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
-                    logger.debug(f'1.1')
+
                     await wait_for_or_cancel(
                         asyncio.sleep(self._worker_settings.status_check_interval),
                         self._shutdown_event
                     )
 
                     continue
-                logger.debug(f'2')
+
                 if self._shutdown_event.is_set() or (await self._get_trigger_status() == 'off'):
-                    logger.debug(f'2.1')
                     await wait_for_or_cancel(
                         asyncio.sleep(self._trigger.status_check_interval),
                         self._shutdown_event
                     )
 
                     continue
-                logger.debug(f'3')
+
                 time_point = self._time_point_generator(time_point)
 
                 if time_point >= datetime.now(UTC):
