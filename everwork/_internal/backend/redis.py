@@ -59,7 +59,7 @@ class RedisBackend(AbstractBackend):
             | {key: 'on' for key, value in zip(trigger_statuses_keys, trigger_statuses) if value is None}
             | {f'worker_executor:{manager_uuid}:{p.uuid}:status': worker_executor_status for p in processes}
             | {
-                f'manager:{manager_uuid}': dumps(
+                f'manager:{manager_uuid}:structure': dumps(
                     {
                         'processes': to_jsonable_python(
                             [{**p.model_dump(), 'workers': [w.settings for w in p.workers]} for p in processes]
@@ -71,7 +71,7 @@ class RedisBackend(AbstractBackend):
             | {f'manager:{manager_uuid}:status': 'on'}
         )
 
-        await self._redis.sadd('managers', manager_uuid)
+        await self._redis.sadd('managers:structure', manager_uuid)
 
     async def cleanup(self, manager_uuid: str, processes: Sequence[Process]) -> None:
         await self._redis.mset({f'manager:{manager_uuid}:status': 'off'})
