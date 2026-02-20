@@ -69,8 +69,8 @@ class TriggerHandler:
         with suppress(Exception):
             return await self._execute_with_graceful_cancel(
                 self._backend.get_worker_status(
-                    self._manager_uuid,
-                    self._worker_settings.id
+                    self._worker_settings.id,
+                    ttl=self._worker_settings.status_cache_ttl
                 ),
                 min_timeout=5
             )
@@ -81,9 +81,9 @@ class TriggerHandler:
         with suppress(Exception):
             return await self._execute_with_graceful_cancel(
                 self._backend.get_trigger_status(
-                    self._manager_uuid,
                     self._worker_settings.id,
-                    self._trigger.id
+                    self._trigger.id,
+                    ttl=self._trigger.status_cache_ttl
                 ),
                 min_timeout=5
             )
@@ -93,7 +93,7 @@ class TriggerHandler:
     async def _get_last_time_point(self) -> AwareDatetime | None:
         with suppress(Exception):
             return await self._execute_with_graceful_cancel(
-                self._backend.get_time_point(self._manager_uuid, self._worker_settings.id, self._trigger.id),
+                self._backend.get_time_point(self._worker_settings.id, self._trigger.id),
                 min_timeout=5
             )
 
@@ -102,7 +102,7 @@ class TriggerHandler:
     async def _set_last_time_point(self, time_point: AwareDatetime) -> None:
         with suppress(Exception):
             await self._execute_with_graceful_cancel(
-                self._backend.set_time_point(self._manager_uuid, self._worker_settings.id, self._trigger.id, time_point),
+                self._backend.set_time_point(self._worker_settings.id, self._trigger.id, time_point),
                 min_timeout=5
             )
 

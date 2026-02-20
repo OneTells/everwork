@@ -78,8 +78,8 @@ class ResourceHandler:
         with suppress(Exception):
             return await self._execute_with_graceful_cancel(
                 self._backend.get_worker_status(
-                    self._manager_uuid,
-                    self._worker.settings.id
+                    self._worker.settings.id,
+                    ttl=self._worker.settings.status_cache_ttl
                 ),
                 min_timeout=5
             )
@@ -171,11 +171,10 @@ class ResourceHandler:
     async def _run_event_processing_loop(self) -> None:
         while not self._shutdown_event.is_set():
             if await self._get_worker_status() == 'off':
-                with suppress(OperationCancelled):
-                    await wait_for_or_cancel(
-                        asyncio.sleep(self._worker.settings.status_check_interval),
-                        self._shutdown_event
-                    )
+                await wait_for_or_cancel(
+                    asyncio.sleep(self._worker.settings.status_check_interval),
+                    self._shutdown_event
+                )
 
                 continue
 
@@ -230,6 +229,7 @@ class ResourceHandler:
     async def run(self) -> None:
         logger.debug(f'[{self._process.uuid}] ({self._worker.settings.id}) Обработчик ресурсов запущен')
 
-        await self._run_event_processing_loop()
+        with suppress(OperationCancelled):
+            await self._run_event_processing_loop()
 
         logger.debug(f'[{self._process.uuid}] ({self._worker.settings.id}) Обработчик ресурсов завершил работу')

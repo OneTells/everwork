@@ -9,6 +9,7 @@ from redis.asyncio.retry import Retry
 from redis.backoff import ConstantBackoff
 
 from everwork._internal.backend.base import AbstractBackend
+from everwork._internal.utils.decorators import ttl_cache
 from everwork._internal.utils.lazy_wrapper import lazy_init
 from everwork.schemas import Process
 
@@ -75,6 +76,7 @@ class RedisBackend(AbstractBackend):
     async def cleanup(self, manager_uuid: str, processes: Sequence[Process]) -> None:
         await self._redis.mset({f'manager:{manager_uuid}:status': 'off'})
 
+    @ttl_cache
     async def get_worker_status(self, worker_id: str) -> Literal['on', 'off']:
         return await self._redis.get(f'worker:{worker_id}:status')
 
@@ -114,6 +116,7 @@ class RedisBackend(AbstractBackend):
             )
         )
 
+    @ttl_cache
     async def get_trigger_status(self, worker_id: str, trigger_id: str) -> Literal['on', 'off']:
         return await self._redis.get(f'trigger:{worker_id}:{trigger_id}:status')
 

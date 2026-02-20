@@ -1,9 +1,13 @@
 from abc import ABC, abstractmethod
-from typing import Any, Literal, Self, Sequence
+from typing import Any, Literal, Required, Self, Sequence, TypedDict, Unpack
 
 from pydantic import AwareDatetime
 
 from everwork.schemas import Process
+
+
+class CacheSettings(TypedDict):
+    ttl: Required[float | None]
 
 
 class AbstractBackend(ABC):
@@ -36,7 +40,7 @@ class AbstractBackend(ABC):
     # Воркер
 
     @abstractmethod
-    async def get_worker_status(self, worker_id: str) -> Literal['on', 'off']:
+    async def get_worker_status(self, worker_id: str, **kwargs: Unpack[CacheSettings]) -> Literal['on', 'off']:
         raise NotImplementedError
 
     # Исполнитель воркера
@@ -56,7 +60,7 @@ class AbstractBackend(ABC):
     # Триггеры
 
     @abstractmethod
-    async def get_trigger_status(self, worker_id: str, trigger_id: str) -> Literal['on', 'off']:
+    async def get_trigger_status(self, worker_id: str, trigger_id: str, **kwargs: Unpack[CacheSettings]) -> Literal['on', 'off']:
         raise NotImplementedError
 
     @abstractmethod
