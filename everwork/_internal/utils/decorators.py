@@ -3,6 +3,8 @@ import time
 from functools import wraps
 from typing import Any, Callable, Coroutine, ParamSpec, Required, TypedDict, TypeVar
 
+from loguru import logger
+
 T = TypeVar('T')
 P = ParamSpec('P')
 
@@ -60,6 +62,7 @@ def ttl_cache(function: A) -> A:
     @wraps(function)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
         ttl = kwargs.pop('ttl', None)
+        logger.debug(f'111 {ttl}')
 
         if ttl is None:
             return await function(*args, **kwargs)
