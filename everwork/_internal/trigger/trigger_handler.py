@@ -67,13 +67,19 @@ class TriggerHandler:
 
     async def _get_worker_status(self) -> Literal['on', 'off']:
         with suppress(Exception):
-            return await self._execute_with_graceful_cancel(
-                self._backend.get_worker_status(
-                    self._worker_settings.id,
-                    ttl=self._worker_settings.status_cache_ttl
-                ),
-                min_timeout=5
-            )
+            try:
+                return await self._execute_with_graceful_cancel(
+                    self._backend.get_worker_status(
+                        self._worker_settings.id,
+                        ttl=self._worker_settings.status_cache_ttl
+                    ),
+                    min_timeout=5
+                )
+            except Exception:
+                logger.opt(exception=True).critical(
+                    f"({self._worker_settings.id}) |{self._trigger.id}| "
+                    f"Обработчику триггера не удалось получить статус работы"
+                )
 
         return 'off'
 
