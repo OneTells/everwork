@@ -47,3 +47,10 @@ class WorkerSettings(BaseModel):
             self.sources.add(self.default_source)
 
         return self
+
+    @model_validator(mode='after')
+    def _validate_triggers(self) -> Self:
+        if len({t.title for t in self.triggers}) != len([t.title for t in self.triggers]):
+            raise ValueError('Все триггеры воркера должны быть уникальными')
+
+        return self
