@@ -75,7 +75,7 @@ class RedisBackend(AbstractBackend):
     async def cleanup(self, manager_uuid: str, processes: Sequence[Process]) -> None:
         await self._redis.mset({f'manager:{manager_uuid}:status': 'off'})
 
-    async def get_worker_status(self, manager_uuid: str, worker_id: str) -> Literal['on', 'off']:
+    async def get_worker_status(self, worker_id: str) -> Literal['on', 'off']:
         return await self._redis.get(f'worker:{worker_id}:status')
 
     async def mark_worker_executor_as_busy(self, manager_uuid: str, process_uuid: str, worker_id: str, event_id: str) -> None:
@@ -114,12 +114,12 @@ class RedisBackend(AbstractBackend):
             )
         )
 
-    async def get_trigger_status(self, manager_uuid: str, worker_id: str, trigger_hash: str) -> Literal['on', 'off']:
-        return await self._redis.get(f'trigger:{worker_id}:{trigger_hash}:status')
+    async def get_trigger_status(self, worker_id: str, trigger_id: str) -> Literal['on', 'off']:
+        return await self._redis.get(f'trigger:{worker_id}:{trigger_id}:status')
 
-    async def get_time_point(self, manager_uuid: str, worker_id: str, trigger_hash: str) -> AwareDatetime | None:
-        payload: str | None = await self._redis.get(f'trigger:{worker_id}:{trigger_hash}:time_point')
+    async def get_time_point(self, worker_id: str, trigger_id: str) -> AwareDatetime | None:
+        payload: str | None = await self._redis.get(f'trigger:{worker_id}:{trigger_id}:time_point')
         return datetime.fromisoformat(payload) if payload is not None else None
 
-    async def set_time_point(self, manager_uuid: str, worker_id: str, trigger_hash: str, time_point: AwareDatetime) -> None:
-        await self._redis.set(f'trigger:{worker_id}:{trigger_hash}:time_point', time_point.isoformat())
+    async def set_time_point(self, worker_id: str, trigger_id: str, time_point: AwareDatetime) -> None:
+        await self._redis.set(f'trigger:{worker_id}:{trigger_id}:time_point', time_point.isoformat())

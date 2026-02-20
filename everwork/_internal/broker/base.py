@@ -35,7 +35,7 @@ class AbstractBroker(ABC):
     # Ивент
 
     @abstractmethod
-    async def fetch(self, process_uuid: str, worker_id: str, sources: Sequence[str]) -> Request:
+    async def fetch(self, process_uuid: str, worker_id: str, sources: set[str]) -> Request:
         raise NotImplementedError
 
     @abstractmethod

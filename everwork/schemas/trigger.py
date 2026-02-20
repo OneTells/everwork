@@ -31,6 +31,7 @@ class Trigger(BaseModel):
     lifetime: float | None = None
 
     status_check_interval: Annotated[float, Field(gt=0.1, lt=3600)] = 60
+    status_cache_ttl: Annotated[float | None, Field(ge=0)] = 5
 
     @computed_field
     @cached_property
