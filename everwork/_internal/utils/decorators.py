@@ -58,7 +58,7 @@ def ttl_cache(function: A) -> A:
     lock = asyncio.Lock()
 
     @wraps(function)
-    async def wrapper(ttl: float | None = None, *args: P.args, **kwargs: P.kwargs) -> T:
+    async def wrapper(ttl: float | None, *args: P.args, **kwargs: P.kwargs) -> T:
         if ttl is None:
             return await function(**kwargs)
 
