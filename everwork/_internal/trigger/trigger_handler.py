@@ -113,6 +113,49 @@ class TriggerHandler:
                 min_timeout=5
             )
 
+    async def _run_loop(self, time_point: datetime) -> None:
+        while not self._shutdown_event.is_set():
+            if await self._get_worker_status() == 'off':
+                await wait_for_or_cancel(
+                    asyncio.sleep(self._worker_settings.status_check_interval),
+                    self._shutdown_event
+                )
+
+                continue
+
+            if await self._get_trigger_status() == 'off':
+                await wait_for_or_cancel(
+                    asyncio.sleep(self._trigger.status_check_interval),
+                    self._shutdown_event
+                )
+
+                continue
+
+            time_point = self._time_point_generator(time_point)
+
+            if time_point >= datetime.now(UTC):
+                await wait_for_or_cancel(
+                    asyncio.sleep((time_point - datetime.now(UTC)).total_seconds()),
+                    self._shutdown_event
+                )
+
+                if (await self._get_worker_status() == 'off') or (await self._get_trigger_status() == 'off'):
+                    continue
+            elif self._trigger.is_catchup:
+                continue
+
+            if self._shutdown_event.is_set():
+                break
+
+            await self._set_last_time_point(time_point)
+            await self._push_event(
+                Event(
+                    source=self._worker_settings.default_source,
+                    kwargs={'time_point': time_point, 'trigger_id': self._trigger.id} | self._trigger.kwargs,
+                    expires=datetime.now(UTC) + timedelta(seconds=self._trigger.lifetime) if self._trigger.lifetime else None
+                )
+            )
+
     async def run(self) -> None:
         logger.debug(f"({self._worker_settings.id}) |{self._trigger.id}| Обработчик триггера запущен")
 
@@ -122,46 +165,6 @@ class TriggerHandler:
             if time_point is None:
                 time_point = datetime.now(UTC)
 
-            while not self._shutdown_event.is_set():
-                if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
-                    await wait_for_or_cancel(
-                        asyncio.sleep(self._worker_settings.status_check_interval),
-                        self._shutdown_event
-                    )
-
-                    continue
-
-                if self._shutdown_event.is_set() or (await self._get_trigger_status() == 'off'):
-                    await wait_for_or_cancel(
-                        asyncio.sleep(self._trigger.status_check_interval),
-                        self._shutdown_event
-                    )
-
-                    continue
-
-                time_point = self._time_point_generator(time_point)
-
-                if time_point >= datetime.now(UTC):
-                    await wait_for_or_cancel(
-                        asyncio.sleep((time_point - datetime.now(UTC)).total_seconds()),
-                        self._shutdown_event
-                    )
-
-                    if self._shutdown_event.is_set() or (await self._get_worker_status() == 'off'):
-                        continue
-
-                    if self._shutdown_event.is_set() or (await self._get_trigger_status() == 'off'):
-                        continue
-                elif self._trigger.is_catchup:
-                    continue
-
-                await self._set_last_time_point(time_point)
-                await self._push_event(
-                    Event(
-                        source=self._worker_settings.default_source,
-                        kwargs={'time_point': time_point, 'trigger_id': self._trigger.id} | self._trigger.kwargs,
-                        expires=datetime.now(UTC) + timedelta(seconds=self._trigger.lifetime) if self._trigger.lifetime else None
-                    )
-                )
+            await self._run_loop(time_point)
 
         logger.debug(f"({self._worker_settings.id}) |{self._trigger.id}| Обработчик триггера завершил работу")
