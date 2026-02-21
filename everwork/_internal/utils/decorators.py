@@ -6,7 +6,7 @@ from typing import Any, Callable, Coroutine, ParamSpec, Required, TypedDict, Typ
 T = TypeVar('T')
 P = ParamSpec('P')
 
-A = Callable[P, Coroutine[Any, Any, T]]
+AsyncFunction = Callable[P, Coroutine[Any, Any, T]]
 
 
 #
@@ -52,7 +52,7 @@ class CacheSettings(TypedDict):
     ttl: Required[float | None]
 
 
-def ttl_cache(function: A) -> A:
+def ttl_cache(function: AsyncFunction) -> AsyncFunction:
     cache: dict[Any, tuple[Any, float]] = {}
     lock = asyncio.Lock()
 
