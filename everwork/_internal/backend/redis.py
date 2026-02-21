@@ -1,5 +1,5 @@
 from datetime import datetime, UTC
-from typing import Literal, Sequence, Unpack
+from typing import Literal, Sequence
 
 from orjson import dumps
 from pydantic import AwareDatetime, RedisDsn
@@ -9,7 +9,6 @@ from redis.asyncio.retry import Retry
 from redis.backoff import ConstantBackoff
 
 from everwork._internal.backend.base import AbstractBackend
-from everwork._internal.utils.decorators import CacheSettings, ttl_cache
 from everwork._internal.utils.lazy_wrapper import lazy_init
 from everwork.schemas import Process
 
@@ -76,8 +75,7 @@ class RedisBackend(AbstractBackend):
     async def cleanup(self, manager_uuid: str, processes: Sequence[Process]) -> None:
         await self._redis.mset({f'manager:{manager_uuid}:status': 'off'})
 
-    @ttl_cache
-    async def get_worker_status(self, worker_id: str, **kwargs: Unpack[CacheSettings]) -> Literal['on', 'off']:
+    async def get_worker_status(self, worker_id: str) -> Literal['on', 'off']:
         return await self._redis.get(f'worker:{worker_id}:status')
 
     async def mark_worker_executor_as_busy(self, manager_uuid: str, process_uuid: str, worker_id: str, event_id: str) -> None:
@@ -116,8 +114,7 @@ class RedisBackend(AbstractBackend):
             )
         )
 
-    @ttl_cache
-    async def get_trigger_status(self, worker_id: str, trigger_id: str, **kwargs: Unpack[CacheSettings]) -> Literal['on', 'off']:
+    async def get_trigger_status(self, worker_id: str, trigger_id: str) -> Literal['on', 'off']:
         return await self._redis.get(f'trigger:{worker_id}:{trigger_id}:status')
 
     async def get_time_point(self, worker_id: str, trigger_id: str) -> AwareDatetime | None:

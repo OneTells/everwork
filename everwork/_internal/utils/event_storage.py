@@ -79,7 +79,7 @@ class MemoryStorage(AbstractStorage):
 
 class FileReader(AbstractReader):
 
-    def __init__(self, file: tempfile._TemporaryFileWrapper[bytes]) -> None:
+    def __init__(self, file: tempfile._TemporaryFileWrapper) -> None:
         self._file = file
 
     def __iter__(self) -> Iterator[Event]:

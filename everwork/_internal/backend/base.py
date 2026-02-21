@@ -1,9 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import Any, Literal, Self, Sequence, Unpack
+from typing import Any, Literal, Self, Sequence
 
 from pydantic import AwareDatetime
 
-from everwork._internal.utils.decorators import CacheSettings
 from everwork.schemas import Process
 
 
@@ -37,7 +36,7 @@ class AbstractBackend(ABC):
     # Воркер
 
     @abstractmethod
-    async def get_worker_status(self, worker_id: str, **kwargs: Unpack[CacheSettings]) -> Literal['on', 'off']:
+    async def get_worker_status(self, worker_id: str) -> Literal['on', 'off']:
         raise NotImplementedError
 
     # Исполнитель воркера
@@ -57,7 +56,7 @@ class AbstractBackend(ABC):
     # Триггеры
 
     @abstractmethod
-    async def get_trigger_status(self, worker_id: str, trigger_id: str, **kwargs: Unpack[CacheSettings]) -> Literal['on', 'off']:
+    async def get_trigger_status(self, worker_id: str, trigger_id: str) -> Literal['on', 'off']:
         raise NotImplementedError
 
     @abstractmethod
