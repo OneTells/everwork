@@ -172,12 +172,14 @@ class ProcessManager:
     async def _startup(self, backend: AbstractBackend, broker: AbstractBroker) -> None:
         await (
             call(backend.build, self._manager_uuid, self._processes)
+            .retry(retries=3)
             .wait_for_or_cancel(self._shutdown_event)
             .execute(on_error_return=ValueError, log_context=self._log_context)
         )
 
         await (
             call(broker.build, self._processes)
+            .retry(retries=3)
             .wait_for_or_cancel(self._shutdown_event)
             .execute(on_error_return=ValueError, log_context=self._log_context)
         )
@@ -188,6 +190,7 @@ class ProcessManager:
         try:
             await (
                 call(backend.cleanup, self._manager_uuid, self._processes)
+                .retry(retries=3)
                 .wait_for_or_cancel(self._shutdown_event)
                 .execute(on_error_return=ValueError, log_context=self._log_context)
             )
@@ -197,6 +200,7 @@ class ProcessManager:
         try:
             await (
                 call(broker.cleanup, self._processes)
+                .retry(retries=3)
                 .wait_for_or_cancel(self._shutdown_event)
                 .execute(on_error_return=ValueError, log_context=self._log_context)
             )

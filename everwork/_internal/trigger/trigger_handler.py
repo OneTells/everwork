@@ -55,6 +55,7 @@ class TriggerHandler:
     async def _get_worker_status(self) -> Literal['on', 'off']:
         return await (
             call(self._backend.get_worker_status, self._worker_settings.id)
+            .retry(retries=3)
             .cache(ttl=self._worker_settings.status_cache_ttl)
             .wait_for_or_cancel(self._shutdown_event)
             .execute(on_error_return='off', on_timeout_return='off', log_context=self._log_context)
@@ -63,6 +64,7 @@ class TriggerHandler:
     async def _get_trigger_status(self) -> Literal['on', 'off']:
         return await (
             call(self._backend.get_trigger_status, self._worker_settings.id, self._trigger.id)
+            .retry(retries=3)
             .cache(ttl=self._trigger.status_cache_ttl)
             .wait_for_or_cancel(self._shutdown_event)
             .execute(on_error_return='off', on_timeout_return='off', log_context=self._log_context)
@@ -71,6 +73,7 @@ class TriggerHandler:
     async def _get_last_time_point(self) -> AwareDatetime | None:
         return await (
             call(self._backend.get_time_point, self._worker_settings.id, self._trigger.id)
+            .retry(retries=3)
             .wait_for_or_cancel(self._shutdown_event)
             .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
         )
@@ -78,6 +81,7 @@ class TriggerHandler:
     async def _set_last_time_point(self, time_point: AwareDatetime) -> None:
         return await (
             call(self._backend.set_time_point, self._worker_settings.id, self._trigger.id, time_point)
+            .retry(retries=3)
             .wait_for_or_cancel(self._shutdown_event)
             .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
         )
@@ -85,6 +89,7 @@ class TriggerHandler:
     async def _push_event(self, event: Event) -> None:
         return await (
             call(self._broker.push, event)
+            .retry(retries=3)
             .wait_for_or_cancel(self._shutdown_event)
             .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
         )

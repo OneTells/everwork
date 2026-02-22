@@ -42,6 +42,7 @@ class ResourceHandler:
     async def _mark_worker_executor_as_available(self) -> None:
         await (
             call(self._backend.mark_worker_executor_as_available, self._manager_uuid, self._process.uuid)
+            .retry(retries=2)
             .wait_for_or_cancel(self._shutdown_event)
             .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
         )
@@ -55,6 +56,7 @@ class ResourceHandler:
                 self._worker.settings.id,
                 request.event_id
             )
+            .retry(retries=2)
             .wait_for_or_cancel(self._shutdown_event)
             .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
         )
@@ -62,6 +64,7 @@ class ResourceHandler:
     async def _get_worker_status(self) -> Literal['on', 'off']:
         return await (
             call(self._backend.get_worker_status, self._worker.settings.id)
+            .retry(retries=3)
             .cache(ttl=self._worker.settings.status_cache_ttl)
             .wait_for_or_cancel(self._shutdown_event)
             .execute(on_error_return='off', on_timeout_return='off', log_context=self._log_context)
@@ -75,6 +78,7 @@ class ResourceHandler:
                 self._worker.settings.id,
                 self._worker.settings.sources
             )
+            .retry(retries=None)
             .wait_for_or_cancel(self._shutdown_event, max_timeout=None)
             .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context, log_cancellation=False)
         )
@@ -89,6 +93,7 @@ class ResourceHandler:
                 if len(batch) >= self._worker.settings.event_settings.max_batch_size:
                     await (
                         call(self._broker.push, batch)
+                        .retry(retries=3)
                         .wait_for_or_cancel(self._shutdown_event)
                         .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
                     )
@@ -98,6 +103,7 @@ class ResourceHandler:
             if batch:
                 await (
                     call(self._broker.push, batch)
+                    .retry(retries=3)
                     .wait_for_or_cancel(self._shutdown_event)
                     .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
                 )
@@ -116,6 +122,7 @@ class ResourceHandler:
     async def _ack(self, request: Request, response: AckResponse) -> None:
         await (
             call(self._broker.ack, self._worker.settings.id, request, response)
+            .retry(retries=3)
             .wait_for_or_cancel(self._shutdown_event)
             .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
         )
@@ -123,6 +130,7 @@ class ResourceHandler:
     async def _fail(self, request: Request, response: FailResponse) -> None:
         await (
             call(self._broker.fail, self._worker.settings.id, request, response)
+            .retry(retries=3)
             .wait_for_or_cancel(self._shutdown_event)
             .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
         )
@@ -130,6 +138,7 @@ class ResourceHandler:
     async def _reject(self, request: Request, response: RejectResponse) -> None:
         await (
             call(self._broker.reject, self._worker.settings.id, request, response)
+            .retry(retries=3)
             .wait_for_or_cancel(self._shutdown_event)
             .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
         )
@@ -137,6 +146,7 @@ class ResourceHandler:
     async def _retry(self, request: Request, response: RetryResponse) -> None:
         await (
             call(self._broker.retry, self._worker.settings.id, request, response)
+            .retry(retries=3)
             .wait_for_or_cancel(self._shutdown_event)
             .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
         )
