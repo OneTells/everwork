@@ -32,6 +32,7 @@ class ResourceManager:
     async def _mark_worker_executor_as_available(self, backend: AbstractBackend) -> None:
         await (
             call(backend.mark_worker_executor_as_available, self._manager_uuid, self._process.uuid)
+            .retry(retries=2)
             .wait_for_or_cancel(self._shutdown_event, max_timeout=5)
             .execute(
                 on_error_return=None,

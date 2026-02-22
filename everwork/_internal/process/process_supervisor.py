@@ -44,6 +44,7 @@ class ProcessSupervisor:
             async with self._backend_factory() as backend:
                 await (
                     call(backend.mark_worker_executor_for_reboot, self._manager_uuid, self._process.uuid)
+                    .retry(retries=2)
                     .wait_for_or_cancel(self._shutdown_event, max_timeout=5)
                     .execute(
                         on_error_return=None,

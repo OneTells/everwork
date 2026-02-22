@@ -171,6 +171,7 @@ class ProcessManager:
         async with self._backend_factory() as backend:
             await (
                 call(backend.build, self._manager_uuid, self._processes)
+                .retry(retries=3)
                 .wait_for_or_cancel(self._shutdown_event)
                 .execute(
                     on_error_return=ValueError,
@@ -183,6 +184,7 @@ class ProcessManager:
         async with self._broker_factory() as broker:
             await (
                 call(broker.build, self._processes)
+                .retry(retries=3)
                 .wait_for_or_cancel(self._shutdown_event)
                 .execute(
                     on_error_return=ValueError,
@@ -199,6 +201,7 @@ class ProcessManager:
             async with self._backend_factory() as backend:
                 await (
                     call(backend.cleanup, self._manager_uuid, self._processes)
+                    .retry(retries=3)
                     .wait_for_or_cancel(self._shutdown_event)
                     .execute(
                         on_error_return=ValueError,
@@ -214,6 +217,7 @@ class ProcessManager:
             async with self._broker_factory() as broker:
                 await (
                     call(broker.cleanup, self._processes)
+                    .retry(retries=3)
                     .wait_for_or_cancel(self._shutdown_event)
                     .execute(
                         on_error_return=ValueError,

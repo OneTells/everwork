@@ -8,14 +8,46 @@ from loguru import logger
 from everwork._internal.utils.async_task import OperationCancelled, wait_for_or_cancel
 
 
-class _Middleware[T](ABC):
+class _AbstractBackoff(ABC):
+
+    @abstractmethod
+    def compute(self, failures: int) -> float:
+        raise NotImplementedError
+
+
+class ExponentialBackoff(_AbstractBackoff):
+    _POWERS_OF_TWO = [1 << i for i in range(14)]
+
+    def __init__(self, base: float = 0.5, max_seconds: float = 60.0) -> None:
+        self._base = base
+        self._max_seconds = max_seconds
+
+        self._max_table_failures = 0
+
+        if base <= 0:
+            return
+
+        for i in range(len(self._POWERS_OF_TWO)):
+            if base * self._POWERS_OF_TWO[i] >= max_seconds:
+                break
+
+            self._max_table_failures = i
+
+    def compute(self, failures: int) -> float:
+        if failures <= self._max_table_failures:
+            return self._base * self._POWERS_OF_TWO[failures]
+
+        return self._max_seconds
+
+
+class _AbstractMiddleware[T](ABC):
 
     @abstractmethod
     async def __call__(self, next_call: Callable[..., Coroutine[Any, Any, T]]) -> T:
         raise NotImplementedError
 
 
-class _CacheMiddleware[T](_Middleware[T]):
+class _CacheMiddleware[T](_AbstractMiddleware[T]):
     _cache: dict[Any, tuple[T, float]] = {}
     _lock = asyncio.Lock()
 
@@ -41,7 +73,31 @@ class _CacheMiddleware[T](_Middleware[T]):
         return result
 
 
-class _LimitInTimeMiddleware[T](_Middleware[T]):
+class _RetryMiddleware[T](_AbstractMiddleware[T]):
+
+    def __init__(self, retries: int | None, backoff: _AbstractBackoff) -> None:
+        self._retries = retries
+        self._backoff = backoff
+
+    async def __call__(self, next_call: Callable[..., Coroutine[Any, Any, T]]) -> T:
+        failures = 0
+
+        while True:
+            try:
+                return await next_call()
+            except Exception as error:
+                failures += 1
+
+                logger.warning(f'Redis недоступен или не отвечает. Попытка {failures}. Ошибка: {error}')
+
+                if self._retries is not None and failures >= self._retries:
+                    raise error
+
+            backoff = self._backoff.compute(failures)
+            await asyncio.sleep(backoff)
+
+
+class _LimitInTimeMiddleware[T](_AbstractMiddleware[T]):
 
     def __init__(self, event: asyncio.Event, min_timeout: float, max_timeout: float | None) -> None:
         self._event = event
@@ -66,6 +122,7 @@ class _Caller[T, **P]:
 
         self._use_cache: bool = False
         self._use_wait_for_or_cancel: bool = False
+        self._retry: bool = False
 
         self._data: dict[str, Any] = {}
 
@@ -89,6 +146,20 @@ class _Caller[T, **P]:
         )
         return self
 
+    def retry(self, *, retries: int | None, backoff: _AbstractBackoff | None = None) -> Self:
+        self._retry = True
+
+        if backoff is None:
+            backoff = ExponentialBackoff()
+
+        self._data.update(
+            {
+                'retries': retries,
+                'backoff': backoff,
+            }
+        )
+        return self
+
     async def execute(
         self,
         *,
@@ -100,7 +171,15 @@ class _Caller[T, **P]:
     ) -> T | Any:
         app = lambda: self._function(*self._args, **self._kwargs)
 
-        middlewares: list[_Middleware] = []
+        middlewares: list[_AbstractMiddleware] = []
+
+        if self._retry:
+            middlewares.append(
+                _RetryMiddleware(
+                    self._data['retries'],
+                    self._data['backoff'],
+                )
+            )
 
         if self._use_cache:
             middlewares.append(
@@ -128,21 +207,21 @@ class _Caller[T, **P]:
             if log_cancellation:
                 logger.exception(f'{log_context} | Отменён {self._function.__name__}')
 
-            if isinstance(on_cancel_return, Exception):
+            if issubclass(on_cancel_return, Exception):
                 raise on_cancel_return
 
             return on_cancel_return
         except asyncio.TimeoutError:
             logger.exception(f'{log_context} | Прерван по таймауту {self._function.__name__}')
 
-            if isinstance(on_timeout_return, Exception):
+            if issubclass(on_timeout_return, Exception):
                 raise on_timeout_return
 
             return on_timeout_return
         except Exception as error:
             logger.opt(exception=True).critical(f'{log_context} | Не удалось выполнить {self._function.__name__}: {error}')
 
-            if isinstance(on_error_return, Exception):
+            if issubclass(on_error_return, Exception):
                 raise on_error_return
 
             return on_error_return
