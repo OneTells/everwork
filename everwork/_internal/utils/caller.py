@@ -207,21 +207,21 @@ class _Caller[T, **P]:
             if log_cancellation:
                 logger.exception(f'{log_context} | Отменён {self._function.__name__}')
 
-            if isinstance(on_cancel_return, Exception):
+            if issubclass(on_cancel_return, Exception):
                 raise on_cancel_return
 
             return on_cancel_return
         except asyncio.TimeoutError:
             logger.exception(f'{log_context} | Прерван по таймауту {self._function.__name__}')
 
-            if isinstance(on_timeout_return, Exception):
+            if issubclass(on_timeout_return, Exception):
                 raise on_timeout_return
 
             return on_timeout_return
         except Exception as error:
             logger.opt(exception=True).critical(f'{log_context} | Не удалось выполнить {self._function.__name__}: {error}')
 
-            if isinstance(on_error_return, Exception):
+            if issubclass(on_error_return, Exception):
                 raise on_error_return
 
             return on_error_return
