@@ -28,11 +28,11 @@ class TriggerManager:
         self._cron_schedule = cron_schedule
         self._shutdown_event = shutdown_event
 
-    async def _run_handlers(self) -> None:
+    async def run(self) -> None:
+        logger.debug("Менеджер триггеров запущен")
+
         try:
             async with self._backend_factory() as backend, self._broker_factory() as broker:
-                logger.debug(f'Менеджер триггеров инициализировал backend / broker')
-
                 async with asyncio.TaskGroup() as task_group:
                     for worker_settings in {w.settings.id: w.settings for p in self._processes for w in p.workers}.values():
                         for trigger in worker_settings.triggers:
@@ -49,10 +49,5 @@ class TriggerManager:
                             task_group.create_task(handler.run())
         except Exception as error:
             logger.opt(exception=True).critical(f'Менеджеру триггеров не удалось открыть или закрыть backend / broker: {error}')
-
-    async def run(self) -> None:
-        logger.debug("Менеджер триггеров запущен")
-
-        await self._run_handlers()
 
         logger.debug("Менеджер триггеров завершил работу")

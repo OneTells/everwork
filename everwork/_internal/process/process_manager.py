@@ -113,15 +113,15 @@ def get_structure(processes: Sequence[Process]) -> Any:
 
 class SignalHandler:
 
-    def __init__(self, shutdown_event: Event, on_trigger_manager_cancel: Callable[[], None]) -> None:
+    def __init__(self, shutdown_event: Event, on_services_cancel: Callable[[], None]) -> None:
         self._shutdown_event = shutdown_event
-        self._on_trigger_manager_cancel = on_trigger_manager_cancel
+        self._on_services_cancel = on_services_cancel
 
     def _handle_signal(self, *_) -> None:
         loop = get_running_loop()
         loop.call_soon_threadsafe(self._shutdown_event.set)  # type: ignore
 
-        self._on_trigger_manager_cancel()
+        self._on_services_cancel()
 
     def register(self) -> None:
         signal.signal(signal.SIGINT, self._handle_signal)
@@ -154,18 +154,18 @@ class ProcessManager:
 
         self._shutdown_event = asyncio.Event()
 
-        self._trigger_manager = AsyncThread(
-            target=lambda **kwargs: TriggerManager(**kwargs).run(),
-            kwargs={
-                'manager_uuid': self._manager_uuid,
-                'processes': self._processes,
-                'backend_factory': self._backend_factory,
-                'broker_factory': self._broker_factory,
-                'cron_schedule': self._cron_schedule
-            }
+        self._services: tuple[AsyncThread, ...] = (
+            AsyncThread(
+                target=lambda **kwargs: TriggerManager(**kwargs).run(),
+                kwargs={
+                    'manager_uuid': self._manager_uuid,
+                    'processes': self._processes,
+                    'backend_factory': self._backend_factory,
+                    'broker_factory': self._broker_factory,
+                    'cron_schedule': self._cron_schedule
+                }
+            ),
         )
-
-        self._log_context = 'Менеджер процессов'
 
     async def _startup(self) -> None:
         async with self._backend_factory() as backend:
@@ -177,7 +177,7 @@ class ProcessManager:
                     on_error_return=ValueError,
                     on_timeout_return=ValueError,
                     on_cancel_return=ValueError,
-                    log_context=self._log_context
+                    log_context='Менеджер процессов'
                 )
             )
 
@@ -190,7 +190,7 @@ class ProcessManager:
                     on_error_return=ValueError,
                     on_timeout_return=ValueError,
                     on_cancel_return=ValueError,
-                    log_context=self._log_context
+                    log_context='Менеджер процессов'
                 )
             )
 
@@ -207,7 +207,7 @@ class ProcessManager:
                         on_error_return=ValueError,
                         on_timeout_return=ValueError,
                         on_cancel_return=ValueError,
-                        log_context=self._log_context
+                        log_context='Менеджер процессов'
                     )
                 )
         except ValueError as e:
@@ -223,7 +223,7 @@ class ProcessManager:
                         on_error_return=ValueError,
                         on_timeout_return=ValueError,
                         on_cancel_return=ValueError,
-                        log_context=self._log_context
+                        log_context='Менеджер процессов'
                     )
                 )
         except ValueError as e:
@@ -232,11 +232,17 @@ class ProcessManager:
         if error is not None:
             raise error
 
-    async def _start_trigger_manager(self) -> None:
-        self._trigger_manager.start()
+    def _start_services(self) -> None:
+        for service in self._services:
+            service.start()
 
-    async def _join_trigger_manager(self) -> None:
-        self._trigger_manager.join()
+    def _cancel_services(self) -> None:
+        for service in self._services:
+            service.cancel()
+
+    def _join_services(self) -> None:
+        for service in self._services:
+            service.join()
 
     async def _run_supervisors(self) -> None:
         async with asyncio.TaskGroup() as task_group:
@@ -259,21 +265,21 @@ class ProcessManager:
 
         logger.debug(f'Структура менеджера: {get_structure(self._processes)}')
 
-        SignalHandler(self._shutdown_event, self._trigger_manager.cancel).register()
+        SignalHandler(self._shutdown_event, self._cancel_services).register()
         logger.debug("Менеджер процессов зарегистрировал обработчик сигналов")
 
         try:
             await self._startup()
             logger.debug('Менеджер процессов выполнил startup')
 
-            await self._start_trigger_manager()
-            logger.debug(f'Менеджер процессов запустил менеджер триггеров')
+            self._start_services()
+            logger.debug(f'Менеджер процессов запустил сервисы')
 
             await self._run_supervisors()
             logger.debug('Супервайзеры процессов завершены')
 
-            await self._join_trigger_manager()
-            logger.debug(f'Менеджер процессов дождался закрытия менеджера триггеров')
+            self._join_services()
+            logger.debug(f'Менеджер процессов дождался закрытия сервисов')
 
             await self._shutdown()
             logger.debug('Менеджер процессов выполнил shutdown')

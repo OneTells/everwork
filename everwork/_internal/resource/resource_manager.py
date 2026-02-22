@@ -42,8 +42,8 @@ class ResourceManager:
             )
         )
 
-    async def _run_handlers(self) -> None:
-        lock = asyncio.Lock()
+    async def run(self) -> None:
+        logger.debug(f'[{self._process.uuid}] Менеджер ресурсов запущен')
 
         try:
             async with self._backend_factory() as backend, self._broker_factory() as broker:
@@ -51,6 +51,8 @@ class ResourceManager:
 
                 await self._mark_worker_executor_as_available(backend)
                 logger.debug(f'[{self._process.uuid}] Исполнитель воркеров стал доступным')
+
+                lock = asyncio.Lock()
 
                 async with asyncio.TaskGroup() as task_group:
                     for worker in self._process.workers:
@@ -71,10 +73,6 @@ class ResourceManager:
                 f'[{self._process.uuid}] Менеджеру ресурсов не удалось открыть или закрыть backend / broker: {error}'
             )
 
-    async def run(self) -> None:
-        logger.debug(f'[{self._process.uuid}] Менеджер ресурсов запущен')
-
-        await self._run_handlers()
         logger.debug(f'[{self._process.uuid}] Менеджер ресурсов завершил обработчики ресурсов')
 
         self._transmitter.close()
