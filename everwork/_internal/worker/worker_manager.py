@@ -114,13 +114,10 @@ class WorkerManager:
         ).register()
 
         await self._start_resource_manager()
-        logger.debug(f'[{self._process.uuid}] Менеджер воркеров запустил менеджер ресурсов')
 
         await self._run_worker_executor()
-        logger.debug(f'[{self._process.uuid}] Менеджер воркеров завершил исполнитель воркеров')
 
         await self._join_resource_manager()
-        logger.debug(f'[{self._process.uuid}] Менеджер воркеров дождался закрытия менеджера ресурсов')
 
         self._notifier.close()
 

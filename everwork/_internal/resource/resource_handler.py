@@ -11,7 +11,7 @@ from everwork._internal.schemas import AckResponse, FailResponse, RejectResponse
 from everwork._internal.utils.async_task import OperationCancelled, wait_for_or_cancel
 from everwork._internal.utils.caller import call
 from everwork._internal.worker.utils.executor_channel import ExecutorTransmitter
-from everwork.schemas import Process
+from everwork.schemas import Event, Process
 from everwork.workers import AbstractWorker
 
 
@@ -83,7 +83,15 @@ class ResourceHandler:
             .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context, log_cancellation=False)
         )
 
-    async def _push_events(self, request: Request, response: AckResponse) -> AckResponse | FailResponse:
+    async def _push_events(self, events: list[Event]) -> None:
+        await (
+            call(self._broker.push, events)
+            .retry(retries=3)
+            .wait_for_or_cancel(self._shutdown_event)
+            .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
+        )
+
+    async def _push(self, request: Request, response: AckResponse) -> AckResponse | FailResponse:
         try:
             batch = []
 
@@ -91,23 +99,11 @@ class ResourceHandler:
                 batch.append(event)
 
                 if len(batch) >= self._worker.settings.event_settings.max_batch_size:
-                    await (
-                        call(self._broker.push, batch)
-                        .retry(retries=3)
-                        .wait_for_or_cancel(self._shutdown_event)
-                        .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
-                    )
-
+                    await self._push_events(batch)
                     batch.clear()
 
             if batch:
-                await (
-                    call(self._broker.push, batch)
-                    .retry(retries=3)
-                    .wait_for_or_cancel(self._shutdown_event)
-                    .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
-                )
-                batch.clear()
+                await self._push_events(batch)
         except ValueError as error:
             logger.exception(
                 f'[{self._process.uuid}] ({self._worker.settings.id}) '
@@ -196,7 +192,7 @@ class ResourceHandler:
 
             if isinstance(response, AckResponse):
                 # noinspection PyUnboundLocalVariable
-                response = await self._push_events(request, response)
+                response = await self._push(request, response)
 
             if isinstance(response, AckResponse):
                 await self._ack(request, response)

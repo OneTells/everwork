@@ -270,7 +270,6 @@ class ProcessManager:
 
         try:
             await self._startup()
-            logger.debug('Менеджер процессов выполнил startup')
 
             self._start_services()
             logger.debug(f'Менеджер процессов запустил сервисы')
@@ -282,7 +281,6 @@ class ProcessManager:
             logger.debug(f'Менеджер процессов дождался закрытия сервисов')
 
             await self._shutdown()
-            logger.debug('Менеджер процессов выполнил shutdown')
         except ValueError:
             ...
         except Exception as error:

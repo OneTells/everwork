@@ -47,10 +47,7 @@ class ResourceManager:
 
         try:
             async with self._backend_factory() as backend, self._broker_factory() as broker:
-                logger.debug(f'[{self._process.uuid}] Менеджер ресурсов инициализировал backend / broker')
-
                 await self._mark_worker_executor_as_available(backend)
-                logger.debug(f'[{self._process.uuid}] Исполнитель воркеров стал доступным')
 
                 lock = asyncio.Lock()
 
@@ -72,8 +69,6 @@ class ResourceManager:
             logger.opt(exception=True).critical(
                 f'[{self._process.uuid}] Менеджеру ресурсов не удалось открыть или закрыть backend / broker: {error}'
             )
-
-        logger.debug(f'[{self._process.uuid}] Менеджер ресурсов завершил обработчики ресурсов')
 
         self._transmitter.close()
 

@@ -148,6 +148,8 @@ class RedisBroker(AbstractBroker):
         if self._scripts.get('retry') is None:
             await self._load_retry_script()
 
+        request.event.retries += 1
+
         keys_and_args = [
             f'worker:{worker_id}:source',
             request.event.source,

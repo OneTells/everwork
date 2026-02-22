@@ -116,12 +116,9 @@ class WorkerExecutor:
         logger.debug(f'[{self._process.uuid}] Исполнитель воркеров запущен')
 
         await self._startup()
-        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров выполнил startup')
 
         await self._run_execute_loop()
-        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров завершил цикл обработки')
 
         await self._shutdown()
-        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров выполнил shutdown')
 
         logger.debug(f'[{self._process.uuid}] Исполнитель воркеров завершил работу')

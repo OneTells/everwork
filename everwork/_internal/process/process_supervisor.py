@@ -65,36 +65,34 @@ class ProcessSupervisor:
         logger.warning(f'[{self._process.uuid}] Процесс перезапущен')
 
     async def _run_monitoring_cycle(self) -> None:
-        with suppress(OperationCancelled):
-            while not self._shutdown_event.is_set():
-                await wait_for_or_cancel(
-                    poll_connection(self._worker_process.pipe_reader),
-                    self._shutdown_event
-                )
+        while not self._shutdown_event.is_set():
+            await wait_for_or_cancel(
+                poll_connection(self._worker_process.pipe_reader),
+                self._shutdown_event
+            )
 
-                payload = self._worker_process.pipe_reader.recv_bytes()
-                state = StartEvent.model_validate(loads(payload))
+            payload = self._worker_process.pipe_reader.recv_bytes()
+            state = StartEvent.model_validate(loads(payload))
 
-                timeout = state.end_time - time.time()
-                is_exist_message = await wait_for_or_cancel(
-                    poll_connection(self._worker_process.pipe_reader, timeout),
-                    self._shutdown_event
-                )
+            timeout = state.end_time - time.time()
+            is_exist_message = await wait_for_or_cancel(
+                poll_connection(self._worker_process.pipe_reader, timeout),
+                self._shutdown_event
+            )
 
-                if is_exist_message:
-                    self._worker_process.pipe_reader.recv_bytes()
-                    continue
+            if is_exist_message:
+                self._worker_process.pipe_reader.recv_bytes()
+                continue
 
-                await self._restart_worker_process(state.worker_id)
+            await self._restart_worker_process(state.worker_id)
 
     async def run(self) -> None:
         logger.debug(f'[{self._process.uuid}] Супервайзер процесса запущен')
 
         await self._worker_process.start()
 
-        logger.debug(f'[{self._process.uuid}] Супервайзер процесса начал мониторинг')
-        await self._run_monitoring_cycle()
-        logger.debug(f'[{self._process.uuid}] Супервайзер процесса закончил мониторинг')
+        with suppress(OperationCancelled):
+            await self._run_monitoring_cycle()
 
         await self._worker_process.close()
 
