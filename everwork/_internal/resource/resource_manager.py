@@ -6,7 +6,7 @@ from loguru import logger
 from everwork._internal.backend import AbstractBackend
 from everwork._internal.broker import AbstractBroker
 from everwork._internal.resource.resource_handler import ResourceHandler
-from everwork._internal.utils.async_task import OperationCancelled, wait_for_or_cancel
+from everwork._internal.utils.caller import call
 from everwork._internal.worker.utils.executor_channel import ExecutorTransmitter
 from everwork.schemas import Process
 
@@ -30,18 +30,16 @@ class ResourceManager:
         self._shutdown_event = shutdown_event
 
     async def _mark_worker_executor_as_available(self, backend: AbstractBackend) -> None:
-        try:
-            await wait_for_or_cancel(
-                backend.mark_worker_executor_as_available(self._manager_uuid, self._process.uuid),
-                self._shutdown_event,
-                max_timeout=5
+        await (
+            call(backend.mark_worker_executor_as_available, self._manager_uuid, self._process.uuid)
+            .wait_for_or_cancel(self._shutdown_event, max_timeout=5)
+            .execute(
+                on_error_return=None,
+                on_timeout_return=None,
+                on_cancel_return=None,
+                log_context=f'[{self._process.uuid}] Менеджер ресурсов'
             )
-        except (OperationCancelled, asyncio.TimeoutError):
-            logger.debug(f'[{self._process.uuid}] Менеджер ресурсов прервал mark_worker_executor_as_available')
-        except Exception as error:
-            logger.opt(exception=True).critical(
-                f'[{self._process.uuid}] Не удалось установить метку доступности исполнителя: {error}'
-            )
+        )
 
     async def _run_handlers(self) -> None:
         lock = asyncio.Lock()

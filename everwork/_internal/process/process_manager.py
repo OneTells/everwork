@@ -1,6 +1,7 @@
 import asyncio
 import signal
 from asyncio import Event, get_running_loop
+from contextlib import suppress
 from multiprocessing import get_start_method
 from platform import system
 from typing import Annotated, Any, Callable, final, Sequence
@@ -13,8 +14,9 @@ from everwork._internal.backend import AbstractBackend
 from everwork._internal.broker import AbstractBroker
 from everwork._internal.process.process_supervisor import ProcessSupervisor
 from everwork._internal.trigger.trigger_manager import TriggerManager
-from everwork._internal.utils.async_task import OperationCancelled, wait_for_or_cancel
+from everwork._internal.utils.async_task import OperationCancelled
 from everwork._internal.utils.async_thread import AsyncThread
+from everwork._internal.utils.caller import call
 from everwork.schemas import Process, ProcessGroup
 from everwork.utils import AbstractCronSchedule, CronSchedule
 from everwork.workers import AbstractWorker
@@ -165,68 +167,44 @@ class ProcessManager:
             }
         )
 
+        self._log_context = 'Менеджер процессов'
+
     async def _startup(self, backend: AbstractBackend, broker: AbstractBroker) -> None:
-        try:
-            await wait_for_or_cancel(
-                backend.build(self._manager_uuid, self._processes),
-                self._shutdown_event,
-                min_timeout=5
-            )
-        except OperationCancelled:
-            logger.exception('Менеджер процессов прервал build_backend')
-            raise ValueError
-        except Exception as error:
-            logger.opt(exception=True).critical(f'Не удалось построить backend: {error}')
-            raise ValueError
+        await (
+            call(backend.build, self._manager_uuid, self._processes)
+            .wait_for_or_cancel(self._shutdown_event)
+            .execute(on_error_return=ValueError, log_context=self._log_context)
+        )
 
-        try:
-            await wait_for_or_cancel(
-                broker.build(self._processes),
-                self._shutdown_event,
-                min_timeout=5
-            )
-        except OperationCancelled:
-            logger.exception('Менеджер процессов прервал build_broker')
-            raise ValueError
-        except Exception as error:
-            logger.opt(exception=True).critical(f'Не удалось построить broker: {error}')
-            raise ValueError
-
-        return None
+        await (
+            call(broker.build, self._processes)
+            .wait_for_or_cancel(self._shutdown_event)
+            .execute(on_error_return=ValueError, log_context=self._log_context)
+        )
 
     async def _shutdown(self, backend: AbstractBackend, broker: AbstractBroker) -> None:
-        is_error: bool = False
+        error: Exception | None = None
 
         try:
-            await wait_for_or_cancel(
-                backend.cleanup(self._manager_uuid, self._processes),
-                self._shutdown_event,
-                min_timeout=5
+            await (
+                call(backend.cleanup, self._manager_uuid, self._processes)
+                .wait_for_or_cancel(self._shutdown_event)
+                .execute(on_error_return=ValueError, log_context=self._log_context)
             )
-        except OperationCancelled:
-            logger.exception('Менеджер процессов прервал cleanup_backend')
-            is_error = True
-        except Exception as error:
-            logger.opt(exception=True).critical(f'Не удалось очистить backend: {error}')
-            is_error = True
+        except (OperationCancelled, asyncio.TimeoutError, ValueError) as e:
+            error = e
 
         try:
-            await wait_for_or_cancel(
-                broker.cleanup(self._processes),
-                self._shutdown_event,
-                min_timeout=5
+            await (
+                call(broker.cleanup, self._processes)
+                .wait_for_or_cancel(self._shutdown_event)
+                .execute(on_error_return=ValueError, log_context=self._log_context)
             )
-        except OperationCancelled:
-            logger.exception('Менеджер процессов прервал cleanup_broker')
-            is_error = True
-        except Exception as error:
-            logger.opt(exception=True).critical(f'Не удалось очистить broker: {error}')
-            is_error = True
+        except (OperationCancelled, asyncio.TimeoutError, ValueError) as e:
+            error = e
 
-        if is_error:
-            raise ValueError
-
-        return None
+        if error is not None:
+            raise error
 
     async def _start_trigger_manager(self) -> None:
         self._trigger_manager.start()
@@ -260,25 +238,24 @@ class ProcessManager:
         logger.debug("Менеджер процессов зарегистрировал обработчик сигналов")
 
         try:
-            async with self._backend_factory() as backend, self._broker_factory() as broker:
-                logger.debug('Менеджер процессов инициализировал backend / broker')
+            with suppress(OperationCancelled, asyncio.TimeoutError, ValueError):
+                async with self._backend_factory() as backend, self._broker_factory() as broker:
+                    logger.debug('Менеджер процессов инициализировал backend / broker')
 
-                await self._startup(backend, broker)
-                logger.debug('Менеджер процессов выполнил startup')
+                    await self._startup(backend, broker)
+                    logger.debug('Менеджер процессов выполнил startup')
 
-                await self._start_trigger_manager()
-                logger.debug(f'Менеджер процессов запустил менеджер триггеров')
+                    await self._start_trigger_manager()
+                    logger.debug(f'Менеджер процессов запустил менеджер триггеров')
 
-                await self._run_supervisors(backend)
-                logger.debug('Супервайзеры процессов завершены')
+                    await self._run_supervisors(backend)
+                    logger.debug('Супервайзеры процессов завершены')
 
-                await self._join_trigger_manager()
-                logger.debug(f'Менеджер процессов дождался закрытия менеджера триггеров')
+                    await self._join_trigger_manager()
+                    logger.debug(f'Менеджер процессов дождался закрытия менеджера триггеров')
 
-                await self._shutdown(backend, broker)
-                logger.debug('Менеджер процессов выполнил shutdown')
-        except ValueError:
-            pass
+                    await self._shutdown(backend, broker)
+                    logger.debug('Менеджер процессов выполнил shutdown')
         except Exception as error:
             logger.opt(exception=True).critical(f'Менеджеру процессов не удалось открыть или закрыть backend / broker: {error}')
 

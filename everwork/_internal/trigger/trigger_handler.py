@@ -1,7 +1,7 @@
 import asyncio
 from contextlib import suppress
 from datetime import datetime, timedelta, UTC
-from typing import Any, Callable, Coroutine, Literal
+from typing import Callable, Literal
 
 from loguru import logger
 from pydantic import AwareDatetime
@@ -9,6 +9,7 @@ from pydantic import AwareDatetime
 from everwork._internal.backend import AbstractBackend
 from everwork._internal.broker import AbstractBroker
 from everwork._internal.utils.async_task import OperationCancelled, wait_for_or_cancel
+from everwork._internal.utils.caller import call
 from everwork.schemas import Cron, Event, Interval, Trigger, WorkerSettings
 from everwork.utils import AbstractCronSchedule
 
@@ -49,69 +50,44 @@ class TriggerHandler:
 
         self._time_point_generator = _get_time_point_generator(self._trigger, self._cron_schedule)
 
-    async def _execute_with_graceful_cancel[T](self, coroutine: Coroutine[Any, Any, T], min_timeout: int = 0) -> T:
-        try:
-            return await wait_for_or_cancel(coroutine, self._shutdown_event, min_timeout)
-        except OperationCancelled:
-            logger.error(
-                f"({self._worker_settings.id}) |{self._trigger.id}| "
-                f"Обработчик триггера прервал '{coroutine.__name__}'"
-            )
-            raise
-        except Exception as error:
-            logger.opt(exception=True).critical(
-                f"({self._worker_settings.id}) |{self._trigger.id}| "
-                f"Обработчику триггера не удалось выполнить '{coroutine.__name__}': {error}"
-            )
-            raise
+        self._log_context = f'({self._worker_settings.id}) |{self._trigger.id}| Обработчик триггера'
 
     async def _get_worker_status(self) -> Literal['on', 'off']:
-        with suppress(Exception):
-            return await self._execute_with_graceful_cancel(
-                self._backend.get_worker_status(
-                    self._worker_settings.id,
-                    ttl=self._worker_settings.status_cache_ttl
-                ),
-                min_timeout=5
-            )
-
-        return 'off'
+        return await (
+            call(self._backend.get_worker_status, self._worker_settings.id)
+            .cache(ttl=self._worker_settings.status_cache_ttl)
+            .wait_for_or_cancel(self._shutdown_event)
+            .execute(on_error_return='off', on_timeout_return='off', log_context=self._log_context)
+        )
 
     async def _get_trigger_status(self) -> Literal['on', 'off']:
-        with suppress(Exception):
-            return await self._execute_with_graceful_cancel(
-                self._backend.get_trigger_status(
-                    self._worker_settings.id,
-                    self._trigger.id,
-                    ttl=self._trigger.status_cache_ttl
-                ),
-                min_timeout=5
-            )
-
-        return 'off'
+        return await (
+            call(self._backend.get_trigger_status, self._worker_settings.id, self._trigger.id)
+            .cache(ttl=self._trigger.status_cache_ttl)
+            .wait_for_or_cancel(self._shutdown_event)
+            .execute(on_error_return='off', on_timeout_return='off', log_context=self._log_context)
+        )
 
     async def _get_last_time_point(self) -> AwareDatetime | None:
-        with suppress(Exception):
-            return await self._execute_with_graceful_cancel(
-                self._backend.get_time_point(self._worker_settings.id, self._trigger.id),
-                min_timeout=5
-            )
-
-        return None
+        return await (
+            call(self._backend.get_time_point, self._worker_settings.id, self._trigger.id)
+            .wait_for_or_cancel(self._shutdown_event)
+            .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
+        )
 
     async def _set_last_time_point(self, time_point: AwareDatetime) -> None:
-        with suppress(Exception):
-            await self._execute_with_graceful_cancel(
-                self._backend.set_time_point(self._worker_settings.id, self._trigger.id, time_point),
-                min_timeout=5
-            )
+        return await (
+            call(self._backend.set_time_point, self._worker_settings.id, self._trigger.id, time_point)
+            .wait_for_or_cancel(self._shutdown_event)
+            .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
+        )
 
     async def _push_event(self, event: Event) -> None:
-        with suppress(Exception):
-            await self._execute_with_graceful_cancel(
-                self._broker.push(event),
-                min_timeout=5
-            )
+        return await (
+            call(self._broker.push, event)
+            .wait_for_or_cancel(self._shutdown_event)
+            .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
+        )
 
     async def _run_loop(self, time_point: datetime) -> None:
         while not self._shutdown_event.is_set():

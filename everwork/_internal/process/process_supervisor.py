@@ -11,6 +11,7 @@ from everwork._internal.backend import AbstractBackend
 from everwork._internal.broker import AbstractBroker
 from everwork._internal.process.utils.connection_utils import poll_connection
 from everwork._internal.utils.async_task import OperationCancelled, wait_for_or_cancel
+from everwork._internal.utils.caller import call
 from everwork._internal.worker.worker_process import WorkerProcess
 from everwork.schemas import Process
 
@@ -39,20 +40,16 @@ class ProcessSupervisor:
         self._worker_process = WorkerProcess(manager_uuid, process, backend_factory, broker_factory)
 
     async def _mark_worker_executor_for_reboot(self, worker_id: str) -> None:
-        try:
-            await wait_for_or_cancel(
-                self._backend.mark_worker_executor_for_reboot(self._manager_uuid, self._process.uuid),
-                self._shutdown_event,
-                max_timeout=5
+        await (
+            call(self._backend.mark_worker_executor_for_reboot, self._manager_uuid, self._process.uuid)
+            .wait_for_or_cancel(self._shutdown_event, max_timeout=5)
+            .execute(
+                on_error_return=None,
+                on_timeout_return=None,
+                on_cancel_return=None,
+                log_context=f'[{self._process.uuid}] ({worker_id}) Супервайзер процесса'
             )
-        except (OperationCancelled, asyncio.TimeoutError):
-            logger.debug(f'[{self._process.uuid}] ({worker_id}) Супервайзер процесса прервал mark_worker_executor_for_reboot')
-        except Exception as error:
-            logger.opt(exception=True).critical(
-                f'[{self._process.uuid}] ({worker_id}) Не удалось установить метку перезапуска исполнителя: {error}'
-            )
-        else:
-            logger.debug(f'[{self._process.uuid}] ({worker_id}) Установлена метка о перезапуске процесса')
+        )
 
     async def _restart_worker_process(self, worker_id: str) -> None:
         logger.warning(f'[{self._process.uuid}] ({worker_id}) Процесс завис и будет перезапущен')
