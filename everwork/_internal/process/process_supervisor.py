@@ -29,27 +29,29 @@ class ProcessSupervisor:
         process: Process,
         backend_factory: Callable[[], AbstractBackend],
         broker_factory: Callable[[], AbstractBroker],
-        backend: AbstractBackend,
         shutdown_event: asyncio.Event
     ) -> None:
         self._manager_uuid = manager_uuid
         self._process = process
-        self._backend = backend
+        self._backend_factory = backend_factory
+        self._broker_factory = broker_factory
         self._shutdown_event = shutdown_event
 
         self._worker_process = WorkerProcess(manager_uuid, process, backend_factory, broker_factory)
 
     async def _mark_worker_executor_for_reboot(self, worker_id: str) -> None:
-        await (
-            call(self._backend.mark_worker_executor_for_reboot, self._manager_uuid, self._process.uuid)
-            .wait_for_or_cancel(self._shutdown_event, max_timeout=5)
-            .execute(
-                on_error_return=None,
-                on_timeout_return=None,
-                on_cancel_return=None,
-                log_context=f'[{self._process.uuid}] ({worker_id}) Супервайзер процесса'
-            )
-        )
+        with suppress(Exception):
+            async with self._backend_factory() as backend:
+                await (
+                    call(backend.mark_worker_executor_for_reboot, self._manager_uuid, self._process.uuid)
+                    .wait_for_or_cancel(self._shutdown_event, max_timeout=5)
+                    .execute(
+                        on_error_return=None,
+                        on_timeout_return=None,
+                        on_cancel_return=None,
+                        log_context=f'[{self._process.uuid}] ({worker_id}) Супервайзер процесса'
+                    )
+                )
 
     async def _restart_worker_process(self, worker_id: str) -> None:
         logger.warning(f'[{self._process.uuid}] ({worker_id}) Процесс завис и будет перезапущен')
