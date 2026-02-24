@@ -328,7 +328,7 @@ class MyWorker(AbstractWorker):
 ```python
 from everwork.exceptions import Fail, Reject, Retry
 
-async def __call__(self, **kwargs):
+async def __call__(self, **kwargs: Any) -> None:
     try:
         # Логика обработки
         await process_data()
