@@ -88,7 +88,7 @@ class _RetryMiddleware[T](_AbstractMiddleware[T]):
             except Exception as error:
                 failures += 1
 
-                logger.warning(f'Redis недоступен или не отвечает. Попытка {failures}. Ошибка: {error}')
+                logger.warning(f'Не удалось выполнить операцию. Попытка {failures}. Ошибка: {error}')
 
                 if self._retries is not None and failures >= self._retries:
                     raise error

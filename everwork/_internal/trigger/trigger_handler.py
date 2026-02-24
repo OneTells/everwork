@@ -74,7 +74,7 @@ class TriggerHandler:
             call(self._backend.get_time_point, self._worker_settings.id, self._trigger.id)
             .retry(retries=None)
             .wait_for_or_cancel(self._shutdown_event, max_timeout=None)
-            .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
+            .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context, log_cancellation=False)
         )
 
     async def _set_last_time_point(self, time_point: AwareDatetime) -> None:

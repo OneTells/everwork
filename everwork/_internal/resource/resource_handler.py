@@ -105,10 +105,7 @@ class ResourceHandler:
             if batch:
                 await self._push_events(batch)
         except ValueError as error:
-            logger.exception(
-                f'[{self._process.uuid}] ({self._worker.settings.id}) '
-                f'Не удалось сохранить ивенты, event_id={request.event_id}'
-            )
+            logger.exception(f'({self._worker.settings.id}) Не удалось сохранить ивенты. Ивент: {request.event_id}')
             return FailResponse(detail='Не удалось сохранить ивенты', error=error)
         finally:
             response.reader.close()

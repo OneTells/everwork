@@ -39,7 +39,7 @@ class ProcessSupervisor:
 
         self._worker_process = WorkerProcess(manager_uuid, process, backend_factory, broker_factory)
 
-    async def _mark_worker_executor_for_reboot(self, worker_id: str) -> None:
+    async def _mark_worker_executor_for_reboot(self) -> None:
         with suppress(Exception):
             async with self._backend_factory() as backend:
                 await (
@@ -50,14 +50,14 @@ class ProcessSupervisor:
                         on_error_return=None,
                         on_timeout_return=None,
                         on_cancel_return=None,
-                        log_context=f'[{self._process.uuid}] ({worker_id}) Супервайзер процесса'
+                        log_context=f'[{self._process.uuid}]'
                     )
                 )
 
     async def _restart_worker_process(self, worker_id: str) -> None:
         logger.warning(f'[{self._process.uuid}] ({worker_id}) Процесс завис и будет перезапущен')
 
-        await self._mark_worker_executor_for_reboot(worker_id)
+        await self._mark_worker_executor_for_reboot()
 
         await self._worker_process.close()
         await self._worker_process.start()

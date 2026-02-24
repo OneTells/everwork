@@ -61,7 +61,7 @@ class WorkerExecutor:
 
         return filtered_kwargs | reserved_kwargs | default_kwargs | extra_kwargs
 
-    async def _execute(self, worker: AbstractWorker, kwargs: dict[str, Any]) -> Response:
+    async def _execute(self, request: Request, worker: AbstractWorker, kwargs: dict[str, Any]) -> Response:
         self._notifier.notify_started(worker.settings)
 
         try:
@@ -74,10 +74,10 @@ class WorkerExecutor:
         except Retry:
             return RetryResponse()
         except (KeyboardInterrupt, asyncio.CancelledError) as error:
-            logger.exception(f'[{self._process.uuid}] ({worker.settings.id}) Выполнение прервано по таймауту: {error}')
+            logger.exception(f'({worker.settings.id}) Выполнение прервано по таймауту. Ивент: {request.event_id}')
             return FailResponse(detail='Выполнение прервано по таймауту', error=error)
         except Exception as error:
-            logger.exception(f'[{self._process.uuid}] ({worker.settings.id}) Ошибка при обработке события: {error}')
+            logger.exception(f'({worker.settings.id}) Ошибка при обработке события: {error}. Ивент: {request.event_id}')
             return FailResponse(detail='Ошибка при обработке события', error=error)
         finally:
             self._is_executing_event.clear()
@@ -97,7 +97,7 @@ class WorkerExecutor:
             try:
                 kwargs = self._prepare_kwargs(worker, request)
             except TypeError as error:
-                logger.exception(f'[{self._process.uuid}] ({worker.settings.id}) {error}')
+                logger.exception(f'({worker.settings.id}) Не удалось подготовить аргументы: {error}. Ивент: {request.event_id}')
 
                 response = FailResponse(detail='Не удалось подготовить аргументы', error=error)
                 self._receiver.send_response(response)
@@ -105,7 +105,7 @@ class WorkerExecutor:
                 del worker_id, request, worker, response
                 return
 
-            response = await self._execute(worker, kwargs)
+            response = await self._execute(request, worker, kwargs)
             self._receiver.send_response(response)
 
             self._storage.recreate()

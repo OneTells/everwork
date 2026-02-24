@@ -66,6 +66,6 @@ class ResourceManager:
                 await self._mark_worker_executor_as_available(backend)
                 await self._run_handlers(backend, broker)
         except Exception as error:
-            logger.opt(exception=True).critical(f'[{self._process.uuid}] Не удалось открыть или закрыть backend / broker: {error}')
+            logger.opt(exception=True).critical(f'Не удалось открыть или закрыть backend / broker: {error}')
 
         self._transmitter.close()

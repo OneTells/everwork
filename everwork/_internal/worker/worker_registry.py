@@ -18,7 +18,7 @@ class WorkerRegistry:
             try:
                 worker = worker_cls()
             except Exception as error:
-                logger.exception(f'[{self._process.uuid}] ({worker_cls.settings.id}) Ошибка при инициализации: {error}')
+                logger.exception(f'({worker_cls.settings.id}) Ошибка при инициализации: {error}')
                 continue
 
             self._instances[worker.settings.id] = worker
@@ -29,14 +29,14 @@ class WorkerRegistry:
             try:
                 await worker.startup()
             except Exception as error:
-                logger.exception(f'[{self._process.uuid}] ({worker.settings.id}) Ошибка при startup: {error}')
+                logger.exception(f'({worker.settings.id}) Ошибка при startup: {error}')
 
     async def shutdown_all(self) -> None:
         for worker in self._instances.values():
             try:
                 await worker.shutdown()
             except Exception as error:
-                logger.exception(f'[{self._process.uuid}] ({worker.settings.id}) Ошибка при shutdown: {error}')
+                logger.exception(f'({worker.settings.id}) Ошибка при shutdown: {error}')
 
     def get_worker(self, name: str) -> AbstractWorker:
         return self._instances[name]
