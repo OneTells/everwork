@@ -3,7 +3,7 @@ from uuid import UUID, uuid4
 
 from pydantic import AfterValidator, BaseModel, Field, model_validator
 
-from everwork.workers import AbstractWorker
+from everwork.workers.baseimport AbstractWorker
 
 
 @final

@@ -1,7 +1,8 @@
 from .base import AbstractWorker
-from .redis_cleaner import AbstractRedisCleanerWorker
+from .redis_cleaner import AbstractRedisCleanerWorker, RedisCleanerWorkerConfig
 
 __all__ = [
     'AbstractWorker',
-    'AbstractRedisCleanerWorker'
+    'AbstractRedisCleanerWorker',
+    'RedisCleanerWorkerConfig'
 ]

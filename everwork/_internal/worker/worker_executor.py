@@ -11,7 +11,7 @@ from everwork._internal.worker.worker_registry import WorkerRegistry
 from everwork.exceptions import Fail, Reject, Retry
 from everwork.schemas import Process
 from everwork.utils import EventCollector
-from everwork.workers import AbstractWorker
+from everwork.workers.baseimport AbstractWorker
 
 
 class WorkerExecutor:

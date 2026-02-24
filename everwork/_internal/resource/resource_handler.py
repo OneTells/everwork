@@ -12,7 +12,7 @@ from everwork._internal.utils.async_task import OperationCancelled, wait_for_or_
 from everwork._internal.utils.caller import call
 from everwork._internal.worker.utils.executor_channel import ExecutorTransmitter
 from everwork.schemas import Event, Process
-from everwork.workers import AbstractWorker
+from everwork.workers.base import AbstractWorker
 
 
 class ResourceHandler:

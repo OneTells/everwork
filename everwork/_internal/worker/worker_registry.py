@@ -2,7 +2,7 @@ from loguru import logger
 
 from everwork._internal.worker.utils.argument_resolver import ArgumentResolver
 from everwork.schemas import Process
-from everwork.workers import AbstractWorker
+from everwork.workers.baseimport AbstractWorker
 
 
 class WorkerRegistry:
