@@ -3,7 +3,7 @@ from multiprocessing import connection
 
 from orjson import dumps
 
-from everwork.schemas import WorkerSettings
+from everwork.schemas.worker import WorkerSettings
 
 
 class HeartbeatNotifier:

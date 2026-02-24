@@ -2,7 +2,8 @@ from abc import ABC, abstractmethod
 from typing import Any, Self, Sequence
 
 from everwork._internal.schemas import AckResponse, FailResponse, RejectResponse, Request, RetryResponse
-from everwork.schemas import Event, Process
+from everwork.schemas.event import Event
+from everwork.schemas.process import Process
 
 
 class AbstractBroker(ABC):

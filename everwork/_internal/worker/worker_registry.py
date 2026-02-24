@@ -1,7 +1,7 @@
 from loguru import logger
 
 from everwork._internal.worker.utils.argument_resolver import ArgumentResolver
-from everwork.schemas import Process
+from everwork.schemas.process import Process
 from everwork.workers.base import AbstractWorker
 
 

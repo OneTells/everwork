@@ -14,7 +14,7 @@ from everwork._internal.backend import AbstractBackend
 from everwork._internal.broker import AbstractBroker
 from everwork._internal.worker.utils.heartbeat_notifier import HeartbeatNotifier
 from everwork._internal.worker.worker_manager import WorkerManager
-from everwork.schemas import Process
+from everwork.schemas.process import Process
 
 if TYPE_CHECKING:
     from loguru import Logger

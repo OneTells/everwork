@@ -4,7 +4,7 @@ from typing import Any, Iterator, Self, Sequence
 
 from orjson import dumps, loads
 
-from everwork.schemas import Event
+from everwork.schemas.event import Event
 
 
 class AbstractReader(ABC):

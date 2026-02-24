@@ -6,9 +6,10 @@ from loguru import logger
 from pydantic import BaseModel, Field, RedisDsn
 from redis.asyncio import Redis
 
-from everwork.schemas import Cron, Trigger, WorkerSettings
+from everwork.schemas.trigger import Cron, Trigger
+from everwork.schemas.worker import WorkerSettings
 from everwork.utils.time import to_seconds
-from .base import AbstractWorker
+from everwork.workers.base import AbstractWorker
 
 
 class RedisCleanerWorkerConfig(BaseModel):

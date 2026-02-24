@@ -13,7 +13,7 @@ from everwork._internal.utils.event_storage import HybridStorage
 from everwork._internal.worker.utils.executor_channel import create_executor_channel
 from everwork._internal.worker.utils.heartbeat_notifier import HeartbeatNotifier
 from everwork._internal.worker.worker_executor import WorkerExecutor
-from everwork.schemas import Process
+from everwork.schemas.process import Process
 
 
 class SignalHandler:

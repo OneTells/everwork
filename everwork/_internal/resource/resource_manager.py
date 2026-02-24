@@ -8,7 +8,7 @@ from everwork._internal.broker import AbstractBroker
 from everwork._internal.resource.resource_handler import ResourceHandler
 from everwork._internal.utils.caller import call
 from everwork._internal.worker.utils.executor_channel import ExecutorTransmitter
-from everwork.schemas import Process
+from everwork.schemas.process import Process
 
 
 class ResourceManager:

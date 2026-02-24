@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-from everwork.schemas import Event
+from everwork.schemas.event import Event
 
 
 class Request(BaseModel):

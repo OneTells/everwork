@@ -1,16 +1,10 @@
-from ._internal.backend.redis import RedisBackend
-from ._internal.broker.redis import RedisBroker
+from ._internal.backend import RedisBackend
+from ._internal.broker import RedisBroker
 from ._internal.process.process_manager import ProcessManager
-from .schemas import (
-    Cron,
-    Event,
-    EventSettings,
-    Interval,
-    Process,
-    ProcessGroup,
-    Trigger,
-    WorkerSettings
-)
+from .schemas.event import Event
+from .schemas.process import Process, ProcessGroup
+from .schemas.trigger import Cron, Interval, Trigger
+from .schemas.worker import EventSettings, WorkerSettings
 from .utils import CronSchedule, EventCollector, to_seconds
 from .workers.base import AbstractWorker
 
