@@ -2,6 +2,7 @@ import traceback
 from itertools import chain
 from typing import Sequence
 
+from loguru import logger
 from orjson import dumps, loads
 from pydantic import RedisDsn
 from pydantic_core import to_jsonable_python
@@ -64,6 +65,8 @@ class RedisBroker(AbstractBroker):
                 await pipe.xgroup_create(stream, group_name, mkstream=True)
 
             await pipe.execute()
+
+        logger.info(1)
 
     async def cleanup(self, processes: Sequence[Process]) -> None:
         return
