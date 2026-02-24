@@ -15,9 +15,9 @@ from everwork._internal.process.process_supervisor import ProcessSupervisor
 from everwork._internal.trigger.trigger_manager import TriggerManager
 from everwork._internal.utils.async_thread import AsyncThread
 from everwork._internal.utils.caller import call
-from everwork.schemas import Process, ProcessGroup
+from everwork.schemas.process import Process, ProcessGroup
 from everwork.utils import AbstractCronSchedule, CronSchedule
-from everwork.workers import AbstractWorker
+from everwork.workers.base import AbstractWorker
 
 
 def check_environment() -> bool:

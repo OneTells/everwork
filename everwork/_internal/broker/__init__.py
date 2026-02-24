@@ -1,7 +1,7 @@
 from .base import AbstractBroker
 from .redis import RedisBroker
 
-__all__ = [
+__all__ = (
     'AbstractBroker',
     'RedisBroker'
-]
+)

@@ -9,7 +9,9 @@ from everwork._internal.backend import AbstractBackend
 from everwork._internal.broker import AbstractBroker
 from everwork._internal.utils.async_task import OperationCancelled, wait_for_or_cancel
 from everwork._internal.utils.caller import call
-from everwork.schemas import Cron, Event, Interval, Trigger, WorkerSettings
+from everwork.schemas.event import Event
+from everwork.schemas.trigger import Cron, Interval, Trigger
+from everwork.schemas.worker import WorkerSettings
 from everwork.utils import AbstractCronSchedule
 
 

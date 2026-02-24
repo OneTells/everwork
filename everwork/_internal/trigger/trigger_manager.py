@@ -6,7 +6,7 @@ from loguru import logger
 from everwork._internal.backend import AbstractBackend
 from everwork._internal.broker import AbstractBroker
 from everwork._internal.trigger.trigger_handler import TriggerHandler
-from everwork.schemas import Process
+from everwork.schemas.process import Process
 from everwork.utils import AbstractCronSchedule
 
 

@@ -3,7 +3,7 @@ from typing import Any, Literal, Self, Sequence
 
 from pydantic import AwareDatetime
 
-from everwork.schemas import Process
+from everwork.schemas.process import Process
 
 
 class AbstractBackend(ABC):

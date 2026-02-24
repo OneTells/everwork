@@ -10,7 +10,7 @@ from redis.backoff import ConstantBackoff
 
 from everwork._internal.backend.base import AbstractBackend
 from everwork._internal.utils.lazy_wrapper import lazy_init
-from everwork.schemas import Process
+from everwork.schemas.process import Process
 
 
 @lazy_init

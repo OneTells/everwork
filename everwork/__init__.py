@@ -1,18 +1,12 @@
 from ._internal.backend import RedisBackend
 from ._internal.broker import RedisBroker
 from ._internal.process.process_manager import ProcessManager
-from .schemas import (
-    Cron,
-    Event,
-    EventSettings,
-    Interval,
-    Process,
-    ProcessGroup,
-    Trigger,
-    WorkerSettings
-)
+from .schemas.event import Event
+from .schemas.process import Process, ProcessGroup
+from .schemas.trigger import Cron, Interval, Trigger
+from .schemas.worker import EventSettings, WorkerSettings
 from .utils import CronSchedule, EventCollector, to_seconds
-from .workers import AbstractWorker
+from .workers.base import AbstractWorker
 
 __all__ = (
     'ProcessManager',

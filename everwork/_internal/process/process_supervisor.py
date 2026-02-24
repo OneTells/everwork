@@ -13,7 +13,7 @@ from everwork._internal.process.utils.connection_utils import poll_connection
 from everwork._internal.utils.async_task import OperationCancelled, wait_for_or_cancel
 from everwork._internal.utils.caller import call
 from everwork._internal.worker.worker_process import WorkerProcess
-from everwork.schemas import Process
+from everwork.schemas.process import Process
 
 
 class StartEvent(BaseModel):

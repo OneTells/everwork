@@ -2,8 +2,8 @@ from typing import Any, final, Sequence
 
 from pydantic import AwareDatetime
 
-from everwork.schemas import Event
 from .._internal.utils.event_storage import AbstractStorage
+from ..schemas.event import Event
 
 
 @final

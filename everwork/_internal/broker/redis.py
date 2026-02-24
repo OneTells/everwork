@@ -13,7 +13,8 @@ from redis.exceptions import NoScriptError
 from everwork._internal.broker.base import AbstractBroker
 from everwork._internal.schemas import AckResponse, FailResponse, RejectResponse, Request, RetryResponse
 from everwork._internal.utils.lazy_wrapper import lazy_init
-from everwork.schemas import Event, Process
+from everwork.schemas.event import Event
+from everwork.schemas.process import Process
 
 
 @lazy_init
