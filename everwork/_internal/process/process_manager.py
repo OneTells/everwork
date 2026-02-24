@@ -266,7 +266,6 @@ class ProcessManager:
         logger.debug(f'Структура менеджера: {get_structure(self._processes)}')
 
         SignalHandler(self._shutdown_event, self._cancel_services).register()
-        logger.debug("Менеджер процессов зарегистрировал обработчик сигналов")
 
         try:
             await self._startup()

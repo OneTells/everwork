@@ -104,8 +104,6 @@ class WorkerManager:
             await executor.run()
 
     async def run(self) -> None:
-        logger.debug(f'[{self._process.uuid}] Менеджер воркеров запущен')
-
         SignalHandler(
             self._shutdown_event,
             self._terminate_event,
@@ -120,5 +118,3 @@ class WorkerManager:
         await self._join_resource_manager()
 
         self._notifier.close()
-
-        logger.debug(f'[{self._process.uuid}] Менеджер воркеров завершил работу')
