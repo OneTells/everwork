@@ -57,6 +57,8 @@ class RedisBroker(AbstractBroker):
             groups = await self._redis.xinfo_groups(stream)
             existing_groups[stream] = {group['name'] for group in groups}
 
+        # Регистрация групп у потоков
+
         async with self._redis.pipeline() as pipe:
             for stream, group_name in stream_groups:
                 if group_name in existing_groups.get(stream, set()):
@@ -66,7 +68,30 @@ class RedisBroker(AbstractBroker):
 
             await pipe.execute()
 
-        logger.info(1)
+        # Проверьте наличие зависящих задач
+
+        for source, group_name in stream_groups:
+            pending_info = await self._redis.xpending(source, group_name)
+
+            if pending_info['pending'] == 0:
+                continue
+
+            pending_messages = await self._redis.xpending_range(
+                name=source,
+                groupname=group_name,
+                min=pending_info['min'],
+                max=pending_info['max'],
+                count=pending_info['pending']
+            )
+
+            for message in pending_messages:
+                logger.warning(
+                    f'Обнаружено зависшее сообщение. '
+                    f'Поток: {source}. '
+                    f'Воркер (группа): {group_name}. '
+                    f'ID сообщения: {message["message_id"]}. '
+                    f'Время обработки (ms): {message["elapsed"]}'
+                )
 
     async def cleanup(self, processes: Sequence[Process]) -> None:
         return
