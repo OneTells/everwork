@@ -113,10 +113,6 @@ class WorkerExecutor:
             del worker_id, request, worker, kwargs, response
 
     async def run(self) -> None:
-        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров запущен')
-
         await self._startup()
         await self._run_execute_loop()
         await self._shutdown()
-
-        logger.debug(f'[{self._process.uuid}] Исполнитель воркеров завершил работу')

@@ -3,7 +3,6 @@ from contextlib import suppress
 from datetime import datetime, timedelta, UTC
 from typing import Callable, Literal
 
-from loguru import logger
 from pydantic import AwareDatetime
 
 from everwork._internal.backend import AbstractBackend
@@ -73,8 +72,8 @@ class TriggerHandler:
     async def _get_last_time_point(self) -> AwareDatetime | None:
         return await (
             call(self._backend.get_time_point, self._worker_settings.id, self._trigger.id)
-            .retry(retries=3)
-            .wait_for_or_cancel(self._shutdown_event)
+            .retry(retries=None)
+            .wait_for_or_cancel(self._shutdown_event, max_timeout=None)
             .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
         )
 
@@ -83,7 +82,7 @@ class TriggerHandler:
             call(self._backend.set_time_point, self._worker_settings.id, self._trigger.id, time_point)
             .retry(retries=3)
             .wait_for_or_cancel(self._shutdown_event)
-            .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
+            .execute(on_error_return=ValueError, on_timeout_return=ValueError, log_context=self._log_context)
         )
 
     async def _push_event(self, event: Event) -> None:
@@ -128,7 +127,11 @@ class TriggerHandler:
             if self._shutdown_event.is_set():
                 break
 
-            await self._set_last_time_point(time_point)
+            try:
+                await self._set_last_time_point(time_point)
+            except ValueError:
+                continue
+
             await self._push_event(
                 Event(
                     source=self._worker_settings.default_source,
@@ -138,8 +141,6 @@ class TriggerHandler:
             )
 
     async def run(self) -> None:
-        logger.debug(f"({self._worker_settings.id}) |{self._trigger.id}| Обработчик триггера запущен")
-
         with suppress(OperationCancelled):
             time_point = await self._get_last_time_point()
 
@@ -147,5 +148,3 @@ class TriggerHandler:
                 time_point = datetime.now(UTC)
 
             await self._run_loop(time_point)
-
-        logger.debug(f"({self._worker_settings.id}) |{self._trigger.id}| Обработчик триггера завершил работу")

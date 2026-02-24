@@ -42,34 +42,30 @@ class ResourceManager:
             )
         )
 
-    async def run(self) -> None:
-        logger.debug(f'[{self._process.uuid}] Менеджер ресурсов запущен')
+    async def _run_handlers(self, backend: AbstractBackend, broker: AbstractBroker) -> None:
+        lock = asyncio.Lock()
 
+        async with asyncio.TaskGroup() as task_group:
+            for worker in self._process.workers:
+                handler = ResourceHandler(
+                    self._manager_uuid,
+                    self._process,
+                    worker,
+                    backend,
+                    broker,
+                    self._transmitter,
+                    lock,
+                    self._shutdown_event
+                )
+
+                task_group.create_task(handler.run())
+
+    async def run(self) -> None:
         try:
             async with self._backend_factory() as backend, self._broker_factory() as broker:
                 await self._mark_worker_executor_as_available(backend)
-
-                lock = asyncio.Lock()
-
-                async with asyncio.TaskGroup() as task_group:
-                    for worker in self._process.workers:
-                        handler = ResourceHandler(
-                            self._manager_uuid,
-                            self._process,
-                            worker,
-                            backend,
-                            broker,
-                            self._transmitter,
-                            lock,
-                            self._shutdown_event
-                        )
-
-                        task_group.create_task(handler.run())
+                await self._run_handlers(backend, broker)
         except Exception as error:
-            logger.opt(exception=True).critical(
-                f'[{self._process.uuid}] Менеджеру ресурсов не удалось открыть или закрыть backend / broker: {error}'
-            )
+            logger.opt(exception=True).critical(f'[{self._process.uuid}] Не удалось открыть или закрыть backend / broker: {error}')
 
         self._transmitter.close()
-
-        logger.debug(f'[{self._process.uuid}] Менеджер ресурсов завершил работу')

@@ -88,7 +88,7 @@ class ResourceHandler:
             call(self._broker.push, events)
             .retry(retries=3)
             .wait_for_or_cancel(self._shutdown_event)
-            .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
+            .execute(on_error_return=ValueError, on_timeout_return=ValueError, log_context=self._log_context)
         )
 
     async def _push(self, request: Request, response: AckResponse) -> AckResponse | FailResponse:
@@ -206,9 +206,5 @@ class ResourceHandler:
             del request, response
 
     async def run(self) -> None:
-        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.id}) Обработчик ресурсов запущен')
-
         with suppress(OperationCancelled):
             await self._run_event_processing_loop()
-
-        logger.debug(f'[{self._process.uuid}] ({self._worker.settings.id}) Обработчик ресурсов завершил работу')

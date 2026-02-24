@@ -3,8 +3,6 @@ import signal
 from types import FrameType
 from typing import Any, Callable
 
-from loguru import logger
-
 from everwork._internal.backend import AbstractBackend
 from everwork._internal.broker import AbstractBroker
 from everwork._internal.resource.resource_manager import ResourceManager
@@ -112,9 +110,7 @@ class WorkerManager:
         ).register()
 
         await self._start_resource_manager()
-
         await self._run_worker_executor()
-
         await self._join_resource_manager()
 
         self._notifier.close()

@@ -271,18 +271,13 @@ class ProcessManager:
             await self._startup()
 
             self._start_services()
-            logger.debug(f'Менеджер процессов запустил сервисы')
-
             await self._run_supervisors()
-            logger.debug('Супервайзеры процессов завершены')
-
             self._join_services()
-            logger.debug(f'Менеджер процессов дождался закрытия сервисов')
 
             await self._shutdown()
         except ValueError:
             ...
         except Exception as error:
-            logger.opt(exception=True).critical(f'Менеджеру процессов не удалось открыть или закрыть backend / broker: {error}')
+            logger.opt(exception=True).critical(f'Не удалось открыть или закрыть backend / broker: {error}')
 
         logger.info('Менеджер процессов завершил работу')

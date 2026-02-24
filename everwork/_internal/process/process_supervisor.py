@@ -87,13 +87,9 @@ class ProcessSupervisor:
             await self._restart_worker_process(state.worker_id)
 
     async def run(self) -> None:
-        logger.debug(f'[{self._process.uuid}] Супервайзер процесса запущен')
-
         await self._worker_process.start()
 
         with suppress(OperationCancelled):
             await self._run_monitoring_cycle()
 
         await self._worker_process.close()
-
-        logger.debug(f'[{self._process.uuid}] Супервайзер процесса завершил работу')
