@@ -46,12 +46,7 @@ class ProcessSupervisor:
                     call(backend.mark_worker_executor_for_reboot, self._manager_uuid, self._process.uuid)
                     .retry(retries=2)
                     .wait_for_or_cancel(self._shutdown_event, max_timeout=5)
-                    .execute(
-                        on_error_return=None,
-                        on_timeout_return=None,
-                        on_cancel_return=None,
-                        log_context=f'[{self._process.uuid}]'
-                    )
+                    .execute(on_error_return=None, on_timeout_return=None, on_cancel_return=None)
                 )
 
     async def _restart_worker_process(self, worker_id: str) -> None:

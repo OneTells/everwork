@@ -34,12 +34,7 @@ class ResourceManager:
             call(backend.mark_worker_executor_as_available, self._manager_uuid, self._process.uuid)
             .retry(retries=2)
             .wait_for_or_cancel(self._shutdown_event, max_timeout=5)
-            .execute(
-                on_error_return=None,
-                on_timeout_return=None,
-                on_cancel_return=None,
-                log_context=f'[{self._process.uuid}] Менеджер ресурсов'
-            )
+            .execute(on_error_return=None, on_timeout_return=None, on_cancel_return=None)
         )
 
     async def _run_handlers(self, backend: AbstractBackend, broker: AbstractBroker) -> None:

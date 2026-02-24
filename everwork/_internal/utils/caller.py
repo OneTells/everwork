@@ -166,7 +166,6 @@ class _Caller[T, **P]:
         on_error_return: Any | Exception,
         on_timeout_return: Any | Exception = asyncio.TimeoutError,
         on_cancel_return: Any | Exception = OperationCancelled,
-        log_context: str = '',
         log_cancellation: bool = True
     ) -> T | Any:
         app = lambda: self._function(*self._args, **self._kwargs)
@@ -205,21 +204,21 @@ class _Caller[T, **P]:
             return await app()
         except OperationCancelled:
             if log_cancellation:
-                logger.exception(f'{log_context} | Отменён {self._function.__name__}')
+                logger.exception(f'Отмена по ивенту при выполнении {self._function.__name__}')
 
             if issubclass(on_cancel_return, Exception):
                 raise on_cancel_return
 
             return on_cancel_return
         except asyncio.TimeoutError:
-            logger.exception(f'{log_context} | Прерван по таймауту {self._function.__name__}')
+            logger.exception(f'Прервано по таймауту при выполнении {self._function.__name__}')
 
             if issubclass(on_timeout_return, Exception):
                 raise on_timeout_return
 
             return on_timeout_return
         except Exception as error:
-            logger.opt(exception=True).critical(f'{log_context} | Не удалось выполнить {self._function.__name__}: {error}')
+            logger.opt(exception=True).critical(f'Ошибка при выполнении {self._function.__name__}: {error}')
 
             if issubclass(on_error_return, Exception):
                 raise on_error_return

@@ -37,14 +37,12 @@ class ResourceHandler:
         self._lock = lock
         self._shutdown_event = shutdown_event
 
-        self._log_context = f'[{self._process.uuid}] ({self._worker.settings.id}) Обработчик ресурсов'
-
     async def _mark_worker_executor_as_available(self) -> None:
         await (
             call(self._backend.mark_worker_executor_as_available, self._manager_uuid, self._process.uuid)
             .retry(retries=2)
             .wait_for_or_cancel(self._shutdown_event)
-            .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
+            .execute(on_error_return=None, on_timeout_return=None)
         )
 
     async def _mark_worker_executor_as_busy(self, request: Request) -> None:
@@ -58,7 +56,7 @@ class ResourceHandler:
             )
             .retry(retries=2)
             .wait_for_or_cancel(self._shutdown_event)
-            .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
+            .execute(on_error_return=None, on_timeout_return=None)
         )
 
     async def _get_worker_status(self) -> Literal['on', 'off']:
@@ -67,7 +65,7 @@ class ResourceHandler:
             .retry(retries=3)
             .cache(ttl=self._worker.settings.status_cache_ttl)
             .wait_for_or_cancel(self._shutdown_event)
-            .execute(on_error_return='off', on_timeout_return='off', log_context=self._log_context)
+            .execute(on_error_return='off', on_timeout_return='off')
         )
 
     async def _fetch(self) -> Request | None:
@@ -80,7 +78,7 @@ class ResourceHandler:
             )
             .retry(retries=None)
             .wait_for_or_cancel(self._shutdown_event, max_timeout=None)
-            .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context, log_cancellation=False)
+            .execute(on_error_return=None, on_timeout_return=None, log_cancellation=False)
         )
 
     async def _push_events(self, events: list[Event]) -> None:
@@ -88,7 +86,7 @@ class ResourceHandler:
             call(self._broker.push, events)
             .retry(retries=3)
             .wait_for_or_cancel(self._shutdown_event)
-            .execute(on_error_return=ValueError, on_timeout_return=ValueError, log_context=self._log_context)
+            .execute(on_error_return=ValueError, on_timeout_return=ValueError)
         )
 
     async def _push(self, request: Request, response: AckResponse) -> AckResponse | FailResponse:
@@ -117,7 +115,7 @@ class ResourceHandler:
             call(self._broker.ack, self._worker.settings.id, request, response)
             .retry(retries=3)
             .wait_for_or_cancel(self._shutdown_event)
-            .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
+            .execute(on_error_return=None, on_timeout_return=None)
         )
 
     async def _fail(self, request: Request, response: FailResponse) -> None:
@@ -125,7 +123,7 @@ class ResourceHandler:
             call(self._broker.fail, self._worker.settings.id, request, response)
             .retry(retries=3)
             .wait_for_or_cancel(self._shutdown_event)
-            .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
+            .execute(on_error_return=None, on_timeout_return=None)
         )
 
     async def _reject(self, request: Request, response: RejectResponse) -> None:
@@ -133,7 +131,7 @@ class ResourceHandler:
             call(self._broker.reject, self._worker.settings.id, request, response)
             .retry(retries=3)
             .wait_for_or_cancel(self._shutdown_event)
-            .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
+            .execute(on_error_return=None, on_timeout_return=None)
         )
 
     async def _retry(self, request: Request, response: RetryResponse) -> None:
@@ -141,7 +139,7 @@ class ResourceHandler:
             call(self._broker.retry, self._worker.settings.id, request, response)
             .retry(retries=3)
             .wait_for_or_cancel(self._shutdown_event)
-            .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
+            .execute(on_error_return=None, on_timeout_return=None)
         )
 
     async def _run_event_processing_loop(self) -> None:

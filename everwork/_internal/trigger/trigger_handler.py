@@ -49,15 +49,13 @@ class TriggerHandler:
 
         self._time_point_generator = _get_time_point_generator(self._trigger, self._cron_schedule)
 
-        self._log_context = f'({self._worker_settings.id}) |{self._trigger.id}| Обработчик триггера'
-
     async def _get_worker_status(self) -> Literal['on', 'off']:
         return await (
             call(self._backend.get_worker_status, self._worker_settings.id)
             .retry(retries=3)
             .cache(ttl=self._worker_settings.status_cache_ttl)
             .wait_for_or_cancel(self._shutdown_event)
-            .execute(on_error_return='off', on_timeout_return='off', log_context=self._log_context)
+            .execute(on_error_return='off', on_timeout_return='off')
         )
 
     async def _get_trigger_status(self) -> Literal['on', 'off']:
@@ -66,7 +64,7 @@ class TriggerHandler:
             .retry(retries=3)
             .cache(ttl=self._trigger.status_cache_ttl)
             .wait_for_or_cancel(self._shutdown_event)
-            .execute(on_error_return='off', on_timeout_return='off', log_context=self._log_context)
+            .execute(on_error_return='off', on_timeout_return='off')
         )
 
     async def _get_last_time_point(self) -> AwareDatetime | None:
@@ -74,7 +72,7 @@ class TriggerHandler:
             call(self._backend.get_time_point, self._worker_settings.id, self._trigger.id)
             .retry(retries=None)
             .wait_for_or_cancel(self._shutdown_event, max_timeout=None)
-            .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context, log_cancellation=False)
+            .execute(on_error_return=None, on_timeout_return=None, log_cancellation=False)
         )
 
     async def _set_last_time_point(self, time_point: AwareDatetime) -> None:
@@ -82,7 +80,7 @@ class TriggerHandler:
             call(self._backend.set_time_point, self._worker_settings.id, self._trigger.id, time_point)
             .retry(retries=3)
             .wait_for_or_cancel(self._shutdown_event)
-            .execute(on_error_return=ValueError, on_timeout_return=ValueError, log_context=self._log_context)
+            .execute(on_error_return=ValueError, on_timeout_return=ValueError)
         )
 
     async def _push_event(self, event: Event) -> None:
@@ -90,7 +88,7 @@ class TriggerHandler:
             call(self._broker.push, event)
             .retry(retries=3)
             .wait_for_or_cancel(self._shutdown_event)
-            .execute(on_error_return=None, on_timeout_return=None, log_context=self._log_context)
+            .execute(on_error_return=None, on_timeout_return=None)
         )
 
     async def _run_loop(self, time_point: datetime) -> None:

@@ -173,12 +173,7 @@ class ProcessManager:
                 call(backend.build, self._manager_uuid, self._processes)
                 .retry(retries=3)
                 .wait_for_or_cancel(self._shutdown_event)
-                .execute(
-                    on_error_return=ValueError,
-                    on_timeout_return=ValueError,
-                    on_cancel_return=ValueError,
-                    log_context='Менеджер процессов'
-                )
+                .execute(on_error_return=ValueError, on_timeout_return=ValueError, on_cancel_return=ValueError)
             )
 
         async with self._broker_factory() as broker:
@@ -186,12 +181,7 @@ class ProcessManager:
                 call(broker.build, self._processes)
                 .retry(retries=3)
                 .wait_for_or_cancel(self._shutdown_event)
-                .execute(
-                    on_error_return=ValueError,
-                    on_timeout_return=ValueError,
-                    on_cancel_return=ValueError,
-                    log_context='Менеджер процессов'
-                )
+                .execute(on_error_return=ValueError, on_timeout_return=ValueError, on_cancel_return=ValueError)
             )
 
     async def _shutdown(self) -> None:
@@ -203,12 +193,7 @@ class ProcessManager:
                     call(backend.cleanup, self._manager_uuid, self._processes)
                     .retry(retries=3)
                     .wait_for_or_cancel(self._shutdown_event)
-                    .execute(
-                        on_error_return=ValueError,
-                        on_timeout_return=ValueError,
-                        on_cancel_return=ValueError,
-                        log_context='Менеджер процессов'
-                    )
+                    .execute(on_error_return=ValueError, on_timeout_return=ValueError, on_cancel_return=ValueError)
                 )
         except ValueError as e:
             error = e
@@ -219,12 +204,7 @@ class ProcessManager:
                     call(broker.cleanup, self._processes)
                     .retry(retries=3)
                     .wait_for_or_cancel(self._shutdown_event)
-                    .execute(
-                        on_error_return=ValueError,
-                        on_timeout_return=ValueError,
-                        on_cancel_return=ValueError,
-                        log_context='Менеджер процессов'
-                    )
+                    .execute(on_error_return=ValueError, on_timeout_return=ValueError, on_cancel_return=ValueError)
                 )
         except ValueError as e:
             error = e
