@@ -1,5 +1,5 @@
-from ._internal.backend import RedisBackend
-from ._internal.broker import RedisBroker
+from ._internal.backend.redis import RedisBackend
+from ._internal.broker.redis import RedisBroker
 from ._internal.process.process_manager import ProcessManager
 from .schemas import (
     Cron,
