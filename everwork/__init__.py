@@ -12,7 +12,7 @@ from .schemas import (
     WorkerSettings
 )
 from .utils import CronSchedule, EventCollector, to_seconds
-from .workers import AbstractWorker
+from .workers.base import AbstractWorker
 
 __all__ = (
     'ProcessManager',
