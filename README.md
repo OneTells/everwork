@@ -270,13 +270,13 @@ class MyWorker(AbstractWorker):
         # Инициализация ресурсов, подключений и т.д.
         pass
     
-    async def __call__(self, **kwargs: Any) -> None:
-        # Основная логика обработки
-        pass
-    
     async def shutdown(self) -> None:
         # Вызывается при завершении воркера
         # Очистка ресурсов, закрытие подключений
+        pass
+
+    async def __call__(self, **kwargs: Any) -> None:
+        # Основная логика обработки
         pass
 ```
 
