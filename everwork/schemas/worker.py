@@ -1,10 +1,11 @@
 import hashlib
 from functools import cached_property
-from typing import Annotated, final, Self, Sequence
+from typing import Annotated, final, Self, Sequence, TYPE_CHECKING
 
 from pydantic import BaseModel, computed_field, Field, model_validator
 
-from .trigger import Trigger
+if TYPE_CHECKING:
+    from .trigger import Trigger
 
 type SourceType = Annotated[str, Field(min_length=1, max_length=300, pattern=r'^[a-zA-Z0-9_\-:]+$')]
 

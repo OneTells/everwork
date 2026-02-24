@@ -1,9 +1,10 @@
-from typing import Annotated, final, Self, Sequence
+from typing import Annotated, final, Self, Sequence, TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from pydantic import AfterValidator, BaseModel, Field, model_validator
 
-from ..workers.base import AbstractWorker
+if TYPE_CHECKING:
+    from ..workers.base import AbstractWorker
 
 
 @final
