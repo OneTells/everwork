@@ -90,7 +90,7 @@ class RedisBroker(AbstractBroker):
                     f'Поток: {source}. '
                     f'Воркер (группа): {group_name}. '
                     f'ID сообщения: {message["message_id"]}. '
-                    f'Время обработки (ms): {message["elapsed"]}'
+                    f'Время обработки (ms): {message["time_since_delivered"]}'
                 )
 
     async def cleanup(self, processes: Sequence[Process]) -> None:
