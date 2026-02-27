@@ -35,7 +35,7 @@ def validate_timezone(timezone: str) -> str:
 @final
 class Cron(BaseModel):
     expression: Annotated[str, AfterValidator(validate_cron_expression)]
-    timezone: Annotated[str, AfterValidator(validate_timezone)]
+    timezone: Annotated[str, AfterValidator(validate_timezone)] = 'UTC'
 
 
 @final
