@@ -1,8 +1,10 @@
 import hashlib
 from functools import cached_property
 from typing import Annotated, Any, final
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, computed_field, Field
+from croniter import croniter
+from pydantic import AfterValidator, BaseModel, computed_field, Field
 
 
 @final
@@ -14,9 +16,26 @@ class Interval(BaseModel):
     seconds: Annotated[int, Field(ge=0)] = 0
 
 
+def validate_cron_expression(expression: str) -> str:
+    if not croniter.is_valid(expression):
+        raise ValueError(f'Invalid cron expression: {expression}')
+
+    return expression
+
+
+def validate_timezone(timezone: str) -> str:
+    try:
+        ZoneInfo(timezone)
+    except ZoneInfoNotFoundError:
+        raise ValueError(f"Invalid timezone: '{timezone}'")
+
+    return timezone
+
+
 @final
 class Cron(BaseModel):
-    expression: str
+    expression: Annotated[str, AfterValidator(validate_cron_expression)]
+    timezone: Annotated[str, AfterValidator(validate_timezone)]
 
 
 @final

@@ -2,6 +2,7 @@ import asyncio
 from contextlib import suppress
 from datetime import datetime, timedelta, UTC
 from typing import Callable, Literal
+from zoneinfo import ZoneInfo
 
 from pydantic import AwareDatetime
 
@@ -146,5 +147,8 @@ class TriggerHandler:
 
             if time_point is None:
                 time_point = datetime.now(UTC)
+
+            if isinstance(self._trigger.schedule, Cron):
+                time_point.astimezone(tz=ZoneInfo(self._trigger.schedule.timezone))
 
             await self._run_loop(time_point)

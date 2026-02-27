@@ -10,7 +10,7 @@ dependencies = [
     "loguru",
     "orjson>=3.11.7",
     "pydantic>=2.10.6",
-    "redis[hiredis]>=7.1.0",
+    "redis[hiredis]>=7.2.1",
     "uvloop>=0.21.0 ; sys_platform == 'linux'",
 ]
 
