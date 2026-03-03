@@ -124,7 +124,7 @@ class WorkerProcess:
         logger.remove()
         logger_.reinstall()
 
-        for key in ('process', 'broker_factory', 'broker_factory'):
+        for key in ('process', 'backend_factory', 'broker_factory'):
             kwargs[key] = dill.loads(kwargs[key])
 
         with asyncio.Runner(loop_factory=new_event_loop) as runner:
