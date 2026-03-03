@@ -1,4 +1,5 @@
 from loguru import logger
+from pydantic import ConfigDict, validate_call
 
 from everwork._internal.worker.utils.argument_resolver import ArgumentResolver
 from everwork.schemas.process import Process
@@ -22,6 +23,8 @@ class WorkerRegistry:
                 continue
 
             self._instances[worker.settings.id] = worker
+
+            worker.__call__ = validate_call(config=ConfigDict(arbitrary_types_allowed=True))(worker.__call__)
             self._resolvers[worker.settings.id] = ArgumentResolver(worker.__call__)
 
     async def startup_all(self) -> None:

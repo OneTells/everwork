@@ -2,8 +2,6 @@ from abc import ABC, abstractmethod
 from inspect import isabstract
 from typing import Any, ClassVar
 
-from pydantic import ConfigDict, validate_call
-
 from everwork.schemas.worker import WorkerSettings
 from .._internal.utils.typing_checker import check_method_typing
 
@@ -28,8 +26,6 @@ class AbstractWorker(ABC):
             check_method_typing(cls.__call__)
         except TypeError as error:
             raise TypeError(f"({cls.__name__}) {error}")
-
-        cls.__call__ = validate_call(config=ConfigDict(arbitrary_types_allowed=True))(cls.__call__)
 
     @classmethod
     @abstractmethod
