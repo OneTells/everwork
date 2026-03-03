@@ -50,3 +50,5 @@ class TriggerManager:
                 await self._run_handlers(backend, broker)
         except Exception as error:
             logger.opt(exception=True).critical(f'Не удалось открыть или закрыть backend / broker: {error}')
+
+        await self._shutdown_event.wait()
