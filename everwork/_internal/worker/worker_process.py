@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import asyncio
 import os
 import signal
@@ -60,7 +58,7 @@ class WorkerProcess:
             target=self._run,
             kwargs={
                 'manager_uuid': self._manager_uuid,
-                'process': self._process,
+                'process': dill.dumps(self._process),
                 'backend_factory': dill.dumps(self._backend_factory),
                 'broker_factory': dill.dumps(self._broker_factory),
                 'notifier': HeartbeatNotifier(self._pipe_writer),
@@ -126,8 +124,8 @@ class WorkerProcess:
         logger.remove()
         logger_.reinstall()
 
-        kwargs['backend_factory'] = dill.loads(kwargs['backend_factory'])
-        kwargs['broker_factory'] = dill.loads(kwargs['broker_factory'])
+        for key in ('process', 'broker_factory', 'broker_factory'):
+            kwargs[key] = dill.loads(kwargs[key])
 
         with asyncio.Runner(loop_factory=new_event_loop) as runner:
             runner.run(WorkerManager(**kwargs).run())

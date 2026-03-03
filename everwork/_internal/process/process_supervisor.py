@@ -4,21 +4,15 @@ from contextlib import suppress
 from typing import Callable
 
 from loguru import logger
-from orjson import loads
-from pydantic import BaseModel
 
 from everwork._internal.backend import AbstractBackend
 from everwork._internal.broker import AbstractBroker
 from everwork._internal.process.utils.connection_utils import poll_connection
 from everwork._internal.utils.async_task import OperationCancelled, wait_for_or_cancel
 from everwork._internal.utils.caller import call
+from everwork._internal.worker.utils.heartbeat_notifier import StartEvent
 from everwork._internal.worker.worker_process import WorkerProcess
 from everwork.schemas.process import Process
-
-
-class StartEvent(BaseModel):
-    worker_id: str
-    end_time: float
 
 
 class ProcessSupervisor:
@@ -67,7 +61,7 @@ class ProcessSupervisor:
             )
 
             payload = self._worker_process.pipe_reader.recv_bytes()
-            state = StartEvent.model_validate(loads(payload))
+            state = StartEvent.model_validate_json(payload)
 
             timeout = state.end_time - time.time()
             is_exist_message = await wait_for_or_cancel(

@@ -2,7 +2,7 @@ import tempfile
 from abc import ABC, abstractmethod
 from typing import Any, Iterator, Self, Sequence
 
-from orjson import dumps, loads
+from orjson import dumps
 
 from everwork.schemas.event import Event
 
@@ -91,9 +91,7 @@ class FileReader(AbstractReader):
             if not payload:
                 continue
 
-            obj = loads(payload)
-            event = Event.model_validate(obj)
-
+            event = Event.model_validate_json(payload)
             yield event
 
     def close(self) -> None:
@@ -111,7 +109,7 @@ class FileStorage(AbstractStorage):
         if not events:
             return
 
-        data = b"\n".join(dumps(event.model_dump()) for event in events) + b"\n"
+        data = b"\n".join(dumps(event.model_dump(mode='json')) for event in events) + b"\n"
 
         self._file.write(data)
         self._file.flush()

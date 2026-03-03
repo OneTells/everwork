@@ -2,8 +2,14 @@ import time
 from multiprocessing import connection
 
 from orjson import dumps
+from pydantic import BaseModel
 
 from everwork.schemas.worker import WorkerSettings
+
+
+class StartEvent(BaseModel):
+    worker_id: str
+    end_time: float
 
 
 class HeartbeatNotifier:

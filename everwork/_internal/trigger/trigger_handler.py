@@ -21,7 +21,7 @@ def _get_time_point_generator(
     cron_schedule: type[AbstractCronSchedule]
 ) -> Callable[[AwareDatetime], AwareDatetime]:
     if isinstance(trigger.schedule, Interval):
-        interval = timedelta(**trigger.schedule.model_dump())
+        interval = timedelta(**trigger.schedule.model_dump(mode='json'))
         return lambda x: x + interval
     elif isinstance(trigger.schedule, Cron):
         cron = cron_schedule(trigger.schedule.expression)

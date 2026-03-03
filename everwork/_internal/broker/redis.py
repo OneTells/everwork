@@ -3,9 +3,8 @@ from itertools import chain
 from typing import Sequence
 
 from loguru import logger
-from orjson import dumps, loads
+from orjson import dumps
 from pydantic import RedisDsn
-from pydantic_core import to_jsonable_python
 from redis.asyncio import Redis
 from redis.asyncio.retry import Retry
 from redis.backoff import ConstantBackoff
@@ -107,7 +106,7 @@ class RedisBroker(AbstractBroker):
 
         event_id, event_kwargs = tuple(data.items())[0][1][0][0]
 
-        return Request(event_id=event_id, event=Event.model_validate(loads(event_kwargs['payload'])))
+        return Request(event_id=event_id, event=Event.model_validate_json(event_kwargs['payload']))
 
     async def push(self, event: Event | Sequence[Event]) -> None:
         events = [event] if isinstance(event, Event) else event
@@ -118,7 +117,7 @@ class RedisBroker(AbstractBroker):
         if self._scripts.get('push') is None:
             await self._load_push_script()
 
-        args = tuple(chain.from_iterable((event.source, dumps(to_jsonable_python(event))) for event in events))
+        args = tuple(chain.from_iterable((event.source, dumps(event.model_dump(mode='json'))) for event in events))
 
         try:
             await self._redis.evalsha(self._scripts['push'], 0, *args)
@@ -184,7 +183,7 @@ class RedisBroker(AbstractBroker):
             request.event.source,
             worker_id,
             request.event_id,
-            dumps(to_jsonable_python(request.event))
+            dumps(request.event.model_dump(mode='json'))
         ]
 
         try:
