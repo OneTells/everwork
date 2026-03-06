@@ -177,6 +177,7 @@ class RedisBroker(AbstractBroker):
             await self._load_retry_script()
 
         request.event.retries += 1
+        request.event.source = f'worker:{worker_id}:source'
 
         keys_and_args = [
             f'worker:{worker_id}:source',
