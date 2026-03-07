@@ -43,18 +43,6 @@ class AbstractRedisCleanerWorker(AbstractWorker, ABC):
             triggers=cls._config.triggers
         )
 
-    @staticmethod
-    async def _load_remove_streams_script(redis: Redis) -> str:
-        return await redis.script_load(
-            """
-            for _, stream_key in ipairs(KEYS) do
-                if redis.call('XLEN', stream_key) == 0 then
-                    redis.call('DEL', stream_key)
-                end
-            end
-            """
-        )
-
     async def __call__(self) -> None:
         async with Redis.from_url(self._config.broker_redis_dns.encoded_string(), protocol=3, decode_responses=True) as redis:
             stream_keys = []
@@ -75,8 +63,5 @@ class AbstractRedisCleanerWorker(AbstractWorker, ABC):
                     await pipe.xtrim(key, minid=min_id)
 
                 await pipe.execute(raise_on_error=False)
-
-            script_sha = await self._load_remove_streams_script(redis)
-            await redis.evalsha(script_sha, len(stream_keys), *stream_keys)
 
         logger.debug(f'Стримы были очищены. Всего обработано: {len(stream_keys)}')
