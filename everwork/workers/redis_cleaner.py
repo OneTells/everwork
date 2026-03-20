@@ -60,8 +60,8 @@ class AbstractRedisCleanerWorker(AbstractWorker, ABC):
 
             async with redis.pipeline() as pipe:
                 for key in stream_keys:
-                    await pipe.xtrim(key, minid=min_id)
+                    await pipe.xtrim(key, minid=min_id, limit=0)
 
-                await pipe.execute(raise_on_error=False)
+                results = await pipe.execute(raise_on_error=False)
 
-        logger.debug(f'Стримы были очищены. Всего обработано: {len(stream_keys)}')
+        logger.debug(f'Стримы были очищены. Всего обработано: {len(stream_keys)}. Удалено: {sum(results)}')
